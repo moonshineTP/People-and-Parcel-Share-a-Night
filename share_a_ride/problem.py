@@ -1,0 +1,121 @@
+"""
+Project 11 - People and Parcel Share a Ride Large Size
+
+Problem Description:
+--------------------
+We have K taxis located at the depot (point 0). These taxis are assigned to serve
+two types of transportation requests:
+
+1. Passenger requests (N requests, indexed 1..N):
+   - Each passenger i has a pickup point i.
+   - Each passenger i has a drop-off point i + N + M.
+   - Constraint: A passenger must be transported directly from pickup to drop-off
+     without intermediate stops in between.
+
+2. Parcel requests (M requests, indexed 1..M):
+   - Each parcel i has a pickup point i + N.
+   - Each parcel i has a drop-off point i + 2N + M.
+   - Each parcel i has a quantity q[i].
+   - Each taxi k has a maximum parcel capacity Q[k].
+
+Travel distances:
+- d(i,j) is the distance from point i to point j,
+  where i, j ∈ {0, 1, 2, ..., 2N + 2M}.
+- Point 0 is the depot.
+
+Objective:
+----------
+Construct feasible routes for the K taxis such that:
+- Every passenger and parcel request is served exactly once.
+- For passengers: pickup → drop-off is a direct trip (no interruptions).
+- For parcels: taxi capacities Q[k] must not be exceeded.
+- Each route starts and ends at the depot (0).
+- The maximum route length among all K taxis is minimized
+  (load balancing between taxis).
+
+Route representation:
+---------------------
+A route of taxi k is represented as a sequence:
+    r[0], r[1], ..., r[Lk]
+where:
+- r[0] = r[Lk] = 0 (starts and ends at depot)
+- Lk is the length of the route (number of visited points)
+
+Input format:
+-------------
+Line 1: N M K
+Line 2: q[1] q[2] ... q[M]                (parcel quantities)
+Line 3: Q[1] Q[2] ... Q[K]                (taxi capacities)
+Next (2N + 2M + 1) lines: distance matrix d(i,j)
+
+Output format:
+--------------
+Line 1: integer K (number of taxis)
+For each taxi k = 1..K:
+    Line 2k  : integer Lk (length of route)
+    Line 2k+1: sequence r[0] ... r[Lk]
+
+Example:
+--------
+Input:
+3 3 2
+8 4 5
+16 16
+0 8 7 9 6 5 11 6 11 12 12 12 13
+8 0 4 1 2 8 5 13 19 12 4 8 9
+7 4 0 3 3 8 4 12 15 8 5 6 7
+9 1 3 0 3 9 4 14 19 11 3 7 8
+6 2 3 3 0 6 6 11 17 11 6 9 10
+5 8 8 9 6 0 12 5 16 15 12 15 15
+11 5 4 4 6 12 0 16 18 7 4 3 4
+6 13 12 14 11 5 16 0 15 18 17 18 19
+11 19 15 19 17 16 18 15 0 13 21 17 17
+12 12 8 11 11 15 7 18 13 0 11 5 4
+12 4 5 3 6 12 4 17 21 11 0 7 8
+12 8 6 7 9 15 3 18 17 5 7 0 1
+13 9 7 8 10 15 4 19 17 4 8 1 0
+
+Output:
+2
+6
+0 5 1 7 11 0
+10
+0 4 6 10 3 9 12 2 8 0
+"""
+
+from typing import List
+
+class ShareARideProblem:
+    def __init__(self, N: int, M: int, K: int,
+                 parcel_qty: List[int], vehicle_caps: List[int],
+                 dist: List[List[int]]):
+        self.N = N
+        self.M = M
+        self.K = K
+        self.q = list(parcel_qty)
+        self.Q = list(vehicle_caps)
+        self.D = [row[:] for row in dist]
+        self.num_nodes = 2*N + 2*M + 1
+
+        # index helpers
+        self.ppick = lambda i: i
+        self.pdrop = lambda i: N + M + i
+        self.parc_pick = lambda j: N + j
+        self.parc_drop = lambda j: 2*N + M + j
+
+    def copy(self):
+        return ShareARideProblem(
+            self.N, self.M, self.K,
+            list(self.q), list(self.Q),
+            [row[:] for row in self.D]
+        )
+
+    def pretty_print(self, verbose: int = 0):
+        print(f"Share-a-Ride: N={self.N} passengers, M={self.M} parcels, "
+              f"K={self.K}, num_nodes={self.num_nodes}")
+        if verbose >= 1:
+            print("Parcel quantities (q):", self.q)
+            print("Vehicle capacities (Q):", self.Q)
+            print("Distance matrix D:")
+            for row in self.D:
+                print(" ", row)
