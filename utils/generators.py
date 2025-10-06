@@ -5,10 +5,11 @@ from typing import Optional, List, Tuple
 from share_a_ride.problem import ShareARideProblem
 from utils.visualization import visualize_instance
 
+
 def _generate_symmetric_value(
-    i: int, j: int, D: List[List[int]], rng: random.Random,
-    low: int, high: int, asymmetric: bool
-) -> int:
+        i: int, j: int, D: List[List[int]], rng: random.Random,
+        low: int, high: int, asymmetric: bool
+    ) -> int:
     """Generate a single distance value, symmetric if needed."""
     if i == j:
         return 0
@@ -18,10 +19,11 @@ def _generate_symmetric_value(
         return D[j][i]
     return rng.randint(low, high)
 
+
 def _sample_poisson(
-    lmbd: float,
-    rng: random.Random
-) -> int:
+        lmbd: float,
+        rng: random.Random
+    ) -> int:
     """Approximate Poisson distribution using Knuth's algorithm."""
     L = math.exp(-lmbd)
     k = 0
@@ -31,14 +33,15 @@ def _sample_poisson(
         p *= rng.random()
     return max(1, k - 1)
 
+
 # ---------------------- Test instance generators --------------------------------
 def random_distance_matrix(
-    n: int,
-    low: int = 3,
-    high: int = 9,
-    asymmetric: bool = False,
-    seed: int | None = None
-) -> List[List[int]]:
+        n: int,
+        low: int = 3,
+        high: int = 9,
+        asymmetric: bool = False,
+        seed: int | None = None
+    ) -> List[List[int]]:
     """
     Generate a random symmetric or asymmetric distance matrix.
     """
@@ -47,13 +50,14 @@ def random_distance_matrix(
 
     for i in range(n):
         for j in range(n):
-            D[i][j] = _generate_symmetric_value(
-                i, j, D, rng, low, high, asymmetric
-            )
+            D[i][j] = _generate_symmetric_value(i, j, D, rng, low, high, asymmetric)
+
+    return D
+
 
 def euclidean_distance_matrix(
-    coords: List[Tuple[float, float]]
-) -> List[List[int]]:
+        coords: List[Tuple[float, float]]
+    ) -> List[List[int]]:
     """Compute pairwise Euclidean distance matrix from coordinates."""
     n = len(coords)
     D = [[0] * n for _ in range(n)]
@@ -69,13 +73,13 @@ def euclidean_distance_matrix(
 
 
 def generate_instance_lazy(
-    N: int, M: int, K: int,
-    low: int = 3, high: int = 9,
-    qlow: int = 1, qhigh: int = 4,
-    Qlow: int = 6, Qhigh: int = 12,
-    use_poisson: bool = False, poisson_lambda: float = 2.0,
-    seed: Optional[int] = None
-) -> ShareARideProblem:
+        N: int, M: int, K: int,
+        low: int = 5, high: int = 20,
+        qlow: int = 5, qhigh: int = 15,
+        Qlow: int = 15, Qhigh: int = 30,
+        use_poisson: bool = False, poisson_lambda: float = 10.0,
+        seed: Optional[int] = None
+    ) -> ShareARideProblem:
     """Generate random instance using lazy distance matrix."""
     rng = random.Random(seed)
 
@@ -92,13 +96,13 @@ def generate_instance_lazy(
 
 
 def generate_instance_coords(
-    N: int, M: int, K: int,
-    area: float = 20.0,
-    qlow: int = 1, qhigh: int = 4,
-    Qlow: int = 6, Qhigh: int = 15,
-    seed: Optional[int] = None,
-    visualize: bool = False
-) -> ShareARideProblem:
+        N: int, M: int, K: int,
+        area: float = 20.0,
+        qlow: int = 5, qhigh: int = 15,
+        Qlow: int = 15, Qhigh: int = 30,
+        seed: Optional[int] = None,
+        visualize: bool = False
+    ) -> ShareARideProblem:
     """Generate instance with coordinates and optional visualization."""
     rng = random.Random(seed)
     total_points = 1 + 2 * N + 2 * M
