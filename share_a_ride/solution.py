@@ -11,6 +11,9 @@ class Solution:
     def __init__(self, problem: "ShareARideProblem",
                 routes: List[List[int]], route_lengths: List[int]):
 
+        if problem is None:
+            raise ValueError("Problem instance cannot be None.")
+
         assert len(routes) == len(route_lengths)
         self.problem = problem
         self.routes = routes
@@ -113,6 +116,8 @@ class Solution:
         if verbose:
             print(f"*** Max route cost: {self.max_cost} ***")
 
+        print(self.problem.K)
+        
         for route, cost in zip(self.routes, self.route_costs):
             if verbose:
                 print(f"- Route cost: {cost}")

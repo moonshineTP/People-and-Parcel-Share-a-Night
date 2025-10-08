@@ -39,11 +39,11 @@ def gen_routes_for_taxi(
     current_passenger = None    # holds index of current passenger onboard, if any.
     current_parcels = set()     # indices for parcels currently onboard.
     current_load = 0            # current parcel load.
-    seq: List[int] = []         # current route sequence (starts at depot)
+    seq: List[int] = [0]        # current route sequence (starts at depot)
 
     # main dfs function
     def dfs() -> Iterator[List[int]]:
-        nonlocal current_passenger, current_load, current_parcels
+        nonlocal current_passenger, current_parcels, current_load, seq
 
         # Check time limit
         if time.time() - start_time > time_limit:
@@ -51,7 +51,7 @@ def gen_routes_for_taxi(
 
         # Base-case: all pairs fully processed (all drops done)
         if len(visited_drop) == num_pairs:
-            yield list(seq)
+            yield list(seq + [0])
             return
 
         # Try pickup moves.

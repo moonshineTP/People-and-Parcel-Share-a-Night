@@ -3,9 +3,7 @@ from typing import List, Optional, Tuple, Dict, Any
 
 from share_a_ride.problem import ShareARideProblem
 from share_a_ride.solution import Solution
-from share_a_ride.solvers.greedy import greedy_balanced_solver
 from utils.helper import route_cost_from_sequence
-from share_a_ride.solvers.utils.helper import gen_routes_for_taxi
 
 # ---------------------- Branch-and-bound (DFS on pair->taxi with LB) -------------
 
@@ -183,10 +181,10 @@ def branch_and_bound(
         if t == used_taxis:
             # pad unused taxis with empty routes
             full_routes = list(current_routes) + [[0, 0]] * (K - used_taxis)
-            full_lengths = list(current_costs) + [0] * (K - used_taxis)
+            full_costs = list(current_costs) + [0] * (K - used_taxis)
 
             # submit solution
-            sol = Solution(problem, full_routes, full_lengths)
+            sol = Solution(problem, full_routes, full_costs)
             assert sol.is_valid()
 
             # update best solution if improved
@@ -227,7 +225,8 @@ def branch_and_bound(
                             for tp, i in this_taxi_pairs]
 
         # Nested DFS for route building on taxi t.
-        def dfs_route(seq: List[int],   # current sequence of nodes (excluding depots)
+        def dfs_route(
+                seq: List[int],         # current sequence of nodes (including depots)
                 cost: float,            # current cost of seq
                 load: int,              # current parcel load
                 passenger: int,         # current passenger onboard (0 if none)
@@ -245,7 +244,11 @@ def branch_and_bound(
                 stats["routes"] += 1
 
                 # submit this route
-                final_route = [0] + seq + [0]
+                cost += problem.D[seq[-1]][0]
+                final_route = seq + [0]
+
+                assert route_cost_from_sequence(final_route, problem.D) == cost
+
                 current_routes.append(final_route)
                 current_costs.append(cost)
 
@@ -292,7 +295,7 @@ def branch_and_bound(
                     # apply pickup
                     picked[i] = True
                     next_node = pickup_nodes[i]
-                    prev_node = seq[-1] if seq else 0
+                    prev_node = seq[-1]
                     new_cost = cost + problem.D[prev_node][next_node]
                     new_load = load
                     new_passenger = passenger
@@ -316,7 +319,7 @@ def branch_and_bound(
                 if picked[i] and not dropped[i]:
                     # apply drop
                     next_node = drop_nodes[i]
-                    prev_node = seq[-1] if seq else 0
+                    prev_node = seq[-1]
                     new_cost = cost + problem.D[prev_node][next_node]
                     new_load = load
                     new_passenger = passenger
@@ -339,7 +342,7 @@ def branch_and_bound(
             return None
 
         # Initialize the DFS with empty route and initial state.
-        ret = dfs_route([], 0, 0, 0, [False] * n, [False] * n)
+        ret = dfs_route([0], 0, 0, 0, [False] * n, [False] * n)
         if ret == "timeout":
             return "timeout"
         return None
@@ -357,8 +360,10 @@ def branch_and_bound(
         "time": elapsed,
         "status": "timeout" if res == "timeout" else "done"
     }
-    if best_sol is None:
-        print("No solution found.")
+
+    if best_sol:
+        if not best_sol.is_valid():
+            best_sol = None
 
     assert best_sol.is_valid() if best_sol else True
     return best_sol, info

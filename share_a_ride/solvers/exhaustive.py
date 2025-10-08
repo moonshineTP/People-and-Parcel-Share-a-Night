@@ -69,13 +69,13 @@ def exhaustive_enumerate(
     timeout = False
 
 
-
     # main dfs function
     def dfs_assign_routes(
             t_idx: int,                         # current taxi index
             seqs_all: List[List[List[int]]],    # all sequences for each taxi
             cur_routes: List[List[int]],        # current routes considered from t_idx
-            cur_costs: List[float]):            # current cost considered from t_idx
+            cur_costs: List[float]              # current cost considered from t_idx
+        ):      
 
         nonlocal assignments_done, seq_generated, timeout
 
@@ -110,7 +110,7 @@ def exhaustive_enumerate(
             dfs_assign_routes(
                 t_idx + 1,
                 seqs_all,
-                cur_routes + [[0] + seq + [0]],
+                cur_routes + [seq],
                 cur_costs + [route_cost_from_sequence(seq, problem.D)]
             )
 
