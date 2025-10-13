@@ -1,9 +1,9 @@
 import random
 
-from share_a_ride.solvers.exhaustive import exhaustive_enumerate
-from share_a_ride.solvers.bnb import branch_and_bound
-from share_a_ride.solvers.greedy import greedy_balanced_solver
-from utils.generators import generate_instance_coords, generate_instance_lazy
+from share_a_ride.solvers.algo.exhaustive import exhaustive_enumerate
+from share_a_ride.solvers.algo.bnb import branch_and_bound
+from share_a_ride.solvers.algo.greedy import greedy_balanced_solver
+from share_a_ride.utils.probgen import generate_instance_coords, generate_instance_lazy
 
 # ---------------------- Demo / main --------------------------------------------
 def demo_sprint_1():

@@ -5,9 +5,12 @@
 """
 import sys
 
-# from share_a_ride.solvers.bnb import branch_and_bound
-from share_a_ride.solvers.greedy import greedy_balanced_solver
+from share_a_ride.solvers.algo.bnb import branch_and_bound
+from share_a_ride.solvers.algo.greedy import greedy_balanced_solver
+from share_a_ride.solvers.algo.greedy import iterative_greedy_balanced_solver
 from share_a_ride.problem import ShareARideProblem
+from share_a_ride.solution import Solution
+from share_a_ride.utils.probgen import generate_instance_coords
 
 
 def read_instance() -> tuple:
@@ -24,9 +27,25 @@ def read_instance() -> tuple:
     return ShareARideProblem(N, M, K, q, Q, D)
 
 def main():
-    prob = read_instance()
-    sol1, info1 = greedy_balanced_solver(prob, verbose=False)
-    sol1.pretty_print(verbose=0)
+    prob: ShareARideProblem = generate_instance_coords(
+        area=100.0, N = 10, M = 40, K = 5,
+        qlmbd=12.0, Qlmbd=18.0,
+        seed=42
+    )
+    prob.stdin_print()
+
+    # prob: ShareARideProblem = read_instance()
+    sol: Solution = None
+    sol, info1 = iterative_greedy_balanced_solver(
+        prob=prob, iterations=1000, time_limit=10.0,
+        destroy_ratio=0.5, destroy_steps=6,     # tune these
+        rebuild_prob=0.3, rebuild_steps=2,      # tune these
+        temperature=1.0,
+        seed=42, verbose=True
+    )
+
+    print(f"Enumeration info: {info1}")
+    sol.pretty_print(verbose=0)
 
 
     # sol_list3, info3 = exhaustive_enumerate(
