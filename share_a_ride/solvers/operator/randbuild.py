@@ -9,7 +9,7 @@ def randbuild(
         premature_route_idx: int,
         num_actions: int = 5,
         temperature: float = 1.0,
-        seed: Optional[int] = None,
+        seed: int = 42,
         verbose: bool = False
     ) -> List[int]:
     """

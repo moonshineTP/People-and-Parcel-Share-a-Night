@@ -269,7 +269,7 @@ def iterative_greedy_balanced_solver(
         rebuild_prob: float = 0.3,  # probability of rebuilding a destroyed route
         rebuild_steps: int = 5,     # number of random actions to perform during rebuilding
         time_limit: float = 10.0,   # overall time limit in seconds
-        seed: int = None,
+        seed: int = 42,
         temperature: float = 1.0,   # temperature parameter for destroy heuristic
         verbose: bool = False
     ) -> tuple:
@@ -343,7 +343,7 @@ def iterative_greedy_balanced_solver(
             sol: Current solution
             destroy_ratio: Fraction of routes to destroy (0 to 1)
             destroy_steps: Maximum number of nodes to remove per route
-            seed: Random seed for reproducibility
+            seed: for reproducibility
             temperature: Controls selection randomness (default 1.0)
         
         Returns:

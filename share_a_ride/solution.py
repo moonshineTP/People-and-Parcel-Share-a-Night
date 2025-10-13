@@ -1,5 +1,9 @@
 from typing import List
-from share_a_ride.utils.helper import route_cost_from_sequence
+
+import matplotlib.pyplot as plt 
+
+from share_a_ride.problem import ShareARideProblem
+from share_a_ride.utils.generator import generate_instance_coords
 
 class Solution:
     """
@@ -8,7 +12,7 @@ class Solution:
     - route_lengths: list of ints
     - max_length: int (objective to minimize)
     """
-    def __init__(self, problem: "ShareARideProblem",
+    def __init__(self, problem: ShareARideProblem,
                 routes: List[List[int]], route_lengths: List[int]):
 
         if problem is None:
@@ -19,6 +23,7 @@ class Solution:
         self.routes = routes
         self.route_costs = route_lengths
         self.max_cost = max(route_lengths) if route_lengths else 0
+
 
     def is_valid(self) -> bool:
         """
@@ -106,7 +111,8 @@ class Solution:
 
         return True
 
-    def pretty_print(self, verbose: int = 0):
+
+    def stdin_print(self, verbose: int = 0):
         """
             Print the solution in the specified format.
             Verbose option for more details.
@@ -117,11 +123,87 @@ class Solution:
             print(f"*** Max route cost: {self.max_cost} ***")
 
         print(self.problem.K)
-        
+
         for route, cost in zip(self.routes, self.route_costs):
             if verbose:
                 print(f"- Route cost: {cost}")
             print(len(route))
             print(" ".join(map(str, route)))
+
+
+    def sol_print(self, file_path: str):
+        """
+        Print solution to a .sol file in the TSPLIB format.
+        Remember that TSPLIB .sol format exclude depot 1 in the route.
+        """
+        with open(file_path, 'w') as f:
+            for i, route in enumerate(self.routes):
+                f.write(f"Route #{i + 1}: {' '.join(route[1:-1])}\n")
+
+            f.write(f"Cost {self.max_cost}\n")
+
+
+    def visualize(self, ax: plt.Axes) -> None:
+        """
+        Visualize the solution routes on top of the problem instance.
+        """
+        if self.problem.coords is None:
+            print("No coordinates available for visualization.")
+            return
+
+        # First visualize the problem instance (nodes)
+        self.problem.visualize(ax)
+
+        # Use matplotlib's built-in color palette
+        cmap = plt.get_cmap('tab20')
+        
+        # Draw routes
+        for route_idx, route in enumerate(self.routes):
+            route_color = cmap(route_idx % cmap.N)
+            
+            # Define style for this route's edges
+            route_edge_style = {
+            'arrowstyle': '->',
+            'lw': 1.5,
+            'color': route_color,
+            'alpha': 0.5
+            }
+            
+            # Draw edges for this route
+            for i in range(len(route) - 1):
+                from_node = route[i]
+                to_node = route[i + 1]
+                x_from, y_from = self.problem.coords[from_node]
+                x_to, y_to = self.problem.coords[to_node]
+
+                # Draw arrow with defined style
+                ax.annotate('', xy=(x_to, y_to), xytext=(x_from, y_from), 
+                        arrowprops=route_edge_style)
+
+        # Add route information to title
+        ax.set_title(f"Share-a-Ride Solution (Max Cost: {self.max_cost})")
+
+
+if __name__ == "__main__":
+    from share_a_ride.solvers.algo.greedy import greedy_balanced_solver
+    from share_a_ride.problem import ShareARideProblem
+
+    # Generate a small test instance
+    prob = generate_instance_coords(N=4, M=7, K=3, seed=42, area=100)
+
+    print("Problem instance:")
+    prob.pretty_print(verbose=1)
+
+    # Create a sample solution (you would normally get this from a solver)
+    # Example: Simple routes that visit all nodes
+    sol, info = greedy_balanced_solver(prob, verbose=0)
+
+    print("\nSolution:")
+    sol.stdin_print(verbose=1)
+
+    plt.figure(figsize=(6,6))
+    ax = plt.gca()
+    sol.visualize(ax)
+    plt.show()
 
         

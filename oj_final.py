@@ -10,7 +10,7 @@ from share_a_ride.solvers.algo.greedy import greedy_balanced_solver
 from share_a_ride.solvers.algo.greedy import iterative_greedy_balanced_solver
 from share_a_ride.problem import ShareARideProblem
 from share_a_ride.solution import Solution
-from share_a_ride.utils.probgen import generate_instance_coords
+from share_a_ride.utils.generator import generate_instance_coords
 
 
 def read_instance() -> tuple:
@@ -45,7 +45,7 @@ def main():
     )
 
     print(f"Enumeration info: {info1}")
-    sol.pretty_print(verbose=0)
+    sol.stdin_print(verbose=0)
 
 
     # sol_list3, info3 = exhaustive_enumerate(
