@@ -131,44 +131,51 @@ class Solution:
             print(" ".join(map(str, route)))
 
 
-    def sol_print(self, file_path: str):
+    def file_print(self, file_path: str):
         """
         Print solution to a .sol file in the TSPLIB format.
         Remember that TSPLIB .sol format exclude depot 1 in the route.
         """
         with open(file_path, 'w') as f:
             for i, route in enumerate(self.routes):
-                f.write(f"Route #{i + 1}: {' '.join(route[1:-1])}\n")
+                route_str = ' '.join(map(str, route[1:-1]))
+                f.write(f"Route #{i + 1}: {route_str}\n")
 
             f.write(f"Cost {self.max_cost}\n")
 
 
-    def visualize(self, ax: plt.Axes) -> None:
+    def visualize(self, ax: plt.Axes = None) -> None:
         """
         Visualize the solution routes on top of the problem instance.
+        If no Axes provided, creates a new figure and its Axes
         """
         if self.problem.coords is None:
             print("No coordinates available for visualization.")
             return
+        
+        if ax is None:
+            plt.figure(figsize=(6,6))
+            ax = plt.gca()
 
         # First visualize the problem instance (nodes)
         self.problem.visualize(ax)
 
         # Use matplotlib's built-in color palette
-        cmap = plt.get_cmap('tab20')
-        
+        cmap = plt.get_cmap('tab10')
+
         # Draw routes
         for route_idx, route in enumerate(self.routes):
             route_color = cmap(route_idx % cmap.N)
-            
+
             # Define style for this route's edges
             route_edge_style = {
-            'arrowstyle': '->',
-            'lw': 1.5,
-            'color': route_color,
-            'alpha': 0.5
+                'arrowstyle'    : '->',
+                'lw'            : 1.5,
+                'linewidth'     : 1.0,
+                'color'         : route_color,
+                'alpha'         : 0.5
             }
-            
+
             # Draw edges for this route
             for i in range(len(route) - 1):
                 from_node = route[i]
@@ -185,18 +192,24 @@ class Solution:
 
 
 if __name__ == "__main__":
+    from share_a_ride.data.parser import parse_sarp_to_problem
+    from share_a_ride.data.router import path_router
     from share_a_ride.solvers.algo.greedy import greedy_balanced_solver
+    from share_a_ride.solvers.algo.bnb import branch_and_bound_solver
     from share_a_ride.problem import ShareARideProblem
 
     # Generate a small test instance
-    prob = generate_instance_coords(N=4, M=7, K=3, seed=42, area=100)
+    in_path = path_router("H", "H-n6-m5-k3", "read")
+    prob = parse_sarp_to_problem(in_path)
 
     print("Problem instance:")
-    prob.pretty_print(verbose=1)
+    prob.pretty_print(verbose=0)
 
     # Create a sample solution (you would normally get this from a solver)
     # Example: Simple routes that visit all nodes
-    sol, info = greedy_balanced_solver(prob, verbose=0)
+    sol, info1 = greedy_balanced_solver(prob, verbose=0)
+    print(sol.max_cost)
+    sol, info2 = branch_and_bound_solver(prob, target_cost=sol.max_cost, time_limit=20.0)
 
     print("\nSolution:")
     sol.stdin_print(verbose=1)
@@ -206,4 +219,6 @@ if __name__ == "__main__":
     sol.visualize(ax)
     plt.show()
 
+    out_path = path_router("H", "H-n10-m10-k5", "solve", "bnb")
+    sol.file_print(out_path)
         

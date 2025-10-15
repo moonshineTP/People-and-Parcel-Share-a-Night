@@ -3,7 +3,7 @@ from typing import List
 
 from share_a_ride.problem import ShareARideProblem
 from share_a_ride.solution import Solution
-from share_a_ride.solvers.operator.randbuild import randbuild
+from share_a_ride.solvers.operator.build import build
 from share_a_ride.solvers.operator.destroy import destroy
 from share_a_ride.utils.helper import route_cost_from_sequence
 
@@ -263,15 +263,18 @@ def greedy_balanced_solver(
 
 def iterative_greedy_balanced_solver(
         prob: ShareARideProblem,
+        # args
         iterations: int = 10,
-        destroy_ratio: float = 0.4,  # probability of selecting one route for destruction
-        destroy_steps: int = 15,    # number of destroyed nodes for the selected route
-        rebuild_prob: float = 0.3,  # probability of rebuilding a destroyed route
-        rebuild_steps: int = 5,     # number of random actions to perform during rebuilding
         time_limit: float = 10.0,   # overall time limit in seconds
         seed: int = 42,
-        temperature: float = 1.0,   # temperature parameter for destroy heuristic
-        verbose: bool = False
+        verbose: bool = False,
+        # hyperparams
+        destroy_prob: float = 0.4, # probability of selecting one route for destruction
+        destroy_steps: int = 15,    # number of destroyed nodes for the selected route
+        destroy_T: float = 1.0,     # temperature for destroy heuristic
+        rebuild_prob: float = 0.3,  # probability of rebuilding a destroyed route
+        rebuild_steps: int = 5,     # number of random actions to perform during rebuilding
+        rebuild_T: float = 1.0,     # temperature for rebuild heuristic
     ) -> tuple:
     '''
     Iterative greedy balanced heuristic:
@@ -296,7 +299,7 @@ def iterative_greedy_balanced_solver(
             + elapsed_time: total time taken
             + status: "done" or "timeout"
     '''
-    assert 0 <= destroy_ratio <= 1
+    assert 0 <= destroy_prob <= 1
     assert 0 <= rebuild_prob <= 1
     assert 1 <= rebuild_steps <= destroy_steps
 
@@ -322,10 +325,10 @@ def iterative_greedy_balanced_solver(
     def _destroy_routes_heuristic(
             prob: ShareARideProblem,
             sol: Solution,
-            destroy_ratio: float,
+            destroy_prob: float,
             destroy_steps: int,
             seed_: int = 42,
-            temperature: float = 1.0
+            T: float = 1.0
         ) -> tuple[List[List[int]], List[bool], int]:
         '''
         Copy routes from sol and remove suffixes using temperature-based selection.
@@ -341,7 +344,7 @@ def iterative_greedy_balanced_solver(
         Args:
             prob: ShareARideProblem instance
             sol: Current solution
-            destroy_ratio: Fraction of routes to destroy (0 to 1)
+            destroy_prob: Fraction of routes to destroy (0 to 1)
             destroy_steps: Maximum number of nodes to remove per route
             seed: for reproducibility
             temperature: Controls selection randomness (default 1.0)
@@ -360,7 +363,7 @@ def iterative_greedy_balanced_solver(
         num_removed = 0
 
         # Determine how many routes to destroy
-        count = max(1, int(round(destroy_ratio * len(routes) + 0.5)))
+        count = max(1, int(round(destroy_prob * len(routes) + 0.5)))
 
         # Temperature-based selection
         costs = [sol.route_costs[idx] for idx in range(len(routes))]
@@ -385,7 +388,7 @@ def iterative_greedy_balanced_solver(
                 # Normalize to [0, 1] range to avoid overflow
                 normalized = (cost - min_cost) / cost_range
                 # Apply temperature: higher cost → higher weight
-                weight = (normalized + 0.1) ** (1.0 / temperature)
+                weight = (normalized + 0.1) ** (1.0 / T)
                 weights.append(weight)
 
             # Sample without replacement using weights
@@ -437,8 +440,8 @@ def iterative_greedy_balanced_solver(
 
         # destroy
         candidate_routes, destroyed_flags, removed = _destroy_routes_heuristic(
-            prob, best_sol, destroy_ratio, destroy_steps,
-            2 * seed + it, temperature=temperature
+            prob, best_sol, destroy_prob, destroy_steps,
+            2 * seed + it, T=destroy_T
         )
         nodes_destroyed += removed
 
@@ -452,13 +455,13 @@ def iterative_greedy_balanced_solver(
 
             # Perform random rebuilding actions
             old_len = len(candidate_routes[idx])
-            candidate_routes[idx] = randbuild(
+            candidate_routes[idx] = build(
                 prob,
                 candidate_routes[idx],
                 idx,
                 num_actions=rebuild_steps,
                 seed=(2 * seed + it + idx) if seed is not None else None,
-                temperature=1.0,
+                T=rebuild_T,
                 verbose=False
             )
             nodes_rebuilt += max(0, len(candidate_routes[idx]) - old_len)
@@ -492,5 +495,4 @@ def iterative_greedy_balanced_solver(
     }
 
     return best_sol, info
-
 

@@ -3,23 +3,23 @@ import random
 from typing import List, Optional
 from share_a_ride.problem import ShareARideProblem
 
-def randbuild(
+def build(
         prob: ShareARideProblem,
-        premature_route: List[int],
-        premature_route_idx: int,
+        route: List[int],
+        route_idx: int,
         num_actions: int = 5,
-        temperature: float = 1.0,
+        T: float = 1.0,
         seed: int = 42,
         verbose: bool = False
     ) -> List[int]:
     """
-    Build/Improve a premature route by inserting pickups/drops
-    up to num_actions steps. 
-    Use a temperature-based softmax heuristic to prefer lower-cost actions.
-    If no feasible action remains, return to depot (0) and stop early.
+        Build/Improve a premature route by inserting pickups/drops
+        up to num_actions steps. 
+        Use a temperature-based softmax heuristic to prefer lower-cost actions.
+        If no feasible action remains, return to depot (0) and stop early.
     """
     rng = random.Random(seed)
-    res_route = premature_route.copy()
+    res_route = route.copy()
 
     # initialize state from the partial route
     remaining_pass_pick = set(range(1, prob.N + 1))
@@ -50,7 +50,7 @@ def randbuild(
             remaining_parc_drop.discard(jid)
             load -= prob.q[jid - 1]
 
-    max_capacity = prob.Q[premature_route_idx]
+    max_capacity = prob.Q[route_idx]
 
 
     for step in range(num_actions):
@@ -102,7 +102,7 @@ def randbuild(
                 # map inc → [0,1], higher inc → smaller normalized
                 normalized = (max_inc - inc) / range_inc
                 # boost small normalized with epsilon, apply temp exponent
-                weights.append((normalized + 0.1) ** (1.0 / max(temperature, 1e-6)))
+                weights.append((normalized + 0.1) ** (1.0 / max(T, 1e-6)))
 
         # sample one action by these weights
         total_w = sum(weights)

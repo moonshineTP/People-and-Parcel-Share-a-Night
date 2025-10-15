@@ -30,7 +30,7 @@ def _nn_lower_bound(nodes: List[int], D: List[List[int]]) -> int:
     return total
 
 
-def branch_and_bound(
+def branch_and_bound_solver(
         problem: ShareARideProblem,
         time_limit: float = 30.0,
         verbose: bool = False,

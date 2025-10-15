@@ -68,7 +68,7 @@ class ShareARideProblem:
             print(*row)
 
 
-    def pretty_print(self, verbose: bool = 0):
+    def pretty_print(self, verbose: bool = False):
         print(f"Share-a-Ride: N={self.N} passengers, M={self.M} parcels, "
             f"K={self.K}, num_nodes={self.num_nodes}")
 

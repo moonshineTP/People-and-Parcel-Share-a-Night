@@ -182,3 +182,25 @@ def exhaustive_enumerate(
 
     # return results
     return solutions, info
+
+
+def exhaustive_solver(
+        problem: ShareARideProblem,
+        max_solutions: int = 100000,
+        time_limit: float = 30.0,
+        verbose: bool = False
+    ) -> Tuple[Solution, Dict[str, Any]]:
+    """
+    Exhaustive search solver that returns only the best solution found.
+    Uses exhaustive_enumerate internally.
+    """
+    solutions, info = exhaustive_enumerate(
+        problem,
+        max_solutions=max_solutions,
+        time_limit=time_limit,
+        verbose=verbose
+    )
+
+    best_solution = solutions[0] if solutions else None
+
+    return best_solution, info

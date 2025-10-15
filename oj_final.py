@@ -5,7 +5,7 @@
 """
 import sys
 
-from share_a_ride.solvers.algo.bnb import branch_and_bound
+from share_a_ride.solvers.algo.bnb import branch_and_bound_solver
 from share_a_ride.solvers.algo.greedy import greedy_balanced_solver
 from share_a_ride.solvers.algo.greedy import iterative_greedy_balanced_solver
 from share_a_ride.problem import ShareARideProblem
@@ -14,7 +14,9 @@ from share_a_ride.utils.generator import generate_instance_coords
 
 
 def read_instance() -> tuple:
-    """Read instance from standard input."""
+    """
+    Read instance from standard input.
+    """
 
     N, M, K = map(int, sys.stdin.readline().strip().split())
     q = list(map(int, sys.stdin.readline().split()))
@@ -37,11 +39,10 @@ def main():
     # prob: ShareARideProblem = read_instance()
     sol: Solution = None
     sol, info1 = iterative_greedy_balanced_solver(
-        prob=prob, iterations=1000, time_limit=10.0,
-        destroy_ratio=0.5, destroy_steps=6,     # tune these
-        rebuild_prob=0.3, rebuild_steps=2,      # tune these
-        temperature=1.0,
-        seed=42, verbose=True
+        prob=prob, 
+        iterations=1000, time_limit=10.0,seed=42, verbose=True,
+        destroy_prob=0.5, destroy_steps=6, destroy_T=1.0,
+        rebuild_prob=0.3, rebuild_steps=2, rebuild_T=1.0
     )
 
     print(f"Enumeration info: {info1}")
@@ -55,6 +56,7 @@ def main():
     #     sol_list3[0].pretty_print(verbose=1)
     # print("Enumeration info:", info3)
     # print(route_cost_from_sequence(sol_list3[0].routes[0], prob.D, verbose=1))
+
 
 if __name__ == "__main__":
     main()

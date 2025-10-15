@@ -1,11 +1,22 @@
-import random
+"""
+Main script to demonstrate/test the SARP solvers and utilities in each development sprint.
+"""
 
-from share_a_ride.solvers.algo.exhaustive import exhaustive_enumerate
-from share_a_ride.solvers.algo.bnb import branch_and_bound
-from share_a_ride.solvers.algo.greedy import greedy_balanced_solver
-from share_a_ride.utils.generator import generate_instance_coords, generate_instance_lazy
+import matplotlib.pyplot as plt
 
-# ---------------------- Demo / main --------------------------------------------
+from share_a_ride.data.executor import attempt_dataset
+from share_a_ride.data.router import path_router
+
+from share_a_ride.utils.generator import generate_instance_coords
+
+from share_a_ride.solvers.algo.Algo import AlgoSolver
+from share_a_ride.solvers.algo.exhaustive import exhaustive_solver
+from share_a_ride.solvers.algo.bnb import branch_and_bound_solver
+from share_a_ride.solvers.algo.greedy import greedy_balanced_solver, iterative_greedy_balanced_solver
+
+
+
+
 def demo_sprint_1():
     # Prepare type I test instances
     type_I = []
@@ -37,14 +48,13 @@ def demo_sprint_1():
         prob.pretty_print(verbose=1)
 
         # Solve
-        sols, info = exhaustive_enumerate(prob, max_solutions=2000000,
+        sol, info = exhaustive_solver(prob, max_solutions=2000000,
                 time_limit=10.0, verbose=False)
 
         # Show result info
         print("Enumeration info:", info)
-        if sols:
-            best = sols[0]
-            best.stdin_print(verbose=1)
+        if sol:
+            sol.stdin_print(verbose=1)
         else:
             print("No solution enumerated within time limit.")
         print("\n")
@@ -57,7 +67,7 @@ def demo_sprint_1():
         prob.pretty_print(verbose=1)
 
         # Solve
-        sol, info = branch_and_bound(prob, time_limit=10.0, verbose=False)
+        sol, info = branch_and_bound_solver(prob, time_limit=10.0, verbose=False)
 
         # Show result info
         print("Enumeration info:", info)
@@ -72,8 +82,32 @@ def demo_sprint_1():
         type_II_results.append((sol, info))
 
 
+
 def demo_sprint_2():
-    pass
+
+    # AlgoSolver container demo
+    chosen_solver = AlgoSolver(
+        algo=iterative_greedy_balanced_solver,
+        args={"iterations": 10000, "time_limit": 10.0, "seed": 42, "verbose": 1},
+        hyperparams={
+            "destroy_prob"      : 0.4,
+            "destroy_steps"     : 3,
+            "destroy_T"         : 1.0,
+            "rebuild_prob"      : 0.4,
+            "rebuild_steps"     : 1,
+            "rebuild_T"         : 5.0,
+        }
+    )
+
+    # Dataset attempt demo
+    sols, gaps, msg = attempt_dataset(chosen_solver, "H", note="test attempt", verbose=True)
+
+    # Visualize functionality demo
+    for sol in sols:
+        if sol:
+            sol.stdin_print(verbose=1)
+            sol.visualize()
+            plt.show()
 
 if __name__ == "__main__":
-    demo_sprint_1()
+    demo_sprint_2()
