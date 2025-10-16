@@ -1,0 +1,36 @@
+Summary: VRPLIB and Solomon instance formats
+
+
+VRPLIB (standard for CVRP):
+- Structure:
+  - Specifications: key: value lines (e.g., NAME, TYPE, EDGE_WEIGHT_TYPE, etc.).
+  - Data sections: headers ending with `_SECTION` followed by rows; each row starts with a 1-based index
+    (depot/customers). Exceptions: EDGE_WEIGHT_SECTION and DEPOT_SECTION do not include indices.
+  - Lines starting with `#` are comments and ignored.
+  - Section/spec names are flexible; vrplib accepts custom names.
+- List of specs:
+  - NAME: instance name.
+  - COMMENT: additional info.
+  - TYPE: problem type (e.g., CVRP).
+  - DIMENSION: number of nodes (including depot).
+  - CAPACITY: vehicle capacity.
+  - EDGE_WEIGHT_TYPE: EXPLICIT or EUC_2D:
+    - EXPLICIT: distances provided in EDGE_WEIGHT_SECTION.
+    - EUC_2D: distances computed from coordinates in NODE_COORD_SECTION using Euclidean formula.
+- List of sections:
+  - EDGE_WEIGHT_SECTION: full D×D distance matrix (if EDGE_WEIGHT_TYPE is EXPLICIT).
+  - NODE_COORD_SECTION: node coordinates (always exists, use to compute distances if EDGE_WEIGHT_TYPE is EUC_2D).
+  - DEMAND_SECTION: customer demands.
+  - DEPOT_SECTION: depot node index (1-based).
+- Depot indexing: conventionally 1-based in files; vrplib converts depot indices to 0-based internally.
+
+
+Solomon (for VRPTW; also used by Homberger-Gehring extensions):
+- Structure:
+  - First line: instance name.
+  - VEHICLE block: NUMBER and CAPACITY.
+  - CUSTOMER block: tabular rows with columns:
+    CUST NO., XCOORD., YCOORD., DEMAND, READY TIME, DUE DATE, SERVICE TIME.
+- Edge weights: by default computed as Euclidean distances from coordinates.
+- Parsed data typically includes: name, vehicles (NUMBER), capacity, node_coord, demand, time_window
+  ([READY TIME, DUE DATE]), service_time, and edge_weight (Euclidean).

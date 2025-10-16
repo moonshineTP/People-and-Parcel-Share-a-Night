@@ -1,95 +1,21 @@
 """
-Project 11 - People and Parcel Share a Ride Large Size
-
-Problem Description:
---------------------
-We have K taxis located at the depot (point 0). These taxis are assigned to serve
-two types of transportation requests:
-
-1. Passenger requests (N requests, indexed 1..N):
-   - Each passenger i has a pickup point i.
-   - Each passenger i has a drop-off point i + N + M.
-   - Constraint: A passenger must be transported directly from pickup to drop-off
-     without intermediate stops in between.
-
-2. Parcel requests (M requests, indexed 1..M):
-   - Each parcel i has a pickup point i + N.
-   - Each parcel i has a drop-off point i + 2N + M.
-   - Each parcel i has a quantity q[i].
-   - Each taxi k has a maximum parcel capacity Q[k].
-
-Travel distances:
-- d(i,j) is the distance from point i to point j,
-  where i, j ∈ {0, 1, 2, ..., 2N + 2M}.
-- Point 0 is the depot.
-
-Objective:
-----------
-Construct feasible routes for the K taxis such that:
-- Every passenger and parcel request is served exactly once.
-- For passengers: pickup → drop-off is a direct trip (no interruptions).
-- For parcels: taxi capacities Q[k] must not be exceeded.
-- Each route starts and ends at the depot (0).
-- The maximum route length among all K taxis is minimized
-  (load balancing between taxis).
-
-Route representation:
----------------------
-A route of taxi k is represented as a sequence:
-    r[0], r[1], ..., r[Lk]
-where:
-- r[0] = r[Lk] = 0 (starts and ends at depot)
-- Lk is the length of the route (number of visited points)
-
-Input format:
--------------
-Line 1: N M K
-Line 2: q[1] q[2] ... q[M]                (parcel quantities)
-Line 3: Q[1] Q[2] ... Q[K]                (taxi capacities)
-Next (2N + 2M + 1) lines: distance matrix d(i,j)
-
-Output format:
---------------
-Line 1: integer K (number of taxis)
-For each taxi k = 1..K:
-    Line 2k  : integer Lk (length of route)
-    Line 2k+1: sequence r[0] ... r[Lk]
-
-Example:
---------
-Input:
-3 3 2
-8 4 5
-16 16
-0 8 7 9 6 5 11 6 11 12 12 12 13
-8 0 4 1 2 8 5 13 19 12 4 8 9
-7 4 0 3 3 8 4 12 15 8 5 6 7
-9 1 3 0 3 9 4 14 19 11 3 7 8
-6 2 3 3 0 6 6 11 17 11 6 9 10
-5 8 8 9 6 0 12 5 16 15 12 15 15
-11 5 4 4 6 12 0 16 18 7 4 3 4
-6 13 12 14 11 5 16 0 15 18 17 18 19
-11 19 15 19 17 16 18 15 0 13 21 17 17
-12 12 8 11 11 15 7 18 13 0 11 5 4
-12 4 5 3 6 12 4 17 21 11 0 7 8
-12 8 6 7 9 15 3 18 17 5 7 0 1
-13 9 7 8 10 15 4 19 17 4 8 1 0
-
-Output:
-2
-6
-0 5 1 7 11 0
-10
-0 4 6 10 3 9 12 2 8 0
+Module defining the Share-a-Ride Problem (SARP) class and related functionalities.
 """
+from __future__ import annotations
+from typing import TYPE_CHECKING, Optional
+from typing import List, Tuple
 
-from typing import List
+if TYPE_CHECKING:
+    import matplotlib.pyplot as plt
+
 
 class ShareARideProblem:
-    def __init__(self, N: int, M: int, K: int,
-                parcel_qty: List[int], vehicle_caps: List[int],
-                dist: List[List[int]]):
-        
+    def __init__(
+            self, N: int, M: int, K: int,
+            parcel_qty: List[int], vehicle_caps: List[int],
+            dist: List[List[int]], coords: Optional[List[Tuple[int, int]]] = None
+        ):
+
         # Basic parameters
         self.N = N
         self.M = M
@@ -98,13 +24,14 @@ class ShareARideProblem:
         self.Q = list(vehicle_caps)
         self.D = [row[:] for row in dist]
         self.num_nodes = 2*N + 2*M + 1
+        self.num_requests = N + M
 
         # index helpers
         self.ppick = lambda i: i
         self.pdrop = lambda i: N + M + i
         self.parc_pick = lambda j: N + j
         self.parc_drop = lambda j: 2*N + M + j
-        
+
         self.rev_ppick = lambda i: i
         self.rev_pdrop = lambda n: n - (N + M)
         self.rev_parc_pick = lambda n: n - N
@@ -116,18 +43,197 @@ class ShareARideProblem:
         self.is_parc_pick = lambda x: N + 1 <= x <= N + M
         self.is_parc_drop = lambda x: 2 * N + M + 1 <= x <= 2 * (N + M)
 
+        # Coordinate (mainly for visualization)
+        self.coords = coords
+
+
+    def is_valid(self) -> bool:
+        try:
+            assert len(self.q) == self.M
+            assert len(self.Q) == self.K
+            assert len(self.D) == self.num_nodes
+            assert all(len(row) == self.num_nodes for row in self.D)
+            assert len(self.coords) == self.num_nodes \
+                if self.coords is not None else True
+
+            return True
+        except:
+            return False
+
     def copy(self):
         return ShareARideProblem(self.N, self.M, self.K,
             list(self.q), list(self.Q), [row[:] for row in self.D]
         )
 
-    def pretty_print(self, verbose: int = 0):
+
+    def stdin_print(self):
+        print(self.N, self.M, self.K)
+        print(*self.q)
+        print(*self.Q)
+        for row in self.D:
+            print(*row)
+
+
+    def pretty_print(self, verbose: bool = False):
         print(f"Share-a-Ride: N={self.N} passengers, M={self.M} parcels, "
             f"K={self.K}, num_nodes={self.num_nodes}")
-        
+
         if verbose >= 1:
             print("Parcel quantities (q):", self.q)
             print("Vehicle capacities (Q):", self.Q)
             print("Distance matrix D:")
             for row in self.D:
                 print(" ", row)
+
+
+    def to_sarp_text(self) -> str:
+        dimension = self.num_nodes
+
+        if not self.is_valid():
+            raise ValueError("Instance data is invalid.")
+        if self.coords is None:
+            raise ValueError("Coordinates are required for SARP text export.")
+
+        name = getattr(self, "name", "Generated_SARP")
+        comment = getattr(self, "comment", f"Generated by 'share_a_ride.util.generator. "
+                            f"Node count: N={self.N}, M={self.M}, K={self.K}")
+
+        lines: List[str] = []
+        lines.append(f"NAME : {name}")
+        lines.append(f"COMMENT : {comment}")
+        lines.append("TYPE : SARP")
+        lines.append(f"DIMENSION : {dimension}")
+        lines.append("EDGE_WEIGHT_TYPE : EXPLICIT")
+        lines.append("EDGE_WEIGHT_FORMAT : FULL_MATRIX")
+        if len(set(self.Q)) == 1:
+            lines.append(f"CAPACITY : {self.Q[0]}")
+
+        lines.append("")
+        lines.append("EDGE_WEIGHT_SECTION")
+        for row in self.D:
+            lines.append(" ".join(str(value) for value in row))
+        lines.append("EOF_EDGE_WEIGHT_SECTION")
+
+        lines.append("")
+        lines.append("NODE_COORD_SECTION")
+        for idx, (x, y) in enumerate(self.coords, start=1):
+            lines.append(f"{idx} {x} {y}")
+        lines.append("EOF_NODE_COORD_SECTION")
+
+        lines.append("")
+        lines.append("NODE_TYPE_SECTION")
+        for idx in range(dimension):
+            node_id = idx + 1
+            if idx == 0:
+                node_type = 0
+            elif self.is_ppick(idx):
+                node_type = 1
+            elif self.is_parc_pick(idx):
+                node_type = 2
+            elif self.is_pdrop(idx):
+                node_type = 3
+            elif self.is_parc_drop(idx):
+                node_type = 4
+            else:
+                raise ValueError("Invalid node index encountered.")
+            
+            lines.append(f"{node_id} {node_id} {node_type}")
+        lines.append("EOF_NODE_TYPE_SECTION")
+
+        lines.append("")
+        lines.append("PAIR_SECTION")
+        pair_id = 1
+        for i in range(1, self.N + 1):
+            pickup = self.ppick(i) + 1
+            drop = self.pdrop(i) + 1
+            lines.append(f"{pair_id} {pickup} P {drop}")
+            pair_id += 1
+        for j in range(1, self.M + 1):
+            pickup = self.parc_pick(j) + 1
+            drop = self.parc_drop(j) + 1
+            lines.append(f"{pair_id} {pickup} L {drop}")
+            pair_id += 1
+        lines.append("EOF_PAIR_SECTION")
+
+        lines.append("")
+        lines.append("VEHICLE_CAPACITY_SECTION")
+        for vehicle_id, cap in enumerate(self.Q, start=1):
+            lines.append(f"{vehicle_id} {vehicle_id} {cap}")
+        lines.append("EOF_VEHICLE_CAPACITY_SECTION")
+
+        lines.append("")
+        lines.append("PARCEL_QUANTITY_SECTION")
+        for idx, qty in enumerate(self.q, start=1):
+            pickup = self.parc_pick(idx) + 1
+            lines.append(f"{idx} {pickup} {qty}")
+        lines.append("EOF_PARCEL_QUANTITY_SECTION")
+
+        lines.append("")
+        lines.append("DEPOT_SECTION")
+        lines.append("1")
+        lines.append("EOF_DEPOT_SECTION")
+
+        lines.append("")
+        lines.append("EOF")
+
+        return "\n".join(lines) + "\n"
+
+
+    def visualize(self, ax: plt.Axes) -> None:
+        """
+        Visualize the problem instance (nodes) on the given Axes.
+        If no Axes provided, creates a new figure and its Axes.
+        You should import matplotlib.pyplot as plt before using this function.
+        """
+        if self.coords is None:
+            print("No coordinates available for visualization.")
+            return
+
+        styles = {
+            "depot": {"marker": "s", "color": "black", "label": "Depot"},
+            "ppick": {"marker": "o", "color": "tab:blue", "label": "Passenger pickup"},
+            "pdrop": {"marker": "o", "color": "tab:cyan", "label": "Passenger drop"},
+            "parc_pick": {"marker": "^", "color": "tab:orange", "label": "Parcel pickup"},
+            "parc_drop": {"marker": "^", "color": "tab:olive", "label": "Parcel drop"},
+        }
+
+        legend_handles = {}
+        for idx, (x, y) in enumerate(self.coords):
+            if idx == 0:
+                style_key = "depot"
+            elif self.is_ppick(idx):
+                style_key = "ppick"
+            elif self.is_parc_pick(idx):
+                style_key = "parc_pick"
+            elif self.is_pdrop(idx):
+                style_key = "pdrop"
+            elif self.is_parc_drop(idx):
+                style_key = "parc_drop"
+            else:
+                continue
+
+            style = styles[style_key]
+            label = style["label"] if style_key not in legend_handles else "_nolegend_"
+            scatter = ax.scatter(
+                x, y, marker=style["marker"], color=style["color"], label=label,
+            )
+            if style_key not in legend_handles:
+                legend_handles[style_key] = scatter
+
+            ax.text(x, y, str(idx), fontsize=8, ha="left", va="bottom")
+
+
+        ax.set_title("Share-a-Ride Instance")
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        if legend_handles:
+            ax.legend(
+                handles=legend_handles.values(),
+                labels=[styles[key]["label"] for key in legend_handles],
+                loc="upper left",
+                bbox_to_anchor=(1.02, 1),
+                fontsize=8,
+                frameon=True,
+            )
+        ax.axis("equal")
+        ax.grid(True, linestyle="--", color="gray", alpha=0.2)
