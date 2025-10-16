@@ -22,11 +22,9 @@ Module defining the Share-a-Ride Problem (SARP) class and related functionalitie
 
 
 class ShareARideProblem:
-    def __init__(
-            self, N: int, M: int, K: int,
-            parcel_qty: List[int], vehicle_caps: List[int],
-            dist: List[List[int]], coords: Optional[List[Tuple[int, int]]] = None
-        ):
+    def __init__(self, N: int, M: int, K: int,
+                parcel_qty: List[int], vehicle_caps: List[int],
+                dist: List[List[int]], coords: List[Tuple[int, int]] = []):
 
         # Basic parameters
         self.N = N
@@ -226,7 +224,7 @@ class Solution:
     - max_length: int (objective to minimize)
     """
     def __init__(self, problem: ShareARideProblem,
-                routes: List[List[int]], route_costs: Optional[List[int]] = None):
+                routes: List[List[int]], route_costs: List[int] = []):
 
         if problem is None:
             raise ValueError("Problem instance cannot be None.")
@@ -517,14 +515,14 @@ class PartialSolution:
         )
     
 
-    def possible_actions(self, t_idx: int) -> List[tuple[str, int, int]]:
+    def possible_actions(self, t_idx: int) -> List[Tuple[str, int, int]]:
         state = self.route_states[t_idx]
         if state["ended"]:
             return []
 
         prob = self.problem
         pos = state["pos"]
-        actions: List[tuple[str, int, int]] = []
+        actions: List[Tuple[str, int, int]] = []
 
         if state["passenger"] == 0:
             for pid in list(self.remaining_pass_pick):
@@ -627,13 +625,12 @@ class PartialSolution:
         return all(state["ended"] for state in self.route_states)
 
 
-    def to_solution(self) -> Optional[Solution]:
+    def to_solution(self) -> Solution:
         """
         Convert the PartialSolution to a full Solution if complete.
         """
         if not self.is_complete():
-            print("Cannot convert to Solution: not all routes have ended at depot.")
-            return None
+            raise ValueError("Cannot convert to Solution: not all routes have ended at depot.")
 
         solution = Solution(
             problem=self.problem,
@@ -943,7 +940,7 @@ def destroy_operator(
         sol: Solution,
         destroy_proba: float,
         destroy_steps: int,
-        seed: int = 42,
+        seed: int = None,
         T: float = 1.0
     ) -> Tuple[PartialSolution, List[bool], int]:
     """
@@ -1049,7 +1046,7 @@ def destroy_operator(
 
 def greedy_balanced_solver(
         prob: ShareARideProblem,
-        premature_routes: List[List[int]] = [],
+        premature_routes: List[List[int]] = None,
         verbose: bool = False
     ) -> Tuple[Optional[Solution], Dict[str, Any]]:
     """
@@ -1327,3 +1324,4 @@ if __name__ == "__main__":
     main()
 
 # ----- file oj.py end -----
+
