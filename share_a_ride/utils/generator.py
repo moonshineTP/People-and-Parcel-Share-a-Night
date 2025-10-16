@@ -61,7 +61,7 @@ def random_distance_matrix(
         n: int,
         low: int = 5,
         high: int = 20,
-        lmbd: Optional[float] = None,
+        lmbd: float = 10.0,
         asymmetric: bool = False,
         seed: int = 42,
     ) -> List[List[int]]:

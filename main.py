@@ -1,11 +1,8 @@
 """
 Main script to demonstrate/test the SARP solvers and utilities in each development sprint.
 """
-
-import matplotlib.pyplot as plt
-
 from share_a_ride.data.executor import attempt_dataset
-from share_a_ride.data.router import path_router
+from share_a_ride.data.summarizer import summarize_dataset
 
 from share_a_ride.utils.generator import generate_instance_coords
 
@@ -84,16 +81,15 @@ def demo_sprint_1():
 
 
 def demo_sprint_2():
-
     # AlgoSolver container demo
     chosen_solver = AlgoSolver(
         algo=iterative_greedy_balanced_solver,
         args={"iterations": 10000, "time_limit": 10.0, "seed": 42, "verbose": 1},
         hyperparams={
-            "destroy_prob"      : 0.4,
+            "destroy_proba"      : 0.4,
             "destroy_steps"     : 3,
             "destroy_T"         : 1.0,
-            "rebuild_prob"      : 0.4,
+            "rebuild_proba"      : 0.4,
             "rebuild_steps"     : 1,
             "rebuild_T"         : 5.0,
         }
@@ -107,7 +103,43 @@ def demo_sprint_2():
         if sol:
             sol.stdin_print(verbose=1)
             sol.visualize()
-            plt.show()
+
+
+def demo_sprint_3():
+    solver_bnb = AlgoSolver(
+        algo=branch_and_bound_solver,
+        args={"time_limit": 5.0, "verbose": 0},
+        hyperparams={}
+    )
+    sols1, gaps1, msg1 = attempt_dataset(
+        solver_bnb,
+        "H",
+        note="test BnB and Iterative greedy on H dataset",
+        verbose=True
+    )
+    summarize_dataset("H", verbose=True)
+
+    solver_iter_greedy = AlgoSolver(
+        algo=iterative_greedy_balanced_solver,
+        args={"iterations": 10000, "time_limit": 10.0, "seed": 42, "verbose": 1},
+        hyperparams={
+            "destroy_proba"      : 0.5,
+            "destroy_steps"     : 5,
+            "destroy_T"         : 1.0,
+            "rebuild_proba"      : 0.3,
+            "rebuild_steps"     : 2,
+            "rebuild_T"         : 5.0,
+        }
+    )
+    sols2, gaps2, msg2 = attempt_dataset(
+        solver_iter_greedy,
+        "H",
+        note="test BnB and Iterative greedy on H dataset",
+        verbose=True
+    )
+    summarize_dataset("H", verbose=True)
+
+
 
 if __name__ == "__main__":
-    demo_sprint_2()
+    demo_sprint_3()

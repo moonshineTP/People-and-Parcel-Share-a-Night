@@ -1,5 +1,7 @@
 from typing import Any, Callable, Dict, Optional
 
+from share_a_ride.problem import ShareARideProblem
+
 
 class Policy():
     """
@@ -9,23 +11,20 @@ class Policy():
 
     def __init__(
             self,
-            problem: Any,
             policy: Callable[..., float],
             args: Optional[Dict[str, Any]] = None,
             hyperparams: Optional[Dict[str, Any]] = None
         ):
         """
-        Initialize the policy solver with problem instance and policy function.
+        Initialize the policy solver with policy function.
         
         Params:
-        - problem: Problem instance to solve
         - policy: Callable implementing the policy function
         - args: Additional arguments for the policy
             (e.g. time_limit, verbose, seed)
         - hyperparams: Dictionary of policy-specific hyperparameters
             (e.g. temperature, exploration_rate, model parameters, etc.)
         """
-        self.problem = problem
         self.policy = policy
         self.args = args or {}
         self.hyperparams = hyperparams or {}
@@ -33,20 +32,26 @@ class Policy():
         self.is_trained = False # For learning-based policies
 
 
-    def execute(self, state: Any) -> Any:
+    def execute(
+            self,
+            problem: ShareARideProblem,
+            state: Any
+        ) -> Any:
         """
         Execute the policy function on the given state.
         
         Params:
-        - state: Current state to evaluate
-        - kwargs: Additional execution arguments
+        - problem: ShareARideProblem instance
+        - state: Current state representation for the policy
+            (e.g. current routes, unassigned requests, etc.)
+            This will be implemented later.
         
         Returns:
         (action, info): tuple where
             - action: Selected action from the policy
             - info: Dictionary with execution statistics
         """
-        action = self.policy(self.problem, state, **self.args, **self.hyperparams)
+        action = self.policy(problem, state, **self.args, **self.hyperparams)
 
         return action
 

@@ -5,11 +5,9 @@
 """
 import sys
 
-from share_a_ride.solvers.algo.bnb import branch_and_bound_solver
-from share_a_ride.solvers.algo.greedy import greedy_balanced_solver
+from share_a_ride.solvers.algo.Algo import AlgoSolver
 from share_a_ride.solvers.algo.greedy import iterative_greedy_balanced_solver
 from share_a_ride.problem import ShareARideProblem
-from share_a_ride.solution import Solution
 from share_a_ride.utils.generator import generate_instance_coords
 
 
@@ -29,23 +27,15 @@ def read_instance() -> tuple:
     return ShareARideProblem(N, M, K, q, Q, D)
 
 def main():
-    prob: ShareARideProblem = generate_instance_coords(
-        area=100.0, N = 10, M = 40, K = 5,
-        qlmbd=12.0, Qlmbd=18.0,
-        seed=42
-    )
-    prob.stdin_print()
-
-    # prob: ShareARideProblem = read_instance()
-    sol: Solution = None
+    prob: ShareARideProblem = read_instance()
     sol, info1 = iterative_greedy_balanced_solver(
         prob=prob, 
-        iterations=1000, time_limit=10.0,seed=42, verbose=True,
-        destroy_prob=0.5, destroy_steps=6, destroy_T=1.0,
-        rebuild_prob=0.3, rebuild_steps=2, rebuild_T=1.0
+        iterations=10000, time_limit=10.0, seed=42, verbose=0,
+        destroy_proba=0.5, destroy_steps=min(6, prob.num_nodes // (2 * prob.K) + 1), destroy_T=1.0,
+        rebuild_proba=0.3, rebuild_steps=2, rebuild_T=5.0
     )
 
-    print(f"Enumeration info: {info1}")
+    # print(f"Enumeration info: {info1}")
     sol.stdin_print(verbose=0)
 
 

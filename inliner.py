@@ -8,13 +8,13 @@ import os
 sys.path.insert(0, os.getcwd()) 
 
 # This is file to start from.
-starting_file = 'oj_final.py'
+starting_file = 'oj.py'
 
 # This is output (inlined) file.
 # CHANGE THIS FOR REAL
 output_file = r'C:\Users\admin\Desktop\submission.py'
 
-LOCAL_SOURCE_FOLDERS = ['share_a_ride', 'utils']
+LOCAL_SOURCE_FOLDERS = ['share_a_ride']
 
 # ----------------------------------
 

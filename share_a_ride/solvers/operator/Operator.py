@@ -7,9 +7,8 @@ class Operator():
     """
     def __init__(
             self,
-            problem: ShareARideProblem,
             operator: Callable,
-            args: Dict[str, Any] = None
+            args: Dict[str, Any] = {}
         ):
         """
         Initialize the operator with problem instance and parameters.
@@ -20,12 +19,11 @@ class Operator():
             - args: Arguments for the operator execution
                 (e.g., max_remove, num_actions, T, seed, verbose)
         """
-        self.problem = problem
         self.operator = operator
         self.args = args or {}
 
 
-    def apply(self, route: List[int]) -> List[int]:
+    def apply(self, problem: ShareARideProblem, route: List[int]) -> List[int]:
         """
         Apply the operator to a given route.
         Params:
@@ -36,7 +34,7 @@ class Operator():
  
         
         # Apply operator with problem instance and route
-        res_route = self.operator(self.problem, route, **self.args)
+        res_route = self.operator(problem, route, **self.args)
         
         return res_route
 

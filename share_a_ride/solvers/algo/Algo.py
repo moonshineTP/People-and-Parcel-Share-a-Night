@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Any, Optional, Tuple
+from typing import Callable, Dict, Any, List, Optional, Tuple
 
 from share_a_ride.problem import ShareARideProblem
 from share_a_ride.solution import Solution
@@ -51,7 +51,6 @@ class AlgoSolver():
             - hyperparams: Dictionary of algorithms hyperparameters (if applicable)
         """
         # Solver state
-        self.problem = problem
         self.algo = algo
         self.args = args or {}
         self.hyperparams = hyperparams or {}
@@ -61,40 +60,44 @@ class AlgoSolver():
         self.desc = f"{self.name} Solver"
 
 
-    def solve(self) -> Tuple[Optional[Solution], Dict[str, Any]]:
+    def solve(
+            self,
+            problem: ShareARideProblem
+        ) -> Tuple[Optional[Solution], Dict[str, Any]]:
         """
-        Main solving method to be implemented by each solver.
-        
-        Returns:
-            (solution, info): tuple where
-                - solution: Best Solution object found (or None if none found)
-                - info: Dictionary with statistics including:
-                    + elapsed_time: Total time taken
-                    + status: "done" or "timeout"
-                    + solver-specific metrics
+        Main solving method to execute the solver.
+        Params:
+            - problem: ShareARideProblem instance to solve
+        Returns: (solution, info): tuple where
+        - solution: Best Solution object found (or None if none found)
+        - info: Dictionary with statistics including:
+            + elapsed_time: Total time taken
+            + status: "done" or "timeout"
+            + solver-specific metrics
         """
-        sol, info = self.algo(self.problem, **self.args, **self.hyperparams)
+        sol, info = self.algo(problem, **self.args, **self.hyperparams)
 
         return sol, info
 
 
     def tune(
             self,
+            problem: ShareARideProblem,
+            n_trials: int,
             lb_hyperparams: Dict[str, Any],
             ub_hyperparams: Dict[str, Any],
-            n_trials: int = 10,
         ) -> Dict[str, Any]:
         """
         Hyperparameter tuning method to be implemented by each solver.
-        
+
         Params:
-            - init_arg: Initial arguments for the algorithm.
+            - problems: List of ShareARideProblem instances for tuning              
+            - n_trials: Number of tuning trials to perform
             - lb_hyperparams: Lower bounds for hyperparameters. 
                 If the hyperparameter is non-numeric, this should be a list of possible values.
             - ub_hyperparams: Upper bounds for hyperparameters.
                 If the hyperparameter is non-numeric, this should be a list of possible values.
-            - n_trials: Number of tuning trials to perform
-        
+
         Returns:
             best_hyperparams: Dictionary of best found hyperparameters
         """
@@ -123,7 +126,7 @@ class AlgoSolver():
                     suggested_hyperparams[key] = lb_val
 
             # Run solver with suggested hyperparameters
-            sol, info = self.algo(self.problem, **self.args, **suggested_hyperparams)
+            sol, info = self.algo(problem, **self.args, **suggested_hyperparams)
 
             # Return objective value (max_cost to minimize)
             if sol is None:
@@ -154,3 +157,7 @@ class AlgoSolver():
             - filepath: Path to load the solver configuration from
         """
         pass
+
+
+class HybridAlgoSolver():
+    pass

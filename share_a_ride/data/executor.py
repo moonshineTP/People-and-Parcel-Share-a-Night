@@ -189,9 +189,6 @@ def attempt_instance(
         instance_path = path_router(dataset, "readfile", filename=instance_name)
         prob = parse_sarp_to_problem(instance_path)
 
-        # Update solver's problem
-        solver.problem = prob
-
         # Get solver arguments data
         solver_name = solver.name
         seed = solver.args.get('seed', None)
@@ -200,11 +197,11 @@ def attempt_instance(
 
         # Solve the instance
         timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-        sol, info = solver.solve()
+        sol, info = solver.solve(problem=prob)
 
         # Extract results
         status = info.get('status', 'unknown')
-        elapsed_time = info.get('elapsed_time', 'unknown')
+        elapsed_time = info.get('time', 'unknown')
         cost = sol.max_cost if sol is not None else None
 
         # Calculate gap percentage
@@ -220,7 +217,7 @@ def attempt_instance(
         # Remove redundant fields from info for CSV
         info_copy = info.copy()
         info_copy.pop('status', None)
-        info_copy.pop('elapsed_time', None)
+        info_copy.pop('time', None)
         info_json = json.dumps(info_copy) if info_copy else "{}"
 
         # Write to CSV
@@ -236,20 +233,21 @@ def attempt_instance(
 
 
     except Exception as e:
-        if verbose:
-            print(f"Error occurred: {str(e)}")
+        raise e
+        # if verbose:
+        #     print(f"Error occurred: {str(e)}")
 
-        # Write error to CSV
-        timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-        with open(csv_path, 'a', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                attempt_id, timestamp, dataset, instance_name,
-                solver.name, None, None, "{}", "error", 0,
-                None, "{}", f"{str(e)}"
-            ])
+        # # Write error to CSV
+        # timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        # with open(csv_path, 'a', newline='', encoding='utf-8') as f:
+        #     writer = csv.writer(f)
+        #     writer.writerow([
+        #         attempt_id, timestamp, dataset, instance_name,
+        #         solver.name, None, None, "{}", "error", 0,
+        #         None, "{}", f"{str(e)}"
+        #     ])
 
-        return (None, 0.0, f"{instance_name}: error ({str(e)})")
+        # return (None, 0.0, f"{instance_name}: error ({str(e)})")
 
 
 if __name__ == "__main__":
@@ -257,13 +255,13 @@ if __name__ == "__main__":
         algo=iterative_greedy_balanced_solver,
         args={"iterations": 10000, "time_limit": 10.0, "seed": 42, "verbose": 1},
         hyperparams={
-            "destroy_prob"      : 0.5,
-            "destroy_steps"     : 3,
+            "destroy_proba"      : 0.5,
+            "destroy_steps"     : 5,
             "destroy_T"         : 1.0,
-            "rebuild_prob"      : 0.3,
-            "rebuild_steps"     : 1,
-            "rebuild_T"         : 1.0,
+            "rebuild_proba"      : 0.3,
+            "rebuild_steps"     : 2,
+            "rebuild_T"         : 5.0,
         }
     )
 
-    sol, gap, msg = attempt_dataset(chosen_solver, "H", note="test attempt", verbose=True)
+    sol, gap, msg = attempt_instance(chosen_solver, "H", "H-n10-m10-k5", note="test attempt", verbose=True)

@@ -1,14 +1,20 @@
 """
 Module defining the Share-a-Ride Problem (SARP) class and related functionalities.
 """
+from __future__ import annotations
+from typing import TYPE_CHECKING, Optional
 from typing import List, Tuple
-import matplotlib.pyplot as plt
+
+if TYPE_CHECKING:
+    import matplotlib.pyplot as plt
 
 
 class ShareARideProblem:
-    def __init__(self, N: int, M: int, K: int,
-                parcel_qty: List[int], vehicle_caps: List[int],
-                dist: List[List[int]], coords: List[Tuple[int, int]] = None):
+    def __init__(
+            self, N: int, M: int, K: int,
+            parcel_qty: List[int], vehicle_caps: List[int],
+            dist: List[List[int]], coords: Optional[List[Tuple[int, int]]] = None
+        ):
 
         # Basic parameters
         self.N = N
@@ -174,6 +180,11 @@ class ShareARideProblem:
 
 
     def visualize(self, ax: plt.Axes) -> None:
+        """
+        Visualize the problem instance (nodes) on the given Axes.
+        If no Axes provided, creates a new figure and its Axes.
+        You should import matplotlib.pyplot as plt before using this function.
+        """
         if self.coords is None:
             print("No coordinates available for visualization.")
             return
@@ -226,33 +237,3 @@ class ShareARideProblem:
             )
         ax.axis("equal")
         ax.grid(True, linestyle="--", color="gray", alpha=0.2)
-
-
-if __name__ == "__main__":
-    from share_a_ride.utils.generator import generate_instance_coords
-    import matplotlib.pyplot as plt
-
-    params_list = {    # N, M, K
-        "H-n3-m4-k2": [3, 4, 2],
-        "H-n6-m5-k3": [6, 5, 3],
-        "H-n10-m10-k5": [10, 10, 5],
-        "H-n20-m15-k8": [20, 15, 8],
-        "H-n30-m25-k10": [30, 25, 10]
-    }
-    fig, ax = plt.subplots(1, 1, figsize=(7, 7))
-
-    for id, (key, params) in enumerate(params_list.items()):
-        prob = generate_instance_coords(
-            N = params[0], M = params[1], K = params[2], seed=id*id + 1000, area=100
-        )
-
-        if id == 0:
-            prob.visualize(ax)
-
-        sarp_text = prob.to_sarp_text()
-        with open(f"share_a_ride/data/sanity/H/{key}.sarp", "w") as f:
-            f.write(sarp_text)
-
-    plt.tight_layout()
-    plt.show()
-    

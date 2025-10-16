@@ -29,19 +29,20 @@ def path_router(
     """
 
     act_to_ext = {
-        "readfile"  :".sarp",
-        "solve"     :".sol",
+        "readfile"  : ".sarp",
+        "solve"     : ".sol",
     }
 
     dts_to_pur = {
-        "H"         :"sanity",
-        "Li"        :"benchmark",
-        "Solomon"   :"benchmark",
-        "Pyvrp"     :"benchmark",
-        "Golden"    :"benchmark",
-        "Cvrplib"   :"train",
-        "CMT"       :"val",
-        "tai"       :"test",
+        "H"         : "sanity",
+        "Exact"     : "sanity",
+        "Li"        : "benchmark",
+        "Solomon"   : "benchmark",
+        "Pyvrp"     : "benchmark",
+        "Golden"    : "benchmark",
+        "Cvrplib"   : "train",
+        "CMT"       : "val",
+        "tai"       : "test",
     }
 
     base_dir = os.path.dirname(__file__)

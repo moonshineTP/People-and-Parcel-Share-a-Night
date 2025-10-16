@@ -12,7 +12,6 @@ class LearnerSolver():
 
     def __init__(
             self,
-            problem: Optional[ShareARideProblem] = None,
             model: Any = None,
             args: Dict[str, Any] = {},
             hyperparams: Dict[str, Any] = {}
@@ -28,11 +27,10 @@ class LearnerSolver():
                 (e.g. learning_rate, epochs, hidden_units, batch_size, etc.)
         """
         # Learner state
-        self.problem = problem
         self.model = model
         self.args = args or {}
         self.hyperparams = hyperparams or {}
-        
+
         # Metadata
         self.name = "Learner (Not implemented)"
         self.is_trained = False
@@ -63,20 +61,23 @@ class LearnerSolver():
         """
         pass
 
+
     def predict(
             self,
-            state: Any = None
+            problem: ShareARideProblem,
+            sol_state: Any = None
         ) -> Any:
         """
         Use the trained model to generate a prediction for the given problem.
         (e.g. action, route, assignment, etc.)
         Params:
             - problem: ShareARideProblem instance to solve
-                If None, uses self.problem
+            - sol_state: current solution state (if applicable)
         Returns:
             - prediction: Model's prediction output
         """
         return None
+
 
     def solve(self) -> Tuple[Optional[Solution], Dict[str, Any]]:
         """

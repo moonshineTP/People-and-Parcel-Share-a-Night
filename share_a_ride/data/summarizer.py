@@ -220,9 +220,9 @@ def summarize_instance(
         print(  f"  Best cost: {summary['best_cost']}")
         if summary['cost_improvement'] not in [None, 0]:
             print(
-                f"  Improvement found: " \
-                f"  - Cost decreased: {summary['cost_improvement']}" \
-                f"  - Gap: {summary['percentage_improvement']}%"
+                f"  Improvement found:\n" \
+                f"    - Cost decreased: {summary['cost_improvement']}\n" \
+                f"    - Gap: {summary['percentage_improvement']} %\n"
             )
         print()
 
