@@ -5,12 +5,12 @@
 
 import math
 import random
-from typing import Optional, List, Tuple
-from share_a_ride.problem import ShareARideProblem
+from typing import Optional
+from share_a_ride.core.problem import ShareARideProblem
 
 
 def _generate_cost_value(
-        i: int, j: int, D: List[List[int]], rng: random.Random, 
+        i: int, j: int, D: list[list[int]], rng: random.Random,
         low: int, high: int, lmbd: Optional[float], asymmetric: bool
     ) -> int:
     """
@@ -64,7 +64,7 @@ def random_distance_matrix(
         lmbd: float = 10.0,
         asymmetric: bool = False,
         seed: int = 42,
-    ) -> List[List[int]]:
+    ) -> list[list[int]]:
     """
     Generate a random symmetric or asymmetric distance matrix.
     """
@@ -79,8 +79,8 @@ def random_distance_matrix(
 
 
 def euclidean_distance_matrix(
-        coords: List[Tuple[float, float]]
-    ) -> List[List[int]]:
+        coords: list[tuple[float, float]]
+    ) -> list[list[int]]:
     """
     Compute pairwise Euclidean distance matrix from coordinates, 
     rounding distances to the nearest integer.
@@ -122,7 +122,7 @@ def generate_instance_lazy(
     else:
         q = [rng.randint(qlow, qhigh) for _ in range(M)]
         Q = [rng.randint(Qlow, Qhigh) for _ in range(K)]
-        D = random_distance_matrix(n_nodes, low=low, high=high, lmbd=None,
+        D = random_distance_matrix(n_nodes, low=low, high=high, lmbd=lmbd,
                                asymmetric=True, seed=seed)
     
     return ShareARideProblem(N, M, K, q, Q, D)
@@ -143,11 +143,14 @@ def generate_instance_coords(
     total_points = 1 + 2 * N + 2 * M
 
     # Generate depot and random coordinates, ensuring no overlaps
-    coords = [(area / 2.0, area / 2.0)]
-    used_coords = {(area / 2.0, area / 2.0)}
+    coords: list[tuple[int, int]] = [(area // 2.0, area // 2.0)]
+    used_coords: set[tuple[int, int]] = {(area // 2.0, area // 2.0)}
 
     while len(coords) < total_points:
-        new_coord = (round(rng.random() * area), round(rng.random() * area))
+        new_coord = (
+            round(rng.random() * area + 0.5), 
+            round(rng.random() * area + 0.5)
+        )
         if new_coord not in used_coords:
             coords.append(new_coord)
             used_coords.add(new_coord)

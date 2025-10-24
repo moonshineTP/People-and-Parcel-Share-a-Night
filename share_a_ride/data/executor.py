@@ -20,25 +20,42 @@ import os
 import csv
 import json
 
-from typing import Tuple, List
+from typing import Optional
 from datetime import datetime, timezone
 
 from share_a_ride.data.parser import parse_sarp_to_problem
 from share_a_ride.data.router import path_router
+from share_a_ride.solvers.algo.algo import AlgoSolver
+from share_a_ride.solvers.learner.learner import LearnerSolver
+from share_a_ride.core.solution import Solution
 
-from share_a_ride.solvers.algo.Algo import AlgoSolver
-from share_a_ride.solvers.learner.Learner import LearnerSolver
-from share_a_ride.solvers.algo.greedy import iterative_greedy_balanced_solver
 
-from share_a_ride.solution import Solution
+
+ATTEMPT_COLUMNS = [
+    'attempt_id',
+    'timestamp',
+    'dataset',
+    'instance',
+    'solver',
+    'seed',
+    'time_limit',
+    'hyperparams',
+    'status',
+    'elapsed_time',
+    'cost',
+    'info',
+    'note'
+]
+
 
 
 def attempt_dataset(
+
         solver: AlgoSolver | LearnerSolver,
         dataset: str,
         note: str = "",
         verbose: bool = False
-    ) -> Tuple[List[Solution], List[float], str]:
+    ) -> tuple[list[Solution], list[float], str]:
     """
     Attempt to solve all instances in a dataset with a given solver.
     Use attempt_instance for each instance.
@@ -50,7 +67,7 @@ def attempt_dataset(
     - verbose: whether to print information during execution
 
     Returns: a tuple of:
-    - solutions: List of Solution objects or None for each instance in the dataset
+    - solutions: ist of Solution objects or None for each instance in the dataset
     - gaps: List of gaps (in percentage) for each instance where a solution was found
     - result_summary: A string summarizing the attempt information.
     """
@@ -123,7 +140,7 @@ def attempt_instance(
         instance_name: str,
         note: str = "",
         verbose: bool = False
-    ) -> Tuple[Solution, float, str]:
+    ) -> tuple[Optional[Solution], float, str]:
     """
     Attempt to solve a single instance in a dataset with a given solver.
     Also if the attempt was successful, it saves the results in a csv file.
@@ -156,11 +173,7 @@ def attempt_instance(
         # Write header if file is empty
         if len(rows) == 0:
             writer = csv.writer(f)
-            writer.writerow([
-            'attempt_id', 'timestamp', 'dataset', 'instance', 'solver',
-            'seed', 'time_limit', 'hyperparams', 'status', 'elapsed_time',
-            'cost', 'info', 'note'
-            ])
+            writer.writerow(ATTEMPT_COLUMNS)
             attempt_id = 1
         else:
             # Next id is the number of data rows (excluding header)
@@ -200,8 +213,8 @@ def attempt_instance(
         sol, info = solver.solve(problem=prob)
 
         # Extract results
-        status = info.get('status', 'unknown')
-        elapsed_time = info.get('time', 'unknown')
+        status = info['status']
+        elapsed_time = info['time']
         cost = sol.max_cost if sol is not None else None
 
         # Calculate gap percentage
@@ -251,6 +264,7 @@ def attempt_instance(
 
 
 if __name__ == "__main__":
+    from share_a_ride.solvers.algo.greedy import iterative_greedy_balanced_solver
     chosen_solver = AlgoSolver(
         algo=iterative_greedy_balanced_solver,
         args={"iterations": 10000, "time_limit": 10.0, "seed": 42, "verbose": 1},
@@ -265,3 +279,8 @@ if __name__ == "__main__":
     )
 
     sol, gap, msg = attempt_instance(chosen_solver, "H", "H-n10-m10-k5", note="test attempt", verbose=True)
+
+
+# TODO: Implement the SolverExecutor class for batch execution and management
+class SolverExecutor:
+    pass

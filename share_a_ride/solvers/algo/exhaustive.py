@@ -1,10 +1,10 @@
 import time
 from itertools import permutations
-from typing import List, Tuple, Any, Dict, Iterator, Optional, Callable
+from typing import List, Tuple, Any, Dict, Iterator, Optional, Callable, Sequence
 
-from share_a_ride.problem import ShareARideProblem
-from share_a_ride.solution import Solution
-from share_a_ride.utils.helper import route_cost_from_sequence
+from share_a_ride.core.problem import ShareARideProblem
+from share_a_ride.core.solution import Solution
+from share_a_ride.core.utils.helper import route_cost_from_sequence
 
 
 
@@ -13,10 +13,10 @@ def _assign_pairs_canonical(num_pairs: int, K: int) -> Iterator[List[int]]:
     Assign pickup/delivery pairs into routes canonically with symmetry breaking.
     (First used taxi gets id=0, next new taxi id=1, etc.)
     """
-    def dfs_assign_pairs(idx: int, used: int, cur: List[int]):
+    def dfs_assign_pairs(idx: int, used: int, cur: List[int]) -> Iterator[List[int]]:
         # Base case
         if idx == num_pairs:
-            yield tuple(cur)
+            yield cur
             return
 
         # assign to existing taxis
@@ -48,7 +48,7 @@ def _assign_routes_sequential(
     def dfs_assign_routes(
             t_idx: int,                         # current taxi index
             cur_routes: List[List[int]],        # current routes considered from t_idx
-            cur_costs: List[float]              # current costs considered from t_idx
+            cur_costs: List[int]                # current costs considered from t_idx
         ):
 
         if tle and tle():
@@ -160,7 +160,7 @@ def _gen_routes_for_taxi(
 
     def _assign_request_from_rbs(
             rbs: List[str],
-            pickup_order: List[int],
+            pickup_order: Sequence[int],
         ) -> Iterator[List[int]]:
         """
         Given an RBS (sequence of '(' for pickups and ')' for drops) and a pickup order,
@@ -285,7 +285,7 @@ def _gen_routes_for_taxi(
     for rbs in _enumerate_all_rbs(n_requests):
         if tle():
             return
-        
+
         for pickup_order in permutations(range(n_requests)):
             if tle():
                 return
@@ -422,7 +422,7 @@ def exhaustive_solver(
         max_solutions: int = 100000,
         time_limit: float = 30.0,
         verbose: bool = False
-    ) -> Tuple[Solution, Dict[str, Any]]:
+    ) -> Tuple[Optional[Solution], Dict[str, Any]]:
     """
     Exhaustive search solver that returns only the best solution found.
     Uses exhaustive_enumerate internally.
@@ -437,4 +437,3 @@ def exhaustive_solver(
     best_solution = solutions[0] if solutions else None
 
     return best_solution, info
-

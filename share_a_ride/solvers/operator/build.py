@@ -1,7 +1,7 @@
 import random
 from typing import Tuple, Optional
 
-from share_a_ride.solution import PartialSolution
+from share_a_ride.core.solution import PartialSolution
 from share_a_ride.solvers.utils.sampler import sample_from_weight
 from share_a_ride.solvers.utils.weighter import softmax_weighter
 

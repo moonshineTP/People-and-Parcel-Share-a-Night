@@ -1,4 +1,4 @@
-instance,num_attempts,successful_attempts,best_cost,best_attempt_id,best_timestamp,best_solver,best_solver_args,best_solver_hyperparams,best_time_taken,cost_improvement,percentage_improvement,notes
+instance,num_attempts,successful_attempts,best_cost,best_attempt_id,best_timestamp,best_solver,best_solver_args,best_solver_hyperparams,best_time_taken,cost_improvement,percentage_improvement,note
 Exact-n1-m1-k1,2,2,276.0,1,2025-10-16T07:44:20+00:00,Exhaustive,{'time_limit': '60.0'},{},0.0,0.0,0.0,
 Exact-n1-m1-k2,2,2,154.0,2,2025-10-16T07:44:20+00:00,Exhaustive,{'time_limit': '60.0'},{},0.0,0.0,0.0,
 Exact-n1-m2-k1,2,2,256.0,3,2025-10-16T07:44:20+00:00,Exhaustive,{'time_limit': '60.0'},{},0.0036220550537109375,0.0,0.0,

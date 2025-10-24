@@ -1,2 +1,6 @@
-__pycache__
-.VSCodeCounter
+venv/
+.vscode/
+__pycache__/
+*.pyc
+VSCodeCounter/
+.idea/

@@ -2,11 +2,11 @@ import os
 import math
 import random
 
-from typing import Any, Dict, Tuple, List
+from typing import Any
 from share_a_ride.precurated.utils import text2lines, parse_distances
 
 
-Instance = Dict[str, Any]
+Instance = dict[str, Any]
 
 
 
@@ -132,7 +132,7 @@ def _curate_solomon_to_sarp_text(
     rng = random.Random(seed)
 
     # Source data
-    coords_src: List[Tuple[int | float, int | float]] = inst["node_coord"]
+    coords_src = inst["node_coord"]
     num_nodes = len(coords_src)
 
     # Ensure odd number of nodes so D = 2N + 2M + 1 fits
@@ -166,7 +166,7 @@ def _curate_solomon_to_sarp_text(
 
 
     # ========= NODE_TYPE_SECTION (1-based IDs) ==========
-    node_types: List[Tuple[int, int, int]] = []
+    node_types: list[tuple[int, int, int]] = []
     # depot
     node_types.append((1, 1, 0))
     # passenger pickups
@@ -188,7 +188,7 @@ def _curate_solomon_to_sarp_text(
 
 
     # ============ PAIR_SECTION (1-based IDs) ============
-    pairs: List[Tuple[int, int, str, int]] = []
+    pairs: list[tuple[int, int, str, int]] = []
     # passengers
     for j in range(N):
         pid = j + 1
@@ -204,7 +204,7 @@ def _curate_solomon_to_sarp_text(
 
     # Compose SARP text (sections 1-based; EDGE_WEIGHT and DEPOT 0-based)
     name = inst["name"].replace(" ", "_")
-    lines: List[str] = []
+    lines: list[str] = []
     lines.append(f"NAME : {name}_SARP")
     lines.append("COMMENT : Curated from Solomon to SARP")
     lines.append("TYPE : SARP")

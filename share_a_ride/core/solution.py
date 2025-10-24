@@ -1,9 +1,8 @@
 from __future__ import annotations
-from typing import List, Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
-from share_a_ride.problem import ShareARideProblem
-from share_a_ride.solvers.operator import Operator
-from share_a_ride.utils.helper import route_cost_from_sequence
+from share_a_ride.core.problem import ShareARideProblem
+from share_a_ride.core.utils.helper import route_cost_from_sequence
 
 if TYPE_CHECKING:
     import matplotlib.pyplot as plt
@@ -18,21 +17,26 @@ class Solution:
     - max_length: int (objective to minimize)
     """
     def __init__(self, problem: ShareARideProblem,
-                routes: List[List[int]], route_costs: Optional[List[int]] = None):
+                routes: list[list[int]], route_costs: Optional[list[int]] = None):
 
-        if problem is None:
-            raise ValueError("Problem instance cannot be None.")
+        if not routes:
+            raise ValueError("Routes list cannot be empty.")
+        if len(routes) != problem.K:
+            raise ValueError(f"Expected {problem.K} routes, got {len(routes)}.")
 
-        assert len(routes) == len(route_costs)
-        self.problem = problem
-        self.routes = routes
-        self.route_costs = route_costs
-        if route_costs is None:
-            route_costs = [
+        if not route_costs:
+            new_route_costs = [
                 route_cost_from_sequence(route, problem.D) 
                 for route in routes
             ]
-        self.max_cost = max(route_costs) if route_costs else 0
+        else:
+            new_route_costs = route_costs
+
+        self.problem = problem
+        self.routes = routes
+        self.route_costs = new_route_costs
+
+        self.max_cost = max(new_route_costs) if new_route_costs else 0
 
 
     def is_valid(self) -> bool:
@@ -133,7 +137,7 @@ class Solution:
             print(f"*** Max route cost: {self.max_cost} ***")
 
         print(self.problem.K)
-
+        assert len(self.routes) == len(self.route_costs)
         for route, cost in zip(self.routes, self.route_costs):
             if verbose:
                 print(f"- Route cost: {cost}")
@@ -154,12 +158,18 @@ class Solution:
             f.write(f"Cost {self.max_cost}\n")
 
 
-    def visualize(self, ax: plt.Axes) -> None:
+    def visualize(self, ax = None) -> None:
         """
         Visualize the solution routes on top of the problem instance.
         If no Axes provided, creates a new figure and its Axes
         You should import matplotlib.pyplot as plt before using this function.
         """
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            print("matplotlib is required for visualization.")
+            return
+        
         if self.problem.coords is None:
             print("No coordinates available for visualization.")
             return
@@ -231,7 +241,7 @@ class PartialSolution:
     def __init__(
             self,
             problem: ShareARideProblem,
-            routes: List[List[int]] = [],
+            routes: list[list[int]] = [],
         ):
         """
         Initialize PartialSolution with problem and given route list.
@@ -239,14 +249,12 @@ class PartialSolution:
         Else, initialize K empty routes starting at depot 0.
         """
 
-        if problem is None:
-            raise ValueError("Problem instance cannot be None.")
-
         # Initialize route and route costs
         self.problem = problem
         self.routes = self._init_routes(routes)
         self.route_costs = self._init_costs(routes)
 
+        # Initialize other attributes
         self.max_cost = max(self.route_costs)
         self.node_assignment = self._init_node_assignment()
         (   self.remaining_pass_pick, self.remaining_pass_drop, self.remaining_parc_pick,
@@ -258,7 +266,7 @@ class PartialSolution:
         K = self.problem.K
 
         # Validating
-        if routes is None:
+        if not routes:
             return [[0] for _ in range(K)]
         if len(routes) != K:
             raise ValueError(f"Expected {K} routes, got {len(routes)}.")
@@ -273,7 +281,7 @@ class PartialSolution:
 
     def _init_costs(self, routes):
         # Validating
-        if routes is None:
+        if not routes:
             return [0] * self.problem.K
         if len(routes) != self.problem.K:
             raise ValueError("Mismatch between routes and route_costs length.")
@@ -360,14 +368,14 @@ class PartialSolution:
         )
     
 
-    def possible_actions(self, t_idx: int) -> List[tuple[str, int, int]]:
+    def possible_actions(self, t_idx: int) -> list[tuple[str, int, int]]:
         state = self.route_states[t_idx]
         if state["ended"]:
             return []
 
         prob = self.problem
         pos = state["pos"]
-        actions: List[tuple[str, int, int]] = []
+        actions: list[tuple[str, int, int]] = []
 
         if state["passenger"] == 0:
             for pid in list(self.remaining_pass_pick):
@@ -470,7 +478,7 @@ class PartialSolution:
         return all(state["ended"] for state in self.route_states)
 
 
-    def to_solution(self) -> Solution:
+    def to_solution(self) -> Optional[Solution]:
         """
         Convert the PartialSolution to a full Solution if complete.
         """
@@ -489,7 +497,7 @@ class PartialSolution:
 
         return solution
 
-    def operate(self, op: Operator):
+    def operate(self, op):
         pass
 
 
@@ -500,7 +508,7 @@ class SolutionSwarm:
     Used for population-based metaheuristics.
     """
 
-    def __init__(self, solutions: List[Solution]):
+    def __init__(self, solutions: list[Solution]):
         """
         Initialize SolutionSwarm with a list of Solution objects.
         """
@@ -511,7 +519,7 @@ class SolutionSwarm:
         self.best_solution = min(solutions, key=lambda s: s.max_cost)
         self.avg_cost = sum(sol.max_cost for sol in solutions) / len(solutions)
 
-    def operate(self, op: Operator):
+
+    def operate(self, op) -> Optional[SolutionSwarm]:
         pass
 
-        

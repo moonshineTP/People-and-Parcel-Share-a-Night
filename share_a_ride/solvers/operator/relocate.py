@@ -1,1 +1,1 @@
-from share_a_ride.problem import ShareARideProblem
+from share_a_ride.core.problem import ShareARideProblem

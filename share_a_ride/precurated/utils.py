@@ -1,5 +1,4 @@
 import random, math
-from typing import List, Tuple
 
 def text2lines(text: str) -> list[str]:
     """
@@ -25,8 +24,8 @@ def infer_type(s: str) -> int | float | str:
 
 def parse_distances(
         edge_weight_type: str,
-        node_coord: List[Tuple[int | float, int | float]],
-    ) -> List[List[int]]:
+        node_coord: list[tuple[int | float, int | float]],
+    ) -> list[list[int]]:
     """
     Computes the pairwise Euclidean distance matrix for the given coordinates.
     Distances are rounded to the nearest integer (TSPLIB EUC_2D convention).

@@ -12,11 +12,11 @@ The summary has the following columns:
 - best solver's args
 - best solver's hyperparams
 - best solver's time taken
-- cost unit improvement over previous best attempt
-- percentage of improvement to the previous best attempt, rounded to 2 decimal places
-- notes (if any)
+- cost unit gap over previous best attempt
+- percentage of gap to the previous best attempt, rounded to 2 decimal places
+- note (if any)
 If there is no successful attempt, best cost and related fields are None.
-If there is no previous best cost, improvement fields are None.
+If there is no previous best cost, gap fields are None.
 """
 
 import os
@@ -24,6 +24,25 @@ import csv
 from typing import Dict, Any
 
 from share_a_ride.data.router import path_router
+
+
+SCOREBOARD_COLUMNS = [
+    'dataset',
+    'instance',
+    'num_attempts',
+    'successful_attempts',
+    'best_cost',
+    'best_attempt_id',
+    'best_timestamp',
+    'best_solver',
+    'best_solver_args',
+    'best_solver_hyperparams',
+    'best_time_taken',
+    'cost_gap',
+    'pct_gap',
+    'note'
+]
+
 
 
 def summarize_dataset(dataset: str, verbose: bool = False) -> Dict[str, Any]:
@@ -98,21 +117,14 @@ def summarize_instance(
     if not instance_attempts:
         if verbose:
             print(f"No attempts found for instance {inst_name} in dataset {dataset}.")
-        return None
+        return {}
 
     # Find previous best cost from scoreboard
     previous_best_cost = None
-    fieldnames = [
-        'instance', 'num_attempts', 'successful_attempts', 'best_cost',
-        'best_attempt_id', 'best_timestamp', 'best_solver', 'best_solver_args',
-        'best_solver_hyperparams', 'best_time_taken', 'cost_improvement',
-        'percentage_improvement', 'notes'
-    ]
-
     if os.path.getsize(scoreboard_file) == 0:
         with open(scoreboard_file, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            writer.writerow(fieldnames)
+            writer.writerow(SCOREBOARD_COLUMNS)
     else:
         with open(scoreboard_file, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
@@ -129,8 +141,8 @@ def summarize_instance(
     best_attempt = None
     best_cost = float('inf')
     for attempt in instance_attempts:
-        if attempt.get('status') == 'done' and attempt.get('cost'):
-            cost = float(attempt.get('cost'))
+        if attempt['status'] == 'done' and attempt['cost']:
+            cost = float(attempt['cost'])
             if cost < best_cost:
                 best_cost = cost
                 best_attempt = attempt
@@ -139,6 +151,7 @@ def summarize_instance(
     # Build summary dictionary
     if best_attempt is None:
         summary = {
+            'dataset'                   : dataset,
             'instance'                  : inst_name,
             'num_attempts'              : num_attempts,
             'successful_attempts'       : 0,
@@ -149,21 +162,21 @@ def summarize_instance(
             'best_solver_args'          : None,
             'best_solver_hyperparams'   : None,
             'best_time_taken'           : None,
-            'cost_improvement'          : None,
-            'percentage_improvement'    : None,
-            'notes'                     : None
+            'cost_gap'                  : None,
+            'pct_gap'                   : None,
+            'note'                      : None
         }
 
     else:
-        # Calculate improvement over previous best
-        cost_improvement = None
-        percentage_improvement = None
+        # Calculate gap over previous best
+        cost_gap = None
+        pct_gap = None
 
         if previous_best_cost is not None:
-            cost_improvement = previous_best_cost - best_cost
-            percentage_improvement = round((cost_improvement / previous_best_cost) * 100, 2)
+            cost_gap = previous_best_cost - best_cost
+            pct_gap = round((cost_gap / previous_best_cost) * 100, 2)
 
-        improved = cost_improvement and cost_improvement > 1e-6
+        improved = cost_gap and cost_gap > 1e-6
 
         # Build args dict from seed and time_limit
         args_dict = {}
@@ -173,6 +186,7 @@ def summarize_instance(
             args_dict['time_limit'] = best_attempt['time_limit']
 
         summary = {
+            'dataset'                   : dataset,
             'instance'                  : inst_name,
             'num_attempts'              : num_attempts,
             'successful_attempts'       : successful_attempts,
@@ -183,9 +197,9 @@ def summarize_instance(
             'best_solver_args'          : str(args_dict),
             'best_solver_hyperparams'   : best_attempt['hyperparams'],
             'best_time_taken'           : best_attempt['elapsed_time'],
-            'cost_improvement'          : cost_improvement,
-            'percentage_improvement'    : percentage_improvement,
-            'notes'                     : 'improved' if improved else None
+            'cost_gap'                  : cost_gap,
+            'pct_gap'                   : pct_gap,
+            'note'                      : 'improved' if improved else None
         }
 
     # Write or update the scoreboard
@@ -207,7 +221,7 @@ def summarize_instance(
 
     # Write back to scoreboard
     with open(scoreboard_file, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=SCOREBOARD_COLUMNS)
         writer.writeheader()
         writer.writerows(scoreboard_rows)
 
@@ -218,11 +232,11 @@ def summarize_instance(
         print(  f"Instance summary for {inst_name}:")
         print(  f"  Attempts: {num_attempts} ({successful_attempts} successful)")
         print(  f"  Best cost: {summary['best_cost']}")
-        if summary['cost_improvement'] not in [None, 0]:
+        if summary['cost_gap']:
             print(
                 f"  Improvement found:\n" \
-                f"    - Cost decreased: {summary['cost_improvement']}\n" \
-                f"    - Gap: {summary['percentage_improvement']} %\n"
+                f"    - Cost decreased: {summary['cost_gap']}\n" \
+                f"    - Gap: {summary['pct_gap']} %\n"
             )
         print()
 

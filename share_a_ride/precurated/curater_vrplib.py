@@ -1,15 +1,15 @@
 import random, os
 
-from typing import Any, Dict, List, Tuple
+from typing import Any
 from share_a_ride.precurated.utils import infer_type, text2lines, parse_distances
 
 # Type alias for instance dict
-Instance = Dict[str, Any]
+Instance = dict[str, Any]
 
 
 
 # ...existing code...
-def _is_valid_vrplib_instance(lines: List[str]) -> None:
+def _is_valid_vrplib_instance(lines: list[str]) -> None:
     """
     Lightweight VRPLIB sanity check.
     Ensures required specs appear before the first section and that required
@@ -23,7 +23,7 @@ def _is_valid_vrplib_instance(lines: List[str]) -> None:
     n = len(lines)
 
     # Gather specs until the first *_SECTION or EOF
-    specs: Dict[str, str] = {}
+    specs: dict[str, str] = {}
     while i < n:
         raw = lines[i].strip()
         if not raw or raw.startswith("#"):
@@ -57,7 +57,7 @@ def _is_valid_vrplib_instance(lines: List[str]) -> None:
         required_sections.add("EDGE_WEIGHT_SECTION")
 
     # Scan remaining lines for section headers and their EOF markers
-    seen_sections: Dict[str, bool] = {sec: False for sec in required_sections}
+    seen_sections: dict[str, bool] = {sec: False for sec in required_sections}
     while i < n:
         raw = lines[i].strip()
 
@@ -132,20 +132,24 @@ def _parse_vrplib(text: str) -> Instance:
         if idx >= n:
             return False
         val = lines[idx].strip()
-        res = val and not val.startswith("#") \
+        
+        res = bool(
+            val
+            and not val.startswith("#")
             and (val == "EOF" or val.split()[0].endswith("_SECTION"))
+        )
 
         return res
 
 
-    def read_block(start: int) -> Tuple[str, int, List[str]]:
+    def read_block(start: int) -> tuple[str, int, list[str]]:
         """
         Read a block starting at lines[start], which is a section header.
         Returns: (token, next_index, body_lines)
         """
         header_line = lines[start].strip()
         token = header_line.split()[0]
-        body: List[str] = []
+        body: list[str] = []
         idx = start + 1
         while idx < n and not is_section_header(idx):
             row = lines[idx].strip()
@@ -179,7 +183,7 @@ def _parse_vrplib(text: str) -> Instance:
             ]
 
         elif token == "NODE_COORD_SECTION":
-            coords: List[Tuple[float, float]] = []
+            coords: list[tuple[float, float]] = []
             for row in body:
                 parts = row.split()
                 if len(parts) < 3:
@@ -297,7 +301,7 @@ def _curate_vrplib_to_sarp_text(
     Q = [rng.randint(Qlow, Qhigh) for _ in range(K)]
 
     # Node types
-    node_types: List[Tuple[int, int, int]] = []
+    node_types: list[tuple[int, int, int]] = []
     node_types.append((1, 1, 0))
     for idx in range(N):
         nid = idx + 2
@@ -313,7 +317,7 @@ def _curate_vrplib_to_sarp_text(
         node_types.append((nid, nid, 4))
 
     # Node pairs
-    pairs: List[Tuple[int, int, str, int]] = []
+    pairs: list[tuple[int, int, str, int]] = []
     for pid in range(1, N + 1):
         pick = pid + 1
         drop = N + M + pid + 1
@@ -326,7 +330,7 @@ def _curate_vrplib_to_sarp_text(
 
 
     # ============= Write SARP text =============
-    lines: List[str] = []
+    lines: list[str] = []
 
     # specs
     name = str(inst["name"]).replace(" ", "_")

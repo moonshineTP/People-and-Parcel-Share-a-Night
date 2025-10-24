@@ -1,5 +1,5 @@
 from typing import Callable, Dict, Any, List
-from share_a_ride.problem import ShareARideProblem
+from share_a_ride.core.problem import ShareARideProblem
 class Operator():
     """
     Container for operator functions in the share_a_ride problem.

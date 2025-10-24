@@ -940,7 +940,7 @@ def destroy_operator(
         sol: Solution,
         destroy_proba: float,
         destroy_steps: int,
-        seed: int = None,
+        seed: int = 42,
         T: float = 1.0
     ) -> Tuple[PartialSolution, List[bool], int]:
     """
