@@ -1,13 +1,33 @@
 """
-Module for routing interactions to the dataset and vice versa.
+Module for routing interactions along data files and folders.
+This module helps in constructing paths to various data files
+related to datasets, instances, attempts, and solutions.
 """
-
 import os
+
+
+
+ACTION_TO_EXTENSION = {
+        "readfile"  : ".sarp",
+        "solve"     : ".sol",
+    }
+
+DATASET_TO_PURPOSE = {
+    "H"         : "sanity",
+    "Exact"     : "sanity",
+    "Li"        : "benchmark",
+    "Solomon"   : "benchmark",
+    "Pyvrp"     : "benchmark",
+    "Golden"    : "benchmark",
+    "Cvrplib"   : "train",
+    "CMT"       : "val",
+    "tai"       : "test",
+}
 
 
 def path_router(
         dataset: str, action: str,
-        filename: str = None, solver: str = None
+        filename: str = "", solver: str = ""
     ) -> str:
     """
     Return the path to the router data file for the given dataset.
@@ -27,30 +47,12 @@ def path_router(
     Returns:
     - str: The path to the router data file for the given dataset and action.
     """
-
-    act_to_ext = {
-        "readfile"  : ".sarp",
-        "solve"     : ".sol",
-    }
-
-    dts_to_pur = {
-        "H"         : "sanity",
-        "Exact"     : "sanity",
-        "Li"        : "benchmark",
-        "Solomon"   : "benchmark",
-        "Pyvrp"     : "benchmark",
-        "Golden"    : "benchmark",
-        "Cvrplib"   : "train",
-        "CMT"       : "val",
-        "tai"       : "test",
-    }
-
     base_dir = os.path.dirname(__file__)
-    dataset_root = os.path.join(base_dir, dts_to_pur[dataset], dataset)
+    dataset_root = os.path.join(base_dir, DATASET_TO_PURPOSE[dataset], dataset)
 
     # If action is attempt, return the path to the attempt csv file
     if action == "attempt":
-        if filename is not None or solver is not None:
+        if filename or solver:
             raise ValueError("Filename and solver must be None when action is 'attempt'.")
         return os.path.join(dataset_root, f"{dataset}-attempts.csv")
 
@@ -60,17 +62,17 @@ def path_router(
 
     # If action is readfile, return the path to the .sarp instance file
     elif action == "readfile":
-        if filename is None:
+        if not filename:
             raise ValueError("Filename must be provided when action is 'readfile'.")
-        return os.path.join(dataset_root, f"{filename}{act_to_ext[action]}")
+        return os.path.join(dataset_root, f"{filename}{ACTION_TO_EXTENSION[action]}")
 
     # If action is solve, return the path to the solution file
     elif action == "solve":
-        if solver is None:
+        if not solver:
             raise ValueError("Solver must be provided when action is 'solve'.")
-        if filename is None:
+        if not filename:
             raise ValueError("Filename must be provided when action is 'solve'.")
-        return os.path.join(dataset_root, f"{filename}_{solver}{act_to_ext[action]}")
+        return os.path.join(dataset_root, f"{filename}_{solver}{ACTION_TO_EXTENSION[action]}")
 
     # If action is summarize, return the path to the summary file
     elif action == "summarize":
@@ -82,4 +84,3 @@ def path_router(
             "Action must be either " \
             "'attempt', 'readall', 'readfile', 'solve', or 'summarize'."
         )
-

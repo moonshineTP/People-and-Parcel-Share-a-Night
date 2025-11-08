@@ -1,5 +1,10 @@
+"""
+Container for operator functions in the share_a_ride problem.
+Operators are stateless functions that transform routes.
+"""
+
 from typing import Callable, Dict, Any, List
-from share_a_ride.problem import ShareARideProblem
+from share_a_ride.core.problem import ShareARideProblem
 class Operator():
     """
     Container for operator functions in the share_a_ride problem.
@@ -31,16 +36,15 @@ class Operator():
         Returns:
             - res_route: The route after applying the operator
         """
- 
-        
+
         # Apply operator with problem instance and route
         res_route = self.operator(problem, route, **self.args)
-        
+
         return res_route
 
 
-    def __call__(self, route: List[int], **kwargs) -> List[int]:
+    def __call__(self, **kwargs) -> List[int]:
         """
         Convenience method to apply operator directly.
         """
-        return self.apply(route, **kwargs)
+        return self.apply(**kwargs)

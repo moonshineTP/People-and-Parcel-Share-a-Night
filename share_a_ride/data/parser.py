@@ -6,7 +6,7 @@ import os
 
 from typing import Dict, Any
 
-from share_a_ride.problem import ShareARideProblem
+from share_a_ride.core.problem import ShareARideProblem
 
 Instance = Dict[str, Any]
 
@@ -14,7 +14,7 @@ Instance = Dict[str, Any]
 def parse_sarp_to_problem(file_path: str) -> ShareARideProblem:
     """
     Parse a SARP instance file and return a ShareARideProblem object.
-    The file path should be absolute and have .sarp extension.
+    The file path should be ---absolute--- and have .sarp extension.
     """
     if not os.path.isabs(file_path) or not file_path.endswith('.sarp'):
         raise ValueError("file_path must be an absolute path to a .sarp file.")
@@ -146,5 +146,5 @@ def parse_sarp_to_problem(file_path: str) -> ShareARideProblem:
 
 if __name__ == "__main__":
     prob = parse_sarp_to_problem("share_a_ride/data/sanity/H/H-n10-m10-k5.sarp")
-    prob.pretty_print(verbose=1)
+    prob.pretty_print(verbose=True)
 

@@ -6,8 +6,8 @@ from share_a_ride.data.summarizer import summarize_dataset
 
 from share_a_ride.utils.generator import generate_instance_coords
 
-from share_a_ride.solvers.algo.Algo import AlgoSolver
-from share_a_ride.solvers.algo.exhaustive import exhaustive_solver
+from share_a_ride.solvers.algo.algo import AlgoSolver
+from share_a_ride.solvers.algo.exhaust import exhaustive_solver
 from share_a_ride.solvers.algo.bnb import branch_and_bound_solver
 from share_a_ride.solvers.algo.greedy import greedy_balanced_solver, iterative_greedy_balanced_solver
 
@@ -96,7 +96,7 @@ def demo_sprint_2():
     )
 
     # Dataset attempt demo
-    sols, gaps, msg = attempt_dataset(chosen_solver, "H", note="test attempt", verbose=True)
+    sols, gaps, msg = attempt_dataset(chosen_solver, "H", note="demo attempt", verbose=True)
 
     # Visualize functionality demo
     for sol in sols:
@@ -142,4 +142,4 @@ def demo_sprint_3():
 
 
 if __name__ == "__main__":
-    demo_sprint_3()
+    demo_sprint_2()

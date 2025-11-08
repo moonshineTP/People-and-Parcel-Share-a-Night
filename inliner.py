@@ -1,19 +1,18 @@
 """
     Code taken and modified from https://github.com/dobrakmato/python-import-inliner
-    Remember to change output file destination
+    Remember you can redirect stdout to a file, e.g.:
+        pypy3 -m inliner > submission
+        pypy3 -m inliner oj.py > submission
 """
 import sys
 import os
 
-sys.path.insert(0, os.getcwd()) 
+sys.path.insert(0, os.getcwd())
 
-# This is file to start from.
+# This is file to start from (can be overridden by argv[1]).
 starting_file = 'oj.py'
 
-# This is output (inlined) file.
-# CHANGE THIS FOR REAL
-output_file = r'C:\Users\admin\Desktop\submission.py'
-
+# Local source folders considered for inlining
 LOCAL_SOURCE_FOLDERS = ['share_a_ride']
 
 # ----------------------------------
@@ -21,7 +20,8 @@ LOCAL_SOURCE_FOLDERS = ['share_a_ride']
 modules = []
 imports = []
 
-out_file = open(output_file, mode='w', encoding='utf-8')
+# Write inlined code to stdout so callers can redirect it.
+out_file = sys.stdout
 
 
 def count_from_start(string, char):
@@ -42,7 +42,7 @@ def normalize_import(rel, base='./'):
     if base_elements[-1] == '':
         base_elements.pop()
 
-    while dots_from_start > 1: # Go up for .. and ...
+    while dots_from_start > 1:  # Go up for .. and ...
         if base_elements:
             base_elements.pop()
         dots_from_start -= 1
@@ -69,13 +69,13 @@ def inline_file(file, base):
     original_file_path = file
 
     if not os.path.isfile(file):
-        print(f"WARNING: File not found: {original_file_path}!")
+        print(f"WARNING: File not found: {original_file_path}!", file=sys.stderr)
         emit_line(f"# ----- file {original_file_path} begin -----\n")
         emit_line(f"# file {original_file_path} does not exist!\n")
         emit_line(f"# ----- file {original_file_path} end -----\n")
         return
 
-    print(f"Inlining file: {file}")
+    print(f"Inlining file: {file}", file=sys.stderr)
 
     emit_line(f"\n# ----- file {file} begin -----\n")
     multiline_import = False
@@ -85,9 +85,11 @@ def inline_file(file, base):
         for l in f:
 
             if multiline_import:
+                # Comment out continued import lines in the output
                 emit_line('# ' + l)
                 if ')' in l:
                     multiline_import = False
+                prev_line = l
                 continue
 
             stripped_line = l.strip()
@@ -109,6 +111,13 @@ def inline_file(file, base):
 
             elif stripped_line.startswith('from'):
                 parts = stripped_line.split(' ')
+
+                # Check if we have enough parts for a valid from import
+                if len(parts) < 2:
+                    emit_line(l)
+                    prev_line = l
+                    continue
+
                 module_path = parts[1]
                 top_level_module = module_path.split('.')[0]
 
@@ -133,7 +142,7 @@ def inline_file(file, base):
 
                     if '(' in l and ')' not in l:
                         multiline_import = True
-                else: # It's a standard/third-party library import
+                else:  # It's a standard/third-party library import
                     emit_line(l)
             else:
                 emit_line(l)
@@ -142,12 +151,25 @@ def inline_file(file, base):
 
 
 # --- SCRIPT START ---
-print("Starting inliner...")
+def _main():
+    print("Starting inliner...", file=sys.stderr)
 
-# Check if starting file exists
-if not os.path.isfile(starting_file):
-    print(f"FATAL ERROR: Starting file '{starting_file}' not found. Please set it at the top of the script.")
-else:
-    inline_file(starting_file, './')
-    out_file.close()
-    print(f"Inlining complete. Output file: {output_file}")
+    # Allow overriding starting file via CLI: `pypy3 -m inliner my_start.py > submission`
+    global starting_file
+    if len(sys.argv) >= 2 and sys.argv[1]:
+        starting_file = sys.argv[1]
+
+    # Check if starting file exists
+    if not os.path.isfile(starting_file):
+        print(f"FATAL ERROR: Starting file '{starting_file}' not found. Please set it or pass it as argv[1].",
+              file=sys.stderr)
+        return 2
+    else:
+        inline_file(starting_file, './')
+        out_file.flush()
+        print("Inlining complete.", file=sys.stderr)
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(_main())

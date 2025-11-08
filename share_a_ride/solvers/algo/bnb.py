@@ -2,9 +2,9 @@ import time
 from math import inf
 from typing import List, Optional, Tuple, Dict, Any
 
-from share_a_ride.problem import ShareARideProblem
-from share_a_ride.solution import Solution
-from share_a_ride.utils.helper import route_cost_from_sequence
+from share_a_ride.core.problem import ShareARideProblem
+from share_a_ride.core.solution import Solution
+from share_a_ride.core.utils.helper import route_cost_from_sequence
 
 # ---------------------- Branch-and-bound (DFS on pair->taxi with LB) -------------
 
@@ -91,7 +91,7 @@ def branch_and_bound_solver(
         time_limit: float = 30.0,
         verbose: bool = False,
         target_cost: Optional[int] = None
-    ) -> Tuple[Solution, Dict[str, Any]]:
+    ) -> Tuple[Optional[Solution], Dict[str, Any]]:
 
     """
     Branch-and-bound:
@@ -229,7 +229,7 @@ def branch_and_bound_solver(
     # ---------- Phase 2: recursive route-building DFS ----------
     def dfs_build_taxi_route(t: int,
                 current_routes: List[List[int]],
-                current_costs: List[float],
+                current_costs: List[int],
                 taxi_pairs: List[List[Tuple[str, int]]],
                 used_taxis: int) -> Optional[str]:
         """
@@ -292,7 +292,7 @@ def branch_and_bound_solver(
         # Nested DFS for route building on taxi t.
         def _dfs_route(
                 seq: List[int],         # current sequence of nodes (including depots)
-                cost: float,            # current cost of seq
+                cost: int,            # current cost of seq
                 load: int,              # current parcel load
                 passenger: int,         # current passenger onboard (0 if none)
                 picked: List[bool],     # which pairs have been picked
@@ -426,17 +426,13 @@ def branch_and_bound_solver(
     # ---------- finish and return stats ----------
     elapsed = time.time() - start
     info = {
-        "assign_pairs": stats.get("assign_pairs", 0),
-        "build_nodes": stats.get("build_nodes", 0),
-        "pruned": stats.get("pruned", 0),
-        "routes": stats.get("routes", 0),
+        "assign_pairs": stats["assign_pairs"],
+        "build_nodes": stats["build_nodes"],
+        "pruned": stats["pruned"],
+        "routes": stats["routes"],
         "time": elapsed,
         "status": "timeout" if res == "timeout" else "done"
     }
 
-    if best_sol:
-        if not best_sol.is_valid():
-            best_sol = None
-
-    assert best_sol.is_valid() if best_sol else True
+    assert best_sol is None or best_sol.is_valid()  
     return best_sol, info

@@ -5,16 +5,16 @@ Greedy balanced heuristic and its iterative improvement.
 import time, random
 from typing import Any, List, Optional, Tuple, Dict
 
-from share_a_ride.problem import ShareARideProblem
-from share_a_ride.solution import PartialSolution, Solution
-from share_a_ride.solvers.operator.build import build_operator
+from share_a_ride.core.problem import ShareARideProblem
+from share_a_ride.core.solution import PartialSolution, Solution
+from share_a_ride.solvers.operator.repair import repair_operator
 from share_a_ride.solvers.operator.destroy import destroy_operator
 
 
 
 def greedy_balanced_solver(
         prob: ShareARideProblem,
-        premature_routes: Optional[List[List[int]]] = None,
+        premature_routes: List[List[int]] = [],
         verbose: bool = False
     ) -> Tuple[Optional[Solution], Dict[str, Any]]:
     """
@@ -30,7 +30,7 @@ def greedy_balanced_solver(
     - Info dictionary contains:
         + iterations: number of main loop iterations
         + actions_evaluated: total number of actions evaluated
-        + elapsed_time: total time taken
+        + time: total time taken
     """
 
     start_time = time.time()
@@ -38,10 +38,12 @@ def greedy_balanced_solver(
     taxi_states = partial.route_states
 
     def has_pending_work() -> bool:
-        return partial.remaining_pass_pick \
-            or partial.remaining_pass_drop \
-            or partial.remaining_parc_pick \
+        return bool(
+            partial.remaining_pass_pick
+            or partial.remaining_pass_drop
+            or partial.remaining_parc_pick
             or partial.remaining_parc_drop
+        )
 
     stats = {"iterations": 0, "actions_evaluated": 0}
     while has_pending_work():
@@ -91,7 +93,7 @@ def greedy_balanced_solver(
     info = {
         "iterations": stats["iterations"],
         "actions_evaluated": stats["actions_evaluated"],
-        "elapsed_time": elapsed
+        "time": elapsed
     }
 
     # Validate solution and return
@@ -144,7 +146,7 @@ def iterative_greedy_balanced_solver(
             + actions_evaluated: total number of actions evaluated
             + nodes_destroyed: total number of nodes removed
             + nodes_rebuilt: total number of nodes added during rebuild
-            + elapsed_time: total time taken
+            + time: total time taken
             + status: "done" if completed, "timeout" if time limit reached
     """
 
@@ -159,7 +161,7 @@ def iterative_greedy_balanced_solver(
     # Initial solution and best cost
     best_sol, base_info = greedy_balanced_solver(prob, verbose=False)
     if not best_sol:
-        return None, {"elapsed_time": time.time() - start_time, "status": "error"}
+        return None, {"time": time.time() - start_time, "status": "error"}
     best_cost = best_sol.max_cost
 
     # Stats
@@ -183,7 +185,7 @@ def iterative_greedy_balanced_solver(
         iterations_done += 1
 
         # ============== Destroy phase ==============
-        destroy_seed = (2 * seed + it) if seed is not None else None
+        destroy_seed = 2 * seed + it
         partial_sol, destroyed_flags, removed = destroy_operator(
             best_sol,
             destroy_proba,
@@ -200,7 +202,7 @@ def iterative_greedy_balanced_solver(
             if rng.random() > rebuild_proba:
                 continue
 
-            partial_sol, new_nodes_count = build_operator(
+            partial_sol, repaired_list, new_nodes_count = repair_operator(
                 partial_sol,
                 route_idx=r_idx,
                 steps=rebuild_steps,
@@ -239,7 +241,7 @@ def iterative_greedy_balanced_solver(
         "actions_evaluated": total_actions,
         "nodes_destroyed": nodes_destroyed,
         "nodes_rebuilt": nodes_rebuilt,
-        "elapsed_time": elapsed,
+        "time": elapsed,
         "status": status,
     }
 

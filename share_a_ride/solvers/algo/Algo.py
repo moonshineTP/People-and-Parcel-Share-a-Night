@@ -1,7 +1,7 @@
-from typing import Callable, Dict, Any, List, Optional, Tuple
+from typing import Callable, Any, Optional
 
-from share_a_ride.problem import ShareARideProblem
-from share_a_ride.solution import Solution
+from share_a_ride.core.problem import ShareARideProblem
+from share_a_ride.core.solution import Solution
 
 
 algo_name = {
@@ -32,10 +32,10 @@ class AlgoSolver():
     Container for algorithm-based solvers in the share_a_ride problem.
     """
     def __init__(
-            self, problem: Optional[ShareARideProblem] = None,
-            algo: Callable[..., Tuple[Optional[Solution], Dict[str, Any]]] = None,
-            args: Dict[str, Any] = None,
-            hyperparams: Dict[str, Any] = None,
+            self,
+            algo: Callable[..., tuple[Optional[Solution], dict[str, Any]]],
+            args: dict[str, Any] = {},
+            hyperparams: dict[str, Any] = {},
         ):
         """
         Initialize the solver with problem instance and common parameters.
@@ -63,7 +63,7 @@ class AlgoSolver():
     def solve(
             self,
             problem: ShareARideProblem
-        ) -> Tuple[Optional[Solution], Dict[str, Any]]:
+        ) -> tuple[Optional[Solution], dict[str, Any]]:
         """
         Main solving method to execute the solver.
         Params:
@@ -84,9 +84,9 @@ class AlgoSolver():
             self,
             problem: ShareARideProblem,
             n_trials: int,
-            lb_hyperparams: Dict[str, Any],
-            ub_hyperparams: Dict[str, Any],
-        ) -> Dict[str, Any]:
+            lb_hyperparams: dict[str, Any],
+            ub_hyperparams: dict[str, Any],
+        ) -> dict[str, Any]:
         """
         Hyperparameter tuning method to be implemented by each solver.
 
@@ -157,6 +157,7 @@ class AlgoSolver():
             - filepath: Path to load the solver configuration from
         """
         pass
+
 
 
 class HybridAlgoSolver():

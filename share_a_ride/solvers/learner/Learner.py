@@ -1,7 +1,7 @@
 from typing import Dict, Any, Optional, Tuple, List
 
-from share_a_ride.problem import ShareARideProblem
-from share_a_ride.solution import Solution
+from share_a_ride.core.problem import ShareARideProblem
+from share_a_ride.core.solution import Solution
 
 import optuna
 
@@ -57,9 +57,9 @@ class LearnerSolver():
                 + loss: Training loss values
                 + val_loss: Validation loss values (if applicable)
                 + metrics: Other training metrics
-                + elapsed_time: Training time
+                + time: Training time
         """
-        pass
+        return {}
 
 
     def predict(
@@ -79,7 +79,7 @@ class LearnerSolver():
         return None
 
 
-    def solve(self) -> Tuple[Optional[Solution], Dict[str, Any]]:
+    def solve(self, problem: ShareARideProblem) -> Tuple[Optional[Solution], Dict[str, Any]]:
         """
         Main solving method using the trained model and its functionalities.
         
@@ -87,7 +87,7 @@ class LearnerSolver():
             (solution, info): tuple where
                 - solution: Best Solution object found (or None if none found)
                 - info: Dictionary with statistics including:
-                    + elapsed_time: Total time taken
+                    + time: Total time taken
                     + status: "done" or "timeout" or "not_trained"
                     + model-specific metrics
         """
@@ -110,7 +110,8 @@ class LearnerSolver():
                 + accuracy: Solution quality metrics
                 + inference_time: Average time per prediction
         """
-        pass
+        return {}
+
 
     def tune(
             self,
