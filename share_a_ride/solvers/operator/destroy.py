@@ -1,3 +1,8 @@
+"""
+Module implementing destroy operators for Share-a-Ride solutions.
+These operators remove parts of vehicle routes to allow for solution improvement.
+"""
+
 import random
 
 from typing import List, Tuple

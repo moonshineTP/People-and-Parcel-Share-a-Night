@@ -1,3 +1,13 @@
+"""
+Module defining objects for representing solutions to the Share-a-Ride problem.
+Includes:
+- Solution: complete solution with K routes. Only use when it is assured that the
+solution is complete and valid.
+- PartialSolution: partial solution for constructive heuristics. 
+Use in most algorithms as it allows incomplete solutions and saves route states.
+- SolutionSwarm: collection of PartialSolution objects for population-based methods
+"""
+
 from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
 
@@ -26,7 +36,7 @@ class Solution:
 
         if not route_costs:
             new_route_costs = [
-                route_cost_from_sequence(route, problem.D) 
+                route_cost_from_sequence(route, problem.D)
                 for route in routes
             ]
         else:
@@ -169,7 +179,7 @@ class Solution:
         except ImportError:
             print("matplotlib is required for visualization.")
             return
-        
+
         if self.problem.coords is None:
             print("No coordinates available for visualization.")
             return
@@ -207,7 +217,7 @@ class Solution:
                 x_to, y_to = self.problem.coords[to_node]
 
                 # Draw arrow with defined style
-                ax.annotate('', xy=(x_to, y_to), xytext=(x_from, y_from), 
+                ax.annotate('', xy=(x_to, y_to), xytext=(x_from, y_from),
                         arrowprops=route_edge_style)
 
         # Add route information to title
@@ -230,7 +240,7 @@ class PartialSolution:
     - max_cost: maximal route cost among current routes
     - node_assignment: list mapping each node to its assigned route
         following -1 for unassigned, 0..K-1 for assigned to route, depot 0 is undefined
-    - route_states / taxi_states: list of dicts holding per-route state
+    - route_states: list of dicts holding per-route state
         ({route, pos, cost, load, passenger, parcels, ended})
     - remaining_pass_pick: set of passenger ids whose pickup has not been scheduled
     - remaining_pass_drop: set of passenger ids picked but not dropped yet
@@ -362,13 +372,26 @@ class PartialSolution:
 
 
     def copy(self):
+        """
+        Create a deep copy of the PartialSolution.
+        """
         return PartialSolution(
             problem=self.problem,
             routes=[list(route) for route in self.routes]
         )
-    
+
 
     def possible_actions(self, t_idx: int) -> list[tuple[str, int, int]]:
+        """
+        Get all feasible actions for taxi t_idx in its current state.
+        Each action is a tuple (kind, node_idx, inc_cost) where:
+        - kind: 'pickP', 'dropP', 'pickL', 'dropL'
+        - node_idx: id of the passenger or parcel.
+            + If passenger, it's the passenger id (1..N)
+            + If parcel, it's the parcel id (1..M)
+        - inc_cost: incremental cost of performing the action
+        """
+
         state = self.route_states[t_idx]
         if state["ended"]:
             return []
@@ -400,6 +423,14 @@ class PartialSolution:
 
 
     def apply_action(self, t_idx: int, kind: str, node_idx: int, inc: int) -> None:
+        """
+        Apply the specified action to taxi t_idx and update the PartialSolution state.
+        - kind: 'pickP', 'dropP', 'pickL', 'dropL'
+        - node_idx: id of the passenger or parcel.
+            + If passenger, it's the passenger id (1..N)
+            + If parcel, it's the parcel id (1..M)
+        - inc: incremental cost of performing the action
+        """
         state = self.route_states[t_idx]
         if state["ended"]:
             raise ValueError(f"Cannot apply action on ended route {t_idx}.")
@@ -451,6 +482,10 @@ class PartialSolution:
 
 
     def apply_return_to_depot(self, t_idx: int) -> None:
+        """
+        Apply the action of returning taxi t_idx to the depot (node 0)
+        and update the PartialSolution state.
+        """
         state = self.route_states[t_idx]
 
         # Check if route already ended
@@ -471,10 +506,13 @@ class PartialSolution:
         state["route"].append(0)
         state["pos"] = 0
         state["ended"] = True
-        
+
 
 
     def is_complete(self) -> bool:
+        """
+        Check if all routes have ended at the depot.
+        """
         return all(state["ended"] for state in self.route_states)
 
 
@@ -491,14 +529,20 @@ class PartialSolution:
             routes=self.routes,
             route_costs=self.route_costs
         )
-        
-        if not solution.is_valid():
+
+        if solution is None or not solution.is_valid():
             print("Warning: Converted solution is not valid.")
 
         return solution
 
-    def operate(self, op):
-        pass
+    @staticmethod
+    def from_solution(sol: Solution) -> PartialSolution:
+        """
+        Create a PartialSolution from a complete Solution, reusing __init__
+        to recompute route costs and internal states.
+        """
+        routes_copy = [list(route) for route in sol.routes]
+        return PartialSolution(problem=sol.problem, routes=routes_copy)
 
 
 
@@ -508,7 +552,7 @@ class SolutionSwarm:
     Used for population-based metaheuristics.
     """
 
-    def __init__(self, solutions: list[Solution]):
+    def __init__(self, solutions: list[PartialSolution]):
         """
         Initialize SolutionSwarm with a list of Solution objects.
         """
@@ -518,8 +562,3 @@ class SolutionSwarm:
         self.min_cost = min(sol.max_cost for sol in solutions)
         self.best_solution = min(solutions, key=lambda s: s.max_cost)
         self.avg_cost = sum(sol.max_cost for sol in solutions) / len(solutions)
-
-
-    def operate(self, op) -> Optional[SolutionSwarm]:
-        pass
-

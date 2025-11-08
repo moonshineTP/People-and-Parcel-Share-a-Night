@@ -2,7 +2,7 @@
 Utility functions to compute weights from some score lists.
 """
 
-def softmax_weighter(incs: list[float], T: float) -> list[float]:
+def softmax_weighter(incs: list[int] | list[float], T: float) -> list[float]:
     """
     Given a list of incremental costs, compute weights using a temperature-scaled softmax.
     Lower increments get higher weights. If all increments are similar, returns uniform weights.

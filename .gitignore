@@ -2,5 +2,5 @@ venv/
 .vscode/
 __pycache__/
 *.pyc
-VSCodeCounter/
+.VSCodeCounter/
 .idea/

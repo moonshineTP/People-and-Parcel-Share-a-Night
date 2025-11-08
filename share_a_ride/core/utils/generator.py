@@ -79,7 +79,7 @@ def random_distance_matrix(
 
 
 def euclidean_distance_matrix(
-        coords: list[tuple[float, float]]
+        coords: list[tuple[int, int]]
     ) -> list[list[int]]:
     """
     Compute pairwise Euclidean distance matrix from coordinates, 
@@ -95,7 +95,7 @@ def euclidean_distance_matrix(
                 coords[i][1] - coords[j][1]
             )))
             D[i][j] = D[j][i] = dist
-    
+
     return D
 
 
@@ -124,15 +124,15 @@ def generate_instance_lazy(
         Q = [rng.randint(Qlow, Qhigh) for _ in range(K)]
         D = random_distance_matrix(n_nodes, low=low, high=high, lmbd=lmbd,
                                asymmetric=True, seed=seed)
-    
+
     return ShareARideProblem(N, M, K, q, Q, D)
 
 
 def generate_instance_coords(
         N: int, M: int, K: int,
-        area: float = 100.0,
+        area: int = 100,
         qlow: int = 5, qhigh: int = 15, qlmbd: float = 10.0,
-        Qlow: int = 15, Qhigh: int = 30, Qlmbd: float = 20.0,
+        Qlow: int = 20, Qhigh: int = 45, Qlmbd: float = 30.0,
         seed: int = 42,
     ) -> ShareARideProblem:
 
@@ -143,8 +143,8 @@ def generate_instance_coords(
     total_points = 1 + 2 * N + 2 * M
 
     # Generate depot and random coordinates, ensuring no overlaps
-    coords: list[tuple[int, int]] = [(area // 2.0, area // 2.0)]
-    used_coords: set[tuple[int, int]] = {(area // 2.0, area // 2.0)}
+    coords: list[tuple[int, int]] = [(area // 2, area // 2)]
+    used_coords: set[tuple[int, int]] = {(area // 2, area // 2)}
 
     while len(coords) < total_points:
         new_coord = (
@@ -161,3 +161,9 @@ def generate_instance_coords(
     prob = ShareARideProblem(N, M, K, q, Q, D, coords)
 
     return prob
+
+
+if __name__ == "__main__":
+    # Example usage
+    problem: ShareARideProblem = generate_instance_coords(N=3, M=7, K=2, seed=123)
+    problem.stdin_print()

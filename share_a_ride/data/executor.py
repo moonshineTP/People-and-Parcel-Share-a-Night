@@ -278,9 +278,6 @@ if __name__ == "__main__":
         }
     )
 
-    sol, gap, msg = attempt_instance(chosen_solver, "H", "H-n10-m10-k5", note="test attempt", verbose=True)
-
-
-# TODO: Implement the SolverExecutor class for batch execution and management
-class SolverExecutor:
-    pass
+    sol, gap, msg = attempt_instance(
+        chosen_solver, "Cvrplib", "M-n101-k10", note="test attempt", verbose=True
+    )

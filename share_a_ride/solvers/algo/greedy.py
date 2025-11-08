@@ -7,7 +7,7 @@ from typing import Any, List, Optional, Tuple, Dict
 
 from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.core.solution import PartialSolution, Solution
-from share_a_ride.solvers.operator.build import build_operator
+from share_a_ride.solvers.operator.repair import repair_operator
 from share_a_ride.solvers.operator.destroy import destroy_operator
 
 
@@ -202,7 +202,7 @@ def iterative_greedy_balanced_solver(
             if rng.random() > rebuild_proba:
                 continue
 
-            partial_sol, new_nodes_count = build_operator(
+            partial_sol, repaired_list, new_nodes_count = repair_operator(
                 partial_sol,
                 route_idx=r_idx,
                 steps=rebuild_steps,

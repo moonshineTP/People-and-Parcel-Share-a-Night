@@ -973,7 +973,6 @@ class ShareARideDashboard:
             return
         self._dataset_bundle = bundle
 
-
         # Re-render per-solver dashboard (table + pie + configs)
         self._render_solver_summary_table(bundle.get("solver_summary"))
         self._render_solver_leaderboard_pie(bundle.get("solver_leaderboard"))
@@ -984,7 +983,6 @@ class ShareARideDashboard:
             except Exception:
                 cfg_df = None
         self._render_solver_config_table(cfg_df)
-
 
         # Re-render instance views for the selected instance
         self._on_instance_change()
