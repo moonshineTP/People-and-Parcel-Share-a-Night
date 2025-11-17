@@ -186,7 +186,7 @@ def _parse_vrplib(text: str) -> Instance:
             coords: list[tuple[float, float]] = []
             for row in body:
                 parts = row.split()
-                if len(parts) < 3:
+                if len(parts) < 5:
                     raise ValueError(
                         "Each NODE_COORD_SECTION line " \
                         "must have at least 3 values"

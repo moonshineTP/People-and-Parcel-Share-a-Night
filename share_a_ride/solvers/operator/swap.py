@@ -40,19 +40,38 @@ def cost_decrement_intra_swap(
     assert route[a_idx] != 0 and route[b_idx] != 0, "Cannot swap depot nodes."
 
     D = partial.problem.D
+
+    # Helper to get successor cost, handling end-of-route case
+    def is_node(idx: int) -> Optional[int]:
+        # Return node at route[idx] if exists, else None
+        # Actions count excludes depot at end, so idx should be <= actions
+        return route[idx] \
+            if 0 <= idx <= partial.route_states[route_idx]["actions"] else None
+
+    def successor_cost(from_node: int, to_node: Optional[int]) -> int:
+        if to_node is None:
+            return 0
+        return D[from_node][to_node]
+
+
+    # Calculate cost difference 
     if a_idx < b_idx - 1:
         delta = (
-            D[route[a_idx - 1]][route[a_idx]] + D[route[a_idx]][route[a_idx + 1]]
-            + D[route[b_idx - 1]][route[b_idx]] + D[route[b_idx]][route[b_idx + 1]]
-            - D[route[a_idx - 1]][route[b_idx]] - D[route[b_idx]][route[a_idx + 1]]
-            - D[route[b_idx - 1]][route[a_idx]] - D[route[a_idx]][route[b_idx + 1]]
+            D[route[a_idx - 1]][route[a_idx]]
+            + successor_cost(route[a_idx], is_node(a_idx + 1))
+            + D[route[b_idx - 1]][route[b_idx]]
+            + successor_cost(route[b_idx], is_node(b_idx + 1))
+            - D[route[a_idx - 1]][route[b_idx]]
+            - successor_cost(route[b_idx], is_node(a_idx + 1))
+            - D[route[b_idx - 1]][route[a_idx]]
+            - successor_cost(route[a_idx], is_node(b_idx + 1))
         )
     else:
         delta = (
             D[route[a_idx - 1]][route[a_idx]] + D[route[a_idx]][route[b_idx]]
-            + D[route[b_idx]][route[b_idx + 1]]
+            + successor_cost(route[b_idx], is_node(b_idx + 1))
             - D[route[a_idx - 1]][route[b_idx]] - D[route[b_idx]][route[a_idx]]
-            - D[route[a_idx]][route[b_idx + 1]]
+            - successor_cost(route[a_idx], is_node(b_idx + 1))
         )
 
     return delta
@@ -105,7 +124,7 @@ def intra_swap_one_route_operator(
 
 
     # Don't perform if route being too short
-    if n < 3:
+    if n < 5:
         return current_par, [False] * K, 0
     if steps is None:
         steps = n ** 2
@@ -467,53 +486,71 @@ def cost_decrement_inter_swap(
 
     # Compute current cost contribution of the two requests
     D = partial.problem.D
+
+    # Helper: Handle the case when the node has no successor.
+    # It is the last node currently and thus has no outgoing cost.
+    # However, every node has a predecessor since depot is always present.
+    def _succ_cost(from_node: int, routechar: str, idx: int) -> int:
+        """Return D[from_node][next_node] if successor exists, otherwise 0."""
+        if routechar == 'a':
+            route = route_a
+            route_idx = route_a_idx
+        else:
+            route = route_b
+            route_idx = route_b_idx
+
+        if idx >= partial.route_states[route_idx]["actions"]:
+            return 0
+        return D[from_node][route[idx + 1]]
+
+    # Compute in-out costs before and after swap for both routes
     if p_idx_a + 1 == d_idx_a:
         in_out_cost_a_before = (
             D[route_a[p_idx_a - 1]][route_a[p_idx_a]]
             + D[route_a[p_idx_a]][route_a[d_idx_a]]
-            + D[route_a[d_idx_a]][route_a[d_idx_a + 1]]
+            + _succ_cost(route_a[d_idx_a], 'a', d_idx_a)
         )
         in_out_cost_a_after = (
             D[route_a[p_idx_a - 1]][route_b[p_idx_b]]
             + D[route_b[p_idx_b]][route_b[d_idx_b]]
-            + D[route_b[d_idx_b]][route_a[d_idx_a + 1]]
+            + _succ_cost(route_b[d_idx_b], 'a', d_idx_a)
         )
     else:
         in_out_cost_a_before = (
-            D[route_a[p_idx_a - 1]][route_a[p_idx_a]] 
+            D[route_a[p_idx_a - 1]][route_a[p_idx_a]]
             + D[route_a[p_idx_a]][route_a[p_idx_a + 1]]
             + D[route_a[d_idx_a - 1]][route_a[d_idx_a]]
-            + D[route_a[d_idx_a]][route_a[d_idx_a + 1]]
+            + _succ_cost(route_a[d_idx_a], 'a', d_idx_a)
         )
         in_out_cost_a_after = (
             D[route_a[p_idx_a - 1]][route_b[p_idx_b]]
             + D[route_b[p_idx_b]][route_a[p_idx_a + 1]]
             + D[route_a[d_idx_a - 1]][route_b[d_idx_b]]
-            + D[route_b[d_idx_b]][route_a[d_idx_a + 1]]
+            + _succ_cost(route_b[d_idx_b], 'a', d_idx_a)
         )
     if p_idx_b + 1 == d_idx_b:
         in_out_cost_b_before = (
             D[route_b[p_idx_b - 1]][route_b[p_idx_b]]
             + D[route_b[p_idx_b]][route_b[d_idx_b]]
-            + D[route_b[d_idx_b]][route_b[d_idx_b + 1]]
+            + _succ_cost(route_b[d_idx_b], 'b', d_idx_b)
         )
         in_out_cost_b_after = (
             D[route_b[p_idx_b - 1]][route_a[p_idx_a]]
             + D[route_a[p_idx_a]][route_a[d_idx_a]]
-            + D[route_a[d_idx_a]][route_b[d_idx_b + 1]]
+            + _succ_cost(route_a[d_idx_a], 'b', d_idx_b)
         )
     else:
         in_out_cost_b_before = (
             D[route_b[p_idx_b - 1]][route_b[p_idx_b]] 
             + D[route_b[p_idx_b]][route_b[p_idx_b + 1]]
             + D[route_b[d_idx_b - 1]][route_b[d_idx_b]]
-            + D[route_b[d_idx_b]][route_b[d_idx_b + 1]]
+            + _succ_cost(route_b[d_idx_b], 'b', d_idx_b)
         )
         in_out_cost_b_after = (
             D[route_b[p_idx_b - 1]][route_a[p_idx_a]]
             + D[route_a[p_idx_a]][route_b[p_idx_b + 1]]
             + D[route_b[d_idx_b - 1]][route_a[d_idx_a]]
-            + D[route_a[d_idx_a]][route_b[d_idx_b + 1]]
+            + _succ_cost(route_a[d_idx_a], 'b', d_idx_b)
         )
 
     # Compute new route costs and max cost after swap
@@ -575,7 +612,7 @@ def inter_swap_route_pair_operator (
     n_b = len(route_b)
 
     # Don't perform if any route being too short
-    if n_a < 3 or n_b < 3:
+    if n_a < 5 or n_b < 5:
         return current_par, [False] * prob.K, 0
 
     # Helpers to build loads, deltas, and segment trees for a route
@@ -706,11 +743,11 @@ def inter_swap_route_pair_operator (
     # ============== Candidate search and selection ==============
     def find_candidates():
         pickup_indices_a = [
-            i for i in range(1, n_a - 1)
+            i for i in range(n_a)
             if prob.is_ppick(route_a[i]) or prob.is_parc_pick(route_a[i])
         ]
         pickup_indices_b = [
-            j for j in range(1, n_b - 1)
+            j for j in range(n_b)
             if prob.is_ppick(route_b[j]) or prob.is_parc_pick(route_b[j])
         ]
 
@@ -739,6 +776,10 @@ def inter_swap_route_pair_operator (
                 q_idx_b = pos_b.get(q_node_b)
                 if q_idx_b is None:
                     continue
+
+                # # Patch for depot at the end
+                # if q_idx_a == n_a - 1 or q_idx_b == n_b - 1:
+                #     continue
 
                 feasible, after_cost_a, after_cost_b, dec = check_swap(
                     p_idx_a, q_idx_a, p_idx_b, q_idx_b

@@ -9,7 +9,8 @@ Use in most algorithms as it allows incomplete solutions and saves route states.
 """
 
 from __future__ import annotations
-from typing import Optional, TYPE_CHECKING
+
+from typing import Optional, List, Tuple, TYPE_CHECKING
 
 from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.core.utils.helper import route_cost_from_sequence
@@ -27,7 +28,7 @@ class Solution:
     - max_length: int (objective to minimize)
     """
     def __init__(self, problem: ShareARideProblem,
-                routes: list[list[int]], route_costs: Optional[list[int]] = None):
+                routes: List[List[int]], route_costs: Optional[List[int]] = None):
 
         if not routes:
             raise ValueError("Routes list cannot be empty.")
@@ -45,7 +46,7 @@ class Solution:
         self.problem = problem
         self.routes = routes
         self.route_costs = new_route_costs
-
+        self.n_actions = 2 * (problem.N + problem.M) + problem.K
         self.max_cost = max(new_route_costs) if new_route_costs else 0
 
 
@@ -76,28 +77,28 @@ class Solution:
 
                 # passenger pickup
                 if prob.is_ppick(node):
-                    id = prob.rev_ppick(node)
+                    idx = prob.rev_ppick(node)
 
                     # check
-                    if id in visited_pass_pick:
+                    if idx in visited_pass_pick:
                         return False
                     if len(passenger_onboard) >= 1:
                         return False
 
                     # add
-                    passenger_onboard.add(id)
-                    visited_pass_pick.add(id)
+                    passenger_onboard.add(idx)
+                    visited_pass_pick.add(idx)
 
                 # passenger drop
                 elif prob.is_pdrop(node):
-                    id = prob.rev_pdrop(node)
+                    idx = prob.rev_pdrop(node)
 
                     # check
-                    if id not in passenger_onboard:
+                    if idx not in passenger_onboard:
                         return False
 
                     # remove
-                    passenger_onboard.remove(id)
+                    passenger_onboard.remove(idx)
 
                 # parcel pickup
                 elif prob.is_parc_pick(node):
@@ -136,23 +137,25 @@ class Solution:
         return True
 
 
-    def stdin_print(self, verbose: int = 0):
+    def stdin_print(self, verbose: bool = False):
         """
             Print the solution in the specified format.
             Verbose option for more details.
-            - verbose=0: for online judge
-            - verbose=1: detailed route info
+            - verbose=False: only print K, routes
+            - verbose=True: print max cost and each route cost
         """
-        if verbose:
-            print(f"*** Max route cost: {self.max_cost} ***")
+        assert len(self.routes) == len(self.route_costs)
 
         print(self.problem.K)
-        assert len(self.routes) == len(self.route_costs)
         for route, cost in zip(self.routes, self.route_costs):
-            if verbose:
-                print(f"- Route cost: {cost}")
             print(len(route))
             print(" ".join(map(str, route)))
+            if verbose:
+                print(f"// Route cost: {cost}")
+                print("----------------")
+
+        if verbose:
+            print(f"//// Max route cost: {self.max_cost} ////")
 
 
     def file_print(self, file_path: str):
@@ -160,7 +163,7 @@ class Solution:
         Print solution to a .sol file in the TSPLIB format.
         Remember that TSPLIB .sol format exclude depot 1 in the route.
         """
-        with open(file_path, 'w') as f:
+        with open(file_path, 'w', encoding='utf-8') as f:
             for i, route in enumerate(self.routes):
                 route_str = ' '.join(map(str, route[1:-1]))
                 f.write(f"Route #{i + 1}: {route_str}\n")
@@ -251,7 +254,7 @@ class PartialSolution:
     def __init__(
             self,
             problem: ShareARideProblem,
-            routes: list[list[int]] = [],
+            routes: List[List[int]],
         ):
         """
         Initialize PartialSolution with problem and given route list.
@@ -266,10 +269,13 @@ class PartialSolution:
 
         # Initialize other attributes
         self.max_cost = max(self.route_costs)
+        self.avg_cost = sum(self.route_costs) / problem.K
         self.node_assignment = self._init_node_assignment()
         (   self.remaining_pass_pick, self.remaining_pass_drop, self.remaining_parc_pick,
             self.remaining_parc_drop, self.route_states
         ) = self._init_states()
+
+        self.n_actions = sum(len(route) - 1 for route in self.routes)
 
 
     def _init_routes(self, routes):
@@ -357,7 +363,8 @@ class PartialSolution:
                 "cost": self.route_costs[idx],
                 "load": current_load,
                 "passenger": onboard_passenger,
-                "parcels": set(onboard_parcels),
+                "parcels": onboard_parcels.copy(),
+                "actions": len(route) - 1,
                 "ended": ended
             }
             route_states.append(state)
@@ -371,24 +378,238 @@ class PartialSolution:
         )
 
 
+    def is_valid(self) -> bool:
+        """
+        Validate the PartialSolution for feasibility:
+        - No route exceeds taxi capacity
+        - No passenger or parcel is picked up more than once
+        - No passenger or parcel is dropped before being picked up
+        - All pickups and drops are within valid node indices
+        """
+        prob = self.problem
+        N, M, K = prob.N, prob.M, prob.K
+
+        # Check lengths
+        if not len(self.routes) == len(self.route_states) == len(self.route_costs) == K:
+            return False
+        if len(self.node_assignment) != len(prob.D):
+            return False
+
+        # Initialize expected sets
+        expected_pass_pick = set(range(1, N + 1))
+        expected_pass_drop: set[int] = set()
+        expected_parc_pick = set(range(1, M + 1))
+        expected_parc_drop: set[int] = set()
+
+        # Initialize assignment and counter
+        node_assignment_check = [-1] * len(prob.D)
+        total_actions = 0
+        max_cost_check = 0
+        cost_sum = 0
+
+        # Iterate over routes
+        for t_idx in range(K):
+            route = self.routes[t_idx]
+            state = self.route_states[t_idx]
+
+            if not route or route[0] != 0:
+                return False
+            if state["route"] != route:
+                return False
+            if state["pos"] != route[-1]:
+                return False
+            if state["actions"] != len(route) - 1:
+                return False
+            ended_now = len(route) > 1 and route[-1] == 0
+            if state["ended"] != ended_now:
+                return False
+
+            passenger_onboard: set[int] = set()
+            parcel_onboard: set[int] = set()
+            load = 0
+            prev = route[0]
+            computed_cost = 0
+
+            # Iterate over nodes in the route
+            for node in route[1:]:
+                if not 0 <= node < len(prob.D):
+                    return False
+
+                computed_cost += prob.D[prev][node]
+                prev = node
+
+                if node != 0:
+                    assigned = node_assignment_check[node]
+                    if assigned != -1 and assigned != t_idx:
+                        return False
+                    node_assignment_check[node] = t_idx
+
+                if prob.is_ppick(node):
+                    pid = prob.rev_ppick(node)
+                    if pid in passenger_onboard or passenger_onboard:
+                        return False
+                    passenger_onboard.add(pid)
+                    expected_pass_pick.discard(pid)
+                    expected_pass_drop.add(pid)
+
+                elif prob.is_pdrop(node):
+                    pid = prob.rev_pdrop(node)
+                    if pid not in passenger_onboard:
+                        return False
+                    passenger_onboard.remove(pid)
+                    expected_pass_drop.discard(pid)
+
+                elif prob.is_parc_pick(node):
+                    jid = prob.rev_parc_pick(node)
+                    if jid in parcel_onboard:
+                        return False
+                    load += prob.q[jid - 1]
+                    if load > prob.Q[t_idx]:
+                        return False
+                    parcel_onboard.add(jid)
+                    expected_parc_pick.discard(jid)
+                    expected_parc_drop.add(jid)
+
+                elif prob.is_parc_drop(node):
+                    jid = prob.rev_parc_drop(node)
+                    if jid not in parcel_onboard:
+                        return False
+                    load -= prob.q[jid - 1]
+                    parcel_onboard.remove(jid)
+                    expected_parc_drop.discard(jid)
+
+            current_passenger = next(iter(passenger_onboard)) if passenger_onboard else 0
+            if state["passenger"] != current_passenger:
+                return False
+            if state["parcels"] != parcel_onboard:
+                return False
+            if state["load"] != load:
+                return False
+            if state["cost"] != computed_cost or self.route_costs[t_idx] != computed_cost:
+                return False
+
+            # Update counters
+            total_actions += len(route) - 1
+            max_cost_check = max(max_cost_check, computed_cost)
+            cost_sum += computed_cost
+
+
+        # Check for expected storage sets
+        if expected_pass_pick != self.remaining_pass_pick:
+            return False
+        if expected_pass_drop != self.remaining_pass_drop:
+            return False
+        if expected_parc_pick != self.remaining_parc_pick:
+            return False
+        if expected_parc_drop != self.remaining_parc_drop:
+            return False
+        if node_assignment_check != self.node_assignment:
+            return False
+        if self.max_cost != max_cost_check:
+            return False
+        if self.n_actions != total_actions:
+            return False
+
+        return True
+
+
+    def is_identical(self, other: "PartialSolution") -> bool:
+        """Check if two partial solutions encode the same action history.
+
+        Routes are compared in a permutation-invariant way: we only care about
+        the multiset of per-taxi action sequences, not about their ordering.
+        """
+        if self is other:
+            return True
+
+        # Quick consistency checks to avoid extra work.
+        if self.problem is not other.problem:
+            return False
+        if self.n_actions != other.n_actions:
+            return False
+
+        # Remaining work must match regardless of taxi ordering
+        def _canonical_node_assignment(
+                ps: PartialSolution
+            ) -> Tuple[Tuple[Tuple[int, ...], ...], Tuple[int, ...]]:
+            per_route: List[Tuple[int, ...]] = []
+            unassigned: List[int] = []
+            buckets: dict[int, List[int]] = {}
+
+            for node_idx, assigned in enumerate(ps.node_assignment):
+                if node_idx == 0:
+                    continue
+                if assigned == -1:
+                    unassigned.append(node_idx)
+                else:
+                    buckets.setdefault(assigned, []).append(node_idx)
+
+            for nodes in buckets.values():
+                per_route.append(tuple(sorted(nodes)))
+
+            per_route.sort()
+            unassigned.sort()
+            return tuple(per_route), tuple(unassigned)
+
+        if _canonical_node_assignment(self) != _canonical_node_assignment(other):
+            return False
+
+        # Formalize a lightweight route signature using only the first two actions.
+        def _canonical_route_signature(
+                ps: PartialSolution
+            ) -> List[Tuple[int, int, int]]:
+            summary: List[Tuple[int, int, int]] = []
+            for idx, route in enumerate(ps.routes):
+                first = route[1] if len(route) > 1 else -1
+                second = route[2] if len(route) > 2 else -1
+                summary.append((first, second, ps.route_costs[idx]))
+
+            summary.sort()
+            return summary
+
+        if _canonical_route_signature(self) != _canonical_route_signature(other):
+            return False
+
+        return True
+
+
     def copy(self):
         """
-        Create a deep copy of the PartialSolution.
+        Create a copy of the PartialSolution without re-running the constructor.
         """
         return PartialSolution(
             problem=self.problem,
-            routes=[list(route) for route in self.routes]
+            routes=[route.copy() for route in self.routes]
         )
 
 
-    def possible_actions(self, t_idx: int) -> list[tuple[str, int, int]]:
+    def stdin_print(self, verbose: bool = False):
+        """
+            Print the partial solution in the specified format.
+            Verbose option for more details.
+        """
+        assert len(self.routes) == len(self.route_costs)
+
+        print(self.problem.K)
+        for route, cost in zip(self.routes, self.route_costs):
+            print(len(route))
+            print(" ".join(map(str, route)))
+            if verbose:
+                print(f"// Route cost: {cost}")
+                print("----------------")
+
+        if verbose:
+            print(f"//// Max route cost: {self.max_cost} ////")
+
+
+    def possible_actions(self, t_idx: int) -> List[Tuple[str, int, int]]:
         """
         Get all feasible actions for taxi t_idx in its current state.
         Each action is a tuple (kind, node_idx, inc_cost) where:
         - kind: 'pickP', 'dropP', 'pickL', 'dropL'
-        - node_idx: id of the passenger or parcel.
-            + If passenger, it's the passenger id (1..N)
-            + If parcel, it's the parcel id (1..M)
+        - node_idx: idx of the passenger or parcel.
+            + If passenger, it's the passenger idx (1..N)
+            + If parcel, it's the parcel idx (1..M)
         - inc_cost: incremental cost of performing the action
         """
 
@@ -398,7 +619,7 @@ class PartialSolution:
 
         prob = self.problem
         pos = state["pos"]
-        actions: list[tuple[str, int, int]] = []
+        actions: List[Tuple[str, int, int]] = []
 
         if state["passenger"] == 0:
             for pid in list(self.remaining_pass_pick):
@@ -419,6 +640,8 @@ class PartialSolution:
             inc = prob.D[pos][prob.parc_drop(jid)]
             actions.append(("dropL", jid, inc))
 
+
+        actions.sort(key=lambda x: x[2])  # Sort by incremental cost
         return actions
 
 
@@ -426,9 +649,9 @@ class PartialSolution:
         """
         Apply the specified action to taxi t_idx and update the PartialSolution state.
         - kind: 'pickP', 'dropP', 'pickL', 'dropL'
-        - node_idx: id of the passenger or parcel.
-            + If passenger, it's the passenger id (1..N)
-            + If parcel, it's the parcel id (1..M)
+        - node_idx: idx of the passenger or parcel.
+            + If passenger, it's the passenger idx (1..N)
+            + If parcel, it's the parcel idx (1..M)
         - inc: incremental cost of performing the action
         """
         state = self.route_states[t_idx]
@@ -476,9 +699,12 @@ class PartialSolution:
         state["route"].append(node)
         state["cost"] += inc
         state["pos"] = node
+        state["actions"] += 1
         self.node_assignment[node] = t_idx
         self.route_costs[t_idx] = state["cost"]
         self.max_cost = max(self.max_cost, state["cost"])
+        self.avg_cost = sum(self.route_costs) / self.problem.K
+        self.n_actions += 1
 
 
     def apply_return_to_depot(self, t_idx: int) -> None:
@@ -501,12 +727,70 @@ class PartialSolution:
 
         # Update state to end route
         state["cost"] += self.problem.D[state["pos"]][0]
-        self.route_costs[t_idx] = state["cost"]
-        self.max_cost = max(self.max_cost, state["cost"])
         state["route"].append(0)
         state["pos"] = 0
+        state["actions"] += 1
         state["ended"] = True
+        self.route_costs[t_idx] = state["cost"]
+        self.max_cost = max(self.max_cost, state["cost"])
+        self.avg_cost = sum(self.route_costs) / self.problem.K
+        self.n_actions += 1
 
+
+    def reverse_action(self, t_idx: int) -> None:
+        """
+        Reverse the last action taken by taxi t_idx and update the PartialSolution state.
+        The reversed state is guaranteed to be valid by the design, so no extra checks are needed.
+        """
+        state = self.route_states[t_idx]
+
+        if len(state["route"]) <= 1:
+            raise ValueError(f"No actions to reverse for taxi {t_idx}.")
+
+        # Update route state
+        last_node = state["route"].pop()
+        prev_node = state["route"][-1]
+        dec_cost = self.problem.D[prev_node][last_node]
+        state["cost"] -= dec_cost
+        state["pos"] = prev_node
+        state["actions"] -= 1
+        state["ended"] = False
+
+
+        # Update remaining pickups/drops and onboard loads
+        prob = self.problem
+        if prob.is_ppick(last_node):
+            pid = prob.rev_ppick(last_node)
+            state["passenger"] = 0
+            self.remaining_pass_pick.add(pid)
+            self.remaining_pass_drop.discard(pid)
+        elif prob.is_pdrop(last_node):
+            pid = prob.rev_pdrop(last_node)
+            state["passenger"] = pid
+            self.remaining_pass_pick.discard(pid)
+            self.remaining_pass_drop.add(pid)
+        elif prob.is_parc_pick(last_node):
+            jid = prob.rev_parc_pick(last_node)
+            state["load"] -= prob.q[jid - 1]
+            state["parcels"].discard(jid)
+            self.remaining_parc_pick.add(jid)
+            self.remaining_parc_drop.discard(jid)
+        elif prob.is_parc_drop(last_node):
+            jid = prob.rev_parc_drop(last_node)
+            state["load"] += prob.q[jid - 1]
+            state["parcels"].add(jid)
+            self.remaining_parc_pick.discard(jid)
+            self.remaining_parc_drop.add(jid)
+        else:
+            # If last node is depot, just mark route as not ended
+            state["ended"] = False
+
+        # Update instance attributes
+        self.route_costs[t_idx] = state["cost"]
+        self.max_cost = max(self.route_costs)
+        self.avg_cost = sum(self.route_costs) / self.problem.K
+        self.node_assignment[last_node] = -1
+        self.n_actions -= 1
 
 
     def is_complete(self) -> bool:
@@ -535,30 +819,106 @@ class PartialSolution:
 
         return solution
 
+
     @staticmethod
-    def from_solution(sol: Solution) -> PartialSolution:
+    def from_solution(sol: Solution) -> "PartialSolution":
         """
         Create a PartialSolution from a complete Solution, reusing __init__
         to recompute route costs and internal states.
         """
-        routes_copy = [list(route) for route in sol.routes]
+        routes_copy = [route.copy() for route in sol.routes]
         return PartialSolution(problem=sol.problem, routes=routes_copy)
 
 
 
-class SolutionSwarm:
+class PartialSolutionSwarm:
     """
     SolutionSwarm representing a collection of solutions.
     Used for population-based metaheuristics.
     """
 
-    def __init__(self, solutions: list[PartialSolution]):
+    def __init__(
+            self,
+            solutions: Optional[List[PartialSolution]] = None,
+            n_partials: Optional[int] = None
+        ):
         """
         Initialize SolutionSwarm with a list of Solution objects.
         """
         if not solutions:
-            raise ValueError("Solutions list cannot be empty.")
-        self.solutions = solutions
-        self.min_cost = min(sol.max_cost for sol in solutions)
-        self.best_solution = min(solutions, key=lambda s: s.max_cost)
+            if n_partials is None or n_partials <= 0:
+                raise ValueError("Must provide either solutions list or positive n_partials.")
+            self.parsol_list = []
+            self.parsol_nact = []
+            self.costs = []
+            self.min_cost = 0
+            self.max_cost = 0
+            self.avg_cost = 0.0
+            self.best_parsol = None
+            return
+
+        self.parsol_list = solutions
+        self.parsol_nact = [sol.n_actions for sol in solutions]
+        self.costs = [sol.max_cost for sol in solutions]
+        self.min_cost = min(self.costs)
+        self.max_cost = max(self.costs)
         self.avg_cost = sum(sol.max_cost for sol in solutions) / len(solutions)
+        self.best_parsol = min(solutions, key=lambda s: s.max_cost)
+
+
+    def apply_action_one(
+        self, sol_idx: int, t_idx: int, kind: str, node_idx: int, inc: int
+    ):
+        """
+        Apply action to one PartialSolution in the swarm.
+        Update swarm statistics accordingly.
+        """
+        parsol = self.parsol_list[sol_idx]
+        parsol.apply_action(t_idx, kind, node_idx, inc)
+
+        # Update statistics
+        self.parsol_nact[sol_idx] = parsol.n_actions
+        self.costs[sol_idx] = parsol.max_cost
+
+        self.min_cost = min(self.costs)
+        self.max_cost = max(self.costs)
+        self.avg_cost = sum(self.costs) / len(self.costs)
+        if parsol.max_cost == self.min_cost:
+            self.best_parsol = parsol
+
+
+    def apply_return_to_depot_one(self, sol_idx: int, t_idx: int):
+        """
+        Apply return to depot action to one PartialSolution in the swarm.
+        Update swarm statistics accordingly.
+        """
+        parsol = self.parsol_list[sol_idx]
+        parsol.apply_return_to_depot(t_idx)
+
+        # Update statistics
+        self.parsol_nact[sol_idx] = parsol.n_actions
+        self.costs[sol_idx] = parsol.max_cost
+
+        self.min_cost = min(self.costs)
+        self.max_cost = max(self.costs)
+        self.avg_cost = sum(self.costs) / len(self.costs)
+        if parsol.max_cost == self.min_cost:
+            self.best_parsol = parsol
+
+
+    def copy(self):
+        """
+        Create a deep copy of the PartialSolutionSwarm.
+        """
+        copied_solutions = [sol.copy() for sol in self.parsol_list]
+        return PartialSolutionSwarm(solutions=copied_solutions)
+
+
+    def extract_best_solution(self) -> Optional[Solution]:
+        """
+        Extract the best complete Solution from the swarm if available.
+        """
+        if self.best_parsol and self.best_parsol.is_complete():
+            return self.best_parsol.to_solution()
+
+        return None

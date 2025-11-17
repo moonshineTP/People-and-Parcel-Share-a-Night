@@ -2,7 +2,8 @@
 Greedy balanced heuristic and its iterative improvement.
 """
 
-import time, random
+import time
+import random
 from typing import Any, List, Optional, Tuple, Dict
 
 from share_a_ride.core.problem import ShareARideProblem
@@ -13,7 +14,7 @@ from share_a_ride.solvers.operator.destroy import destroy_operator
 
 
 def greedy_balanced_solver(
-        prob: ShareARideProblem,
+        problem: ShareARideProblem,
         premature_routes: List[List[int]] = [],
         verbose: bool = False
     ) -> Tuple[Optional[Solution], Dict[str, Any]]:
@@ -34,7 +35,7 @@ def greedy_balanced_solver(
     """
 
     start_time = time.time()
-    partial = PartialSolution(problem=prob, routes=premature_routes)
+    partial = PartialSolution(problem=problem, routes=premature_routes)
     taxi_states = partial.route_states
 
     def has_pending_work() -> bool:
@@ -60,10 +61,6 @@ def greedy_balanced_solver(
         actions = partial.possible_actions(argmin_t_idx)
         stats["actions_evaluated"] += len(actions)
 
-        if verbose:
-            print(f"Taxi with min cost: {argmin_t_idx}")
-            print(f"Actions available: {actions}")
-
         # No feasible actions: return to depot and end route
         if not actions:
             partial.apply_return_to_depot(argmin_t_idx)
@@ -74,16 +71,13 @@ def greedy_balanced_solver(
         partial.apply_action(argmin_t_idx, kind, idx, inc)
 
         if verbose:
-            print(f"Taxi: {argmin_t_idx}: {taxi_states[argmin_t_idx]['route']}\n")
+            print(f"[Greedy] Taxi {argmin_t_idx} extended route with {kind} {idx} (inc {inc})")
 
 
     # All taxis return to depot if not already ended
     for t_idx, t_state in enumerate(taxi_states):
         if not t_state["ended"]:
             partial.apply_return_to_depot(t_idx)
-
-    if verbose:
-        print("All tasks completed.")
 
     # Build final solution
     sol = partial.to_solution()
@@ -100,11 +94,18 @@ def greedy_balanced_solver(
     if sol and not sol.is_valid():
         sol = None
     assert sol.is_valid() if sol else True
+
+    # Summary
+    if verbose:
+        print("[Greedy] All tasks completed.")
+        print(f"[Greedy] Solution max cost: {sol.max_cost if sol else 'N/A'}")
+        print(f"[Greedy] Time taken: {elapsed:.4f} seconds")
+
     return sol, info
 
 
 def iterative_greedy_balanced_solver(
-        prob: ShareARideProblem,
+        problem: ShareARideProblem,
         iterations: int = 10,
         time_limit: float = 10.0,
         seed: int = 42,
@@ -125,7 +126,7 @@ def iterative_greedy_balanced_solver(
     - If improved, update the best solution found.
 
     Args:
-        - prob: ShareARideProblem instance
+        - problem: ShareARideProblem instance
         - iterations: Number of destroy-and-rebuild iterations
         - time_limit: Max time allowed (seconds)
         - seed: Random seed for reproducibility
@@ -159,7 +160,7 @@ def iterative_greedy_balanced_solver(
     deadline = start_time + time_limit if time_limit is not None else None
 
     # Initial solution and best cost
-    best_sol, base_info = greedy_balanced_solver(prob, verbose=False)
+    best_sol, base_info = greedy_balanced_solver(problem, verbose=False)
     if not best_sol:
         return None, {"time": time.time() - start_time, "status": "error"}
     best_cost = best_sol.max_cost
@@ -174,7 +175,7 @@ def iterative_greedy_balanced_solver(
 
 
     if verbose:
-        print(f"[iter 0] initial best cost: {best_cost}")
+        print(f"[Iterative Greedy] [Iter 0] initial best cost: {best_cost}")
 
 
     # ================= Main loop =================
@@ -214,7 +215,7 @@ def iterative_greedy_balanced_solver(
 
         # ============== Greedy build phase ==============
         sol_cand, info_cand = greedy_balanced_solver(
-            prob,
+            problem,
             premature_routes=partial_sol.routes,
             verbose=False
         )
@@ -230,7 +231,7 @@ def iterative_greedy_balanced_solver(
             improvements += 1
 
             if verbose:
-                print(f"[iter {it}] improved best to {best_cost}")
+                print(f"[Iterative Greedy] [Iter {it}] improved best to {best_cost}")
 
 
     # Final stats
@@ -244,5 +245,14 @@ def iterative_greedy_balanced_solver(
         "time": elapsed,
         "status": status,
     }
+
+    # Summary
+    if verbose:
+        print(f"[Iterative Greedy] Finished after {iterations_done} iterations.")
+        print(
+            f"[Iterative Greedy] Best solution max cost: "
+            f"{best_sol.max_cost if best_sol else 'N/A'}."
+        )
+        print(f"[Iterative Greedy] Time taken: {elapsed:.4f} seconds.")
 
     return best_sol, info

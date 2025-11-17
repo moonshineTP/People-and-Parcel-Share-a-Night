@@ -1,11 +1,9 @@
 
-
-
 import sys
 import time
-import time, random
-from typing import Any, List, Optional, Tuple, Dict
+import random
 
+from typing import List, Optional, Tuple, Dict, Any
 
 
 class ShareARideProblem:
@@ -74,6 +72,8 @@ class ShareARideProblem:
 
 
 
+
+
 def route_cost_from_sequence(
         seq: List[int], 
         D: List[List[int]], 
@@ -121,7 +121,7 @@ class Solution:
         self.problem = problem
         self.routes = routes
         self.route_costs = new_route_costs
-
+        self.n_actions = 2 * (problem.N + problem.M) + problem.K
         self.max_cost = max(new_route_costs) if new_route_costs else 0
 
 
@@ -150,28 +150,28 @@ class Solution:
 
                 
                 if prob.is_ppick(node):
-                    id = prob.rev_ppick(node)
+                    idx = prob.rev_ppick(node)
 
                     
-                    if id in visited_pass_pick:
+                    if idx in visited_pass_pick:
                         return False
                     if len(passenger_onboard) >= 1:
                         return False
 
                     
-                    passenger_onboard.add(id)
-                    visited_pass_pick.add(id)
+                    passenger_onboard.add(idx)
+                    visited_pass_pick.add(idx)
 
                 
                 elif prob.is_pdrop(node):
-                    id = prob.rev_pdrop(node)
+                    idx = prob.rev_pdrop(node)
 
                     
-                    if id not in passenger_onboard:
+                    if idx not in passenger_onboard:
                         return False
 
                     
-                    passenger_onboard.remove(id)
+                    passenger_onboard.remove(idx)
 
                 
                 elif prob.is_parc_pick(node):
@@ -210,18 +210,21 @@ class Solution:
         return True
 
 
-    def stdin_print(self, verbose: int = 0):
+    def stdin_print(self, verbose: bool = False):
         
-        if verbose:
-            print(f"*** Max route cost: {self.max_cost} ***")
+        assert len(self.routes) == len(self.route_costs)
 
         print(self.problem.K)
-        assert len(self.routes) == len(self.route_costs)
         for route, cost in zip(self.routes, self.route_costs):
-            if verbose:
-                print(f"- Route cost: {cost}")
             print(len(route))
             print(" ".join(map(str, route)))
+            if verbose:
+                print(f"// Route cost: {cost}")
+                print("----------------")
+
+        if verbose:
+            print(f"//// Max route cost: {self.max_cost} ////")
+
 
 
 class PartialSolution:
@@ -230,7 +233,7 @@ class PartialSolution:
     def __init__(
             self,
             problem: ShareARideProblem,
-            routes: List[List[int]] = [],
+            routes: List[List[int]],
         ):
         
 
@@ -241,10 +244,13 @@ class PartialSolution:
 
         
         self.max_cost = max(self.route_costs)
+        self.avg_cost = sum(self.route_costs) / problem.K
         self.node_assignment = self._init_node_assignment()
         (   self.remaining_pass_pick, self.remaining_pass_drop, self.remaining_parc_pick,
             self.remaining_parc_drop, self.route_states
         ) = self._init_states()
+
+        self.n_actions = sum(len(route) - 1 for route in self.routes)
 
 
     def _init_routes(self, routes):
@@ -332,7 +338,8 @@ class PartialSolution:
                 "cost": self.route_costs[idx],
                 "load": current_load,
                 "passenger": onboard_passenger,
-                "parcels": set(onboard_parcels),
+                "parcels": onboard_parcels.copy(),
+                "actions": len(route) - 1,
                 "ended": ended
             }
             route_states.append(state)
@@ -346,15 +353,218 @@ class PartialSolution:
         )
 
 
+    def is_valid(self) -> bool:
+        
+        prob = self.problem
+        N, M, K = prob.N, prob.M, prob.K
+
+        
+        if not len(self.routes) == len(self.route_states) == len(self.route_costs) == K:
+            return False
+        if len(self.node_assignment) != len(prob.D):
+            return False
+
+        
+        expected_pass_pick = set(range(1, N + 1))
+        expected_pass_drop: set[int] = set()
+        expected_parc_pick = set(range(1, M + 1))
+        expected_parc_drop: set[int] = set()
+
+        
+        node_assignment_check = [-1] * len(prob.D)
+        total_actions = 0
+        max_cost_check = 0
+        cost_sum = 0
+
+        
+        for t_idx in range(K):
+            route = self.routes[t_idx]
+            state = self.route_states[t_idx]
+
+            if not route or route[0] != 0:
+                return False
+            if state["route"] != route:
+                return False
+            if state["pos"] != route[-1]:
+                return False
+            if state["actions"] != len(route) - 1:
+                return False
+            ended_now = len(route) > 1 and route[-1] == 0
+            if state["ended"] != ended_now:
+                return False
+
+            passenger_onboard: set[int] = set()
+            parcel_onboard: set[int] = set()
+            load = 0
+            prev = route[0]
+            computed_cost = 0
+
+            
+            for node in route[1:]:
+                if not 0 <= node < len(prob.D):
+                    return False
+
+                computed_cost += prob.D[prev][node]
+                prev = node
+
+                if node != 0:
+                    assigned = node_assignment_check[node]
+                    if assigned != -1 and assigned != t_idx:
+                        return False
+                    node_assignment_check[node] = t_idx
+
+                if prob.is_ppick(node):
+                    pid = prob.rev_ppick(node)
+                    if pid in passenger_onboard or passenger_onboard:
+                        return False
+                    passenger_onboard.add(pid)
+                    expected_pass_pick.discard(pid)
+                    expected_pass_drop.add(pid)
+
+                elif prob.is_pdrop(node):
+                    pid = prob.rev_pdrop(node)
+                    if pid not in passenger_onboard:
+                        return False
+                    passenger_onboard.remove(pid)
+                    expected_pass_drop.discard(pid)
+
+                elif prob.is_parc_pick(node):
+                    jid = prob.rev_parc_pick(node)
+                    if jid in parcel_onboard:
+                        return False
+                    load += prob.q[jid - 1]
+                    if load > prob.Q[t_idx]:
+                        return False
+                    parcel_onboard.add(jid)
+                    expected_parc_pick.discard(jid)
+                    expected_parc_drop.add(jid)
+
+                elif prob.is_parc_drop(node):
+                    jid = prob.rev_parc_drop(node)
+                    if jid not in parcel_onboard:
+                        return False
+                    load -= prob.q[jid - 1]
+                    parcel_onboard.remove(jid)
+                    expected_parc_drop.discard(jid)
+
+            current_passenger = next(iter(passenger_onboard)) if passenger_onboard else 0
+            if state["passenger"] != current_passenger:
+                return False
+            if state["parcels"] != parcel_onboard:
+                return False
+            if state["load"] != load:
+                return False
+            if state["cost"] != computed_cost or self.route_costs[t_idx] != computed_cost:
+                return False
+
+            
+            total_actions += len(route) - 1
+            max_cost_check = max(max_cost_check, computed_cost)
+            cost_sum += computed_cost
+
+
+        
+        if expected_pass_pick != self.remaining_pass_pick:
+            return False
+        if expected_pass_drop != self.remaining_pass_drop:
+            return False
+        if expected_parc_pick != self.remaining_parc_pick:
+            return False
+        if expected_parc_drop != self.remaining_parc_drop:
+            return False
+        if node_assignment_check != self.node_assignment:
+            return False
+        if self.max_cost != max_cost_check:
+            return False
+        if self.n_actions != total_actions:
+            return False
+
+        return True
+
+
+    def is_identical(self, other: "PartialSolution") -> bool:
+        
+        if self is other:
+            return True
+
+        
+        if self.problem is not other.problem:
+            return False
+        if self.n_actions != other.n_actions:
+            return False
+
+        
+        def _canonical_node_assignment(
+                ps: PartialSolution
+            ) -> Tuple[Tuple[Tuple[int, ...], ...], Tuple[int, ...]]:
+            per_route: List[Tuple[int, ...]] = []
+            unassigned: List[int] = []
+            buckets: Dict[int, List[int]] = {}
+
+            for node_idx, assigned in enumerate(ps.node_assignment):
+                if node_idx == 0:
+                    continue
+                if assigned == -1:
+                    unassigned.append(node_idx)
+                else:
+                    buckets.setdefault(assigned, []).append(node_idx)
+
+            for nodes in buckets.values():
+                per_route.append(tuple(sorted(nodes)))
+
+            per_route.sort()
+            unassigned.sort()
+            return tuple(per_route), tuple(unassigned)
+
+        if _canonical_node_assignment(self) != _canonical_node_assignment(other):
+            return False
+
+        
+        def _canonical_route_signature(
+                ps: PartialSolution
+            ) -> List[Tuple[int, int, int]]:
+            summary: List[Tuple[int, int, int]] = []
+            for idx, route in enumerate(ps.routes):
+                first = route[1] if len(route) > 1 else -1
+                second = route[2] if len(route) > 2 else -1
+                summary.append((first, second, ps.route_costs[idx]))
+
+            summary.sort()
+            return summary
+
+        if _canonical_route_signature(self) != _canonical_route_signature(other):
+            return False
+
+        return True
+
+
     def copy(self):
         
         return PartialSolution(
             problem=self.problem,
-            routes=[list(route) for route in self.routes]
+            routes=[route.copy() for route in self.routes]
         )
 
 
+    def stdin_print(self, verbose: bool = False):
+        
+        assert len(self.routes) == len(self.route_costs)
+
+        print(self.problem.K)
+        for route, cost in zip(self.routes, self.route_costs):
+            print(len(route))
+            print(" ".join(map(str, route)))
+            if verbose:
+                print(f"// Route cost: {cost}")
+                print("----------------")
+
+        if verbose:
+            print(f"//// Max route cost: {self.max_cost} ////")
+
+
     def possible_actions(self, t_idx: int) -> List[Tuple[str, int, int]]:
+        
+
         state = self.route_states[t_idx]
         if state["ended"]:
             return []
@@ -382,6 +592,8 @@ class PartialSolution:
             inc = prob.D[pos][prob.parc_drop(jid)]
             actions.append(("dropL", jid, inc))
 
+
+        actions.sort(key=lambda x: x[2])  
         return actions
 
 
@@ -432,9 +644,12 @@ class PartialSolution:
         state["route"].append(node)
         state["cost"] += inc
         state["pos"] = node
+        state["actions"] += 1
         self.node_assignment[node] = t_idx
         self.route_costs[t_idx] = state["cost"]
         self.max_cost = max(self.max_cost, state["cost"])
+        self.avg_cost = sum(self.route_costs) / self.problem.K
+        self.n_actions += 1
 
 
     def apply_return_to_depot(self, t_idx: int) -> None:
@@ -454,12 +669,67 @@ class PartialSolution:
 
         
         state["cost"] += self.problem.D[state["pos"]][0]
-        self.route_costs[t_idx] = state["cost"]
-        self.max_cost = max(self.max_cost, state["cost"])
         state["route"].append(0)
         state["pos"] = 0
+        state["actions"] += 1
         state["ended"] = True
+        self.route_costs[t_idx] = state["cost"]
+        self.max_cost = max(self.max_cost, state["cost"])
+        self.avg_cost = sum(self.route_costs) / self.problem.K
+        self.n_actions += 1
 
+
+    def reverse_action(self, t_idx: int) -> None:
+        
+        state = self.route_states[t_idx]
+
+        if len(state["route"]) <= 1:
+            raise ValueError(f"No actions to reverse for taxi {t_idx}.")
+
+        
+        last_node = state["route"].pop()
+        prev_node = state["route"][-1]
+        dec_cost = self.problem.D[prev_node][last_node]
+        state["cost"] -= dec_cost
+        state["pos"] = prev_node
+        state["actions"] -= 1
+        state["ended"] = False
+
+
+        
+        prob = self.problem
+        if prob.is_ppick(last_node):
+            pid = prob.rev_ppick(last_node)
+            state["passenger"] = 0
+            self.remaining_pass_pick.add(pid)
+            self.remaining_pass_drop.discard(pid)
+        elif prob.is_pdrop(last_node):
+            pid = prob.rev_pdrop(last_node)
+            state["passenger"] = pid
+            self.remaining_pass_pick.discard(pid)
+            self.remaining_pass_drop.add(pid)
+        elif prob.is_parc_pick(last_node):
+            jid = prob.rev_parc_pick(last_node)
+            state["load"] -= prob.q[jid - 1]
+            state["parcels"].discard(jid)
+            self.remaining_parc_pick.add(jid)
+            self.remaining_parc_drop.discard(jid)
+        elif prob.is_parc_drop(last_node):
+            jid = prob.rev_parc_drop(last_node)
+            state["load"] += prob.q[jid - 1]
+            state["parcels"].add(jid)
+            self.remaining_parc_pick.discard(jid)
+            self.remaining_parc_drop.add(jid)
+        else:
+            
+            state["ended"] = False
+
+        
+        self.route_costs[t_idx] = state["cost"]
+        self.max_cost = max(self.route_costs)
+        self.avg_cost = sum(self.route_costs) / self.problem.K
+        self.node_assignment[last_node] = -1
+        self.n_actions -= 1
 
 
     def is_complete(self) -> bool:
@@ -484,426 +754,98 @@ class PartialSolution:
 
         return solution
 
+
     @staticmethod
-    def from_solution(sol: Solution):
+    def from_solution(sol: Solution) -> "PartialSolution":
         
-        routes_copy = [list(route) for route in sol.routes]
+        routes_copy = [route.copy() for route in sol.routes]
         return PartialSolution(problem=sol.problem, routes=routes_copy)
 
-from typing import List, Tuple, Optional
-
-def sample_from_weight(rng: random.Random, weights: List[float]) -> int:
-    
-    total_weight = sum(weights)
-
-    if total_weight < 1e-10:    
-        res_idx = rng.randrange(len(weights))
-    else:                       
-        rand_val = rng.random() * total_weight
-        cumsum = 0.0
-        res_idx = 0
-        for i, weight in enumerate(weights):
-            cumsum += weight
-            if rand_val <= cumsum:
-                res_idx = i
-                break
-
-    return res_idx
 
 
-
-
-
-
-def softmax_weighter(incs: List[int], T: float) -> List[float]:
-    
-    min_inc, max_inc = min(incs), max(incs)
-    inc_range = max_inc - min_inc
-
-    if inc_range < 1e-6:     
-        return [1.0] * len(incs)
-
-    
-    weights = []
-    for inc in incs:
-        normalized = (inc - min_inc) / inc_range
-        weights.append((1.0 - normalized + 0.1) ** (1.0 / T))
-
-    return weights
-
-
-
-
-def repair_operator(
-        partial: PartialSolution,
-        route_idx: int,
-        steps: int = 5,
-        T: float = 1.0,
-        seed: Optional[int] = 42,
-        verbose: bool = False
-    ) -> Tuple[PartialSolution, List[bool], int]:
+class PartialSolutionSwarm:
     
 
-    assert steps > 0, "Number of steps must be positive."
-    assert T > 1e-5, "Temperature T must be positive."
-
-    rng = random.Random(seed)
-    added_nodes = 0  
-
-    
-    for _ in range(steps):
-        state = partial.route_states[route_idx]
-        if state["ended"]:
-            break
-
-        actions = partial.possible_actions(route_idx)
-        if verbose:
-            print(f"[build] route {route_idx} available actions: {actions}")
-
-        if not actions:
-            if verbose:
-                print(f"[build] route {route_idx} has no feasible actions, ending.")
-
-                partial.apply_return_to_depot(route_idx)
-                added_nodes += 1
-                break
-
-        incs = [action[2] for action in actions]
-        weights = softmax_weighter(incs, T)
-        selected_idx = sample_from_weight(rng, weights)
-
-        kind, node_idx, inc = actions[selected_idx]
-
-        if verbose:
-            print(f"[build] route {route_idx} selected action: {actions[selected_idx]}")
-
-        partial.apply_action(route_idx, kind, node_idx, inc)
-        added_nodes += 1
-
-    if verbose:
-        print(f"[build] route {route_idx} finished building, added {added_nodes} nodes.")
-
-    modified = [r_idx == route_idx for r_idx in range(partial.problem.K)]
-    return partial, modified, added_nodes
-
-
-
-
-
-
-
-
-
-def destroy_one_route(
-        route: List[int],
-        route_idx: int,
-        steps: int = 10,
-        verbose: bool = False
-    ) -> List[int]:
-    
-
-    res_route = route[:-1]                              
-    remove_len = min(steps, max(0, len(res_route) - 1)) 
-    if remove_len <= 0:
-        return route[:]
-
-    suffix_start = len(res_route) - remove_len
-    destroyed_route = res_route[:suffix_start]
-    if not destroyed_route:
-        destroyed_route = [0]
-
-    if verbose:
-        print(f"[Operator: Destroy]: last {remove_len} nodes from route {route_idx} removed.")
-
-    return destroyed_route
-
-
-
-def destroy_operator(
-        sol: Solution,
-        destroy_proba: float,
-        destroy_steps: int,
-        seed: int = 42,
-        T: float = 1.0
-    ) -> Tuple[PartialSolution, List[bool], int]:
-    
-    rng = random.Random(seed)
-
-    routes = [route[:] for route in sol.routes]
-    costs = sol.route_costs
-    flags = [False] * len(routes)
-    num_removed = 0
-
-    if not routes:
-        return PartialSolution(problem=sol.problem, routes=routes), flags, num_removed
-    approx_destroyed_count = round(destroy_proba * len(routes) + 0.5)
-    destroyed_count = min(sol.problem.K, max(1, approx_destroyed_count))
-
-    
-    min_cost = min(costs) if costs else 0.0
-    max_cost = max(costs) if costs else 1.0
-    cost_range = max_cost - min_cost
-    temperature = max(T, 1e-6)
-
-    if cost_range < 1e-6:
-        
-        selected_ids = rng.sample(range(sol.problem.K), destroyed_count)
-    else:
-        
-        weights = []
-        for cost in costs:
-            normalized = (cost - min_cost) / cost_range
-            weights.append((normalized + 0.1) ** (1.0 / temperature))
-
-        
-        selected_ids = []
-        available_ids = list(range(sol.problem.K))
-        available_weights = weights
-        for _ in range(destroyed_count):
-            total_weight = sum(available_weights)
-
-            if total_weight < 1e-10:    
-                selected_ids.extend(
-                    available_ids[:destroyed_count - len(selected_ids)]
-                )
-                break
-            else:                       
-                selected_idx = sample_from_weight(rng, available_weights)
-                selected_ids.append(available_ids[selected_idx])
-
-                
-                available_ids.pop(selected_idx)
-                available_weights.pop(selected_idx)
-
-                if not available_ids:
-                    break
-
-
-    
-    for idx in selected_ids:
-        route = routes[idx]
-
-        
-        if len(route) <= 2:
-            continue
-
-        
-        reduced = destroy_one_route(route, idx, steps=destroy_steps, verbose=False)
-        removed = max(0, len(route) - len(reduced))
-
-        if removed > 0:
-            routes[idx] = reduced
-            flags[idx] = True
-            num_removed += removed
-
-    partial_sol = PartialSolution(problem=sol.problem, routes=routes)
-
-    return partial_sol, flags, num_removed
-
-
-
-
-
-def greedy_balanced_solver(
-        prob: ShareARideProblem,
-        premature_routes: List[List[int]] = [],
-        verbose: bool = False
-    ) -> Tuple[Optional[Solution], Dict[str, Any]]:
-    
-
-    start_time = time.time()
-    partial = PartialSolution(problem=prob, routes=premature_routes)
-    taxi_states = partial.route_states
-
-    def has_pending_work() -> bool:
-        return bool(
-            partial.remaining_pass_pick
-            or partial.remaining_pass_drop
-            or partial.remaining_parc_pick
-            or partial.remaining_parc_drop
-        )
-
-    stats = {"iterations": 0, "actions_evaluated": 0}
-    while has_pending_work():
-        stats["iterations"] += 1
-
-        available_taxis = [
-            t_idx for t_idx, t_state in enumerate(taxi_states)
-            if not t_state["ended"]
-        ]
-        if not available_taxis:
-            break
-
-        argmin_t_idx = min(available_taxis, key=lambda i: taxi_states[i]["cost"])
-        actions = partial.possible_actions(argmin_t_idx)
-        stats["actions_evaluated"] += len(actions)
-
-        if verbose:
-            print(f"Taxi with min cost: {argmin_t_idx}")
-            print(f"Actions available: {actions}")
-
-        
-        if not actions:
-            partial.apply_return_to_depot(argmin_t_idx)
-            continue
-
-        
-        kind, idx, inc = min(actions, key=lambda x: x[2])
-        partial.apply_action(argmin_t_idx, kind, idx, inc)
-
-        if verbose:
-            print(f"Taxi: {argmin_t_idx}: {taxi_states[argmin_t_idx]['route']}\n")
-
-
-    
-    for t_idx, t_state in enumerate(taxi_states):
-        if not t_state["ended"]:
-            partial.apply_return_to_depot(t_idx)
-
-    if verbose:
-        print("All tasks completed.")
-
-    
-    sol = partial.to_solution()
-
-    
-    elapsed = time.time() - start_time
-    info = {
-        "iterations": stats["iterations"],
-        "actions_evaluated": stats["actions_evaluated"],
-        "time": elapsed
-    }
-
-    
-    if sol and not sol.is_valid():
-        sol = None
-    assert sol.is_valid() if sol else True
-    return sol, info
-
-
-def iterative_greedy_balanced_solver(
-        prob: ShareARideProblem,
-        iterations: int = 10,
-        time_limit: float = 10.0,
-        seed: int = 42,
-        verbose: bool = False,
-        destroy_proba: float = 0.4,
-        destroy_steps: int = 15,
-        destroy_T: float = 1.0,
-        rebuild_proba: float = 0.3,
-        rebuild_steps: int = 5,
-        rebuild_T: float = 1.0,
-    ) -> Tuple[Optional[Solution], Dict[str, Any]]:
-    
-
-    assert 1e-5 < destroy_proba < 1 - 1e-5
-    assert 1e-5 < rebuild_proba < 1 - 1e-5
-    assert 1 <= rebuild_steps <= destroy_steps
-
-    rng = random.Random(seed)
-    start_time = time.time()
-    deadline = start_time + time_limit if time_limit is not None else None
-
-    
-    best_sol, base_info = greedy_balanced_solver(prob, verbose=False)
-    if not best_sol:
-        return None, {"time": time.time() - start_time, "status": "error"}
-    best_cost = best_sol.max_cost
-
-    
-    total_actions = base_info["actions_evaluated"]
-    improvements = 0
-    nodes_destroyed = 0
-    nodes_rebuilt = 0
-    status = "done"
-    iterations_done = 0
-
-
-    if verbose:
-        print(f"[iter 0] initial best cost: {best_cost}")
-
-
-    
-    for it in range(1, iterations + 1):
-        if deadline and time.time() >= deadline:
-            status = "timeout"
-            break
-        iterations_done += 1
-
-        
-        destroy_seed = 2 * seed + it
-        partial_sol, destroyed_flags, removed = destroy_operator(
-            best_sol,
-            destroy_proba,
-            destroy_steps,
-            seed=destroy_seed,
-            T=destroy_T
-        )
-        nodes_destroyed += removed
-
-        
-        for r_idx, was_destroyed in enumerate(destroyed_flags):
-            if not was_destroyed or len(partial_sol.routes[r_idx]) <= 2:
-                continue
-            if rng.random() > rebuild_proba:
-                continue
-
-            partial_sol, repaired_list, new_nodes_count = repair_operator(
-                partial_sol,
-                route_idx=r_idx,
-                steps=rebuild_steps,
-                T=rebuild_T,
-                seed=(destroy_seed + r_idx) if destroy_seed is not None else None,
-                verbose=False
-            )
-            nodes_rebuilt += new_nodes_count
-
-        
-        sol_cand, info_cand = greedy_balanced_solver(
-            prob,
-            premature_routes=partial_sol.routes,
-            verbose=False
-        )
-
-        total_actions += info_cand["actions_evaluated"]
-
-        
-        if (sol_cand and sol_cand.is_valid()
-            and sol_cand.max_cost < best_cost
+    def __init__(
+            self,
+            solutions: Optional[List[PartialSolution]] = None,
+            n_partials: Optional[int] = None
         ):
-            best_sol = sol_cand
-            best_cost = sol_cand.max_cost
-            improvements += 1
+        
+        if not solutions:
+            if n_partials is None or n_partials <= 0:
+                raise ValueError("Must provide either solutions list or positive n_partials.")
+            self.parsol_list = []
+            self.parsol_nact = []
+            self.costs = []
+            self.min_cost = 0
+            self.max_cost = 0
+            self.avg_cost = 0.0
+            self.best_parsol = None
+            return
 
-            if verbose:
-                print(f"[iter {it}] improved best to {best_cost}")
-
-
-    
-    elapsed = time.time() - start_time
-    info = {
-        "iterations": iterations_done,
-        "improvements": improvements,
-        "actions_evaluated": total_actions,
-        "nodes_destroyed": nodes_destroyed,
-        "nodes_rebuilt": nodes_rebuilt,
-        "time": elapsed,
-        "status": status,
-    }
-
-    return best_sol, info
-
+        self.parsol_list = solutions
+        self.parsol_nact = [sol.n_actions for sol in solutions]
+        self.costs = [sol.max_cost for sol in solutions]
+        self.min_cost = min(self.costs)
+        self.max_cost = max(self.costs)
+        self.avg_cost = sum(sol.max_cost for sol in solutions) / len(solutions)
+        self.best_parsol = min(solutions, key=lambda s: s.max_cost)
 
 
+    def apply_action_one(
+        self, sol_idx: int, t_idx: int, kind: str, node_idx: int, inc: int
+    ):
+        
+        parsol = self.parsol_list[sol_idx]
+        parsol.apply_action(t_idx, kind, node_idx, inc)
+
+        
+        self.parsol_nact[sol_idx] = parsol.n_actions
+        self.costs[sol_idx] = parsol.max_cost
+
+        self.min_cost = min(self.costs)
+        self.max_cost = max(self.costs)
+        self.avg_cost = sum(self.costs) / len(self.costs)
+        if parsol.max_cost == self.min_cost:
+            self.best_parsol = parsol
+
+
+    def apply_return_to_depot_one(self, sol_idx: int, t_idx: int):
+        
+        parsol = self.parsol_list[sol_idx]
+        parsol.apply_return_to_depot(t_idx)
+
+        
+        self.parsol_nact[sol_idx] = parsol.n_actions
+        self.costs[sol_idx] = parsol.max_cost
+
+        self.min_cost = min(self.costs)
+        self.max_cost = max(self.costs)
+        self.avg_cost = sum(self.costs) / len(self.costs)
+        if parsol.max_cost == self.min_cost:
+            self.best_parsol = parsol
+
+
+    def copy(self):
+        
+        copied_solutions = [sol.copy() for sol in self.parsol_list]
+        return PartialSolutionSwarm(solutions=copied_solutions)
+
+
+    def extract_best_solution(self) -> Optional[Solution]:
+        
+        if self.best_parsol and self.best_parsol.is_complete():
+            return self.best_parsol.to_solution()
+
+        return None
 
 
 
 
 
-import heapq
-from typing import List, Optional, Tuple
 
-
+from typing import Iterator, List, Tuple, Optional
 
 
 
@@ -1115,8 +1057,34 @@ class MinMaxPfsumArray:
     def insert(self, idx, val):
         
         
+        if idx == self.n_data:
+            if not self.block_arr:
+                self.block_arr.append(self.Block([val]))
+            else:
+                last = self.block_arr[-1]
+                
+                if last.size >= 2 * self.block_size:
+                    self.block_arr.append(self.Block([val]))
+                else:
+                    last.insert(last.size, val)
+
+            
+            self.n_data += 1
+            self._rebuild_indexing()
+            return
+
+        
         bid, iid = self._find_block(idx)
-        self.block_arr[bid].insert(iid, val)
+        blk = self.block_arr[bid]
+        blk.insert(iid, val)
+
+        
+        if blk.size > 2 * self.block_size:
+            arr = blk.arr
+            mid = len(arr) // 2
+            left = self.Block(arr[:mid])
+            right = self.Block(arr[mid:])
+            self.block_arr[bid:bid + 1] = [left, right]
 
         
         self.n_data += 1
@@ -1130,15 +1098,33 @@ class MinMaxPfsumArray:
         self.block_arr[bid].erase(iid)
 
         
-        self.n_data -= 1
         if self.block_arr[bid].size == 0:
             del self.block_arr[bid]
+        else:
+            
+            min_size = max(1, self.block_size // 2)
+            if self.block_arr[bid].size < min_size:
+                
+                if bid + 1 < len(self.block_arr):
+                    nxt = self.block_arr[bid + 1]
+                    if self.block_arr[bid].size + nxt.size <= 2 * self.block_size:
+                        merged = self.block_arr[bid].arr + nxt.arr
+                        self.block_arr[bid:bid + 2] = [self.Block(merged)]
+
+                
+                elif bid - 1 >= 0:
+                    prv = self.block_arr[bid - 1]
+                    if prv.size + self.block_arr[bid].size <= 2 * self.block_size:
+                        merged = prv.arr + self.block_arr[bid].arr
+                        self.block_arr[bid - 1:bid + 1] = [self.Block(merged)]
+
+        
+        self.n_data -= 1
         self._rebuild_indexing()
 
 
     def query_min_prefix(self, l, r):
         
-        csum = 0
         ans = float('inf')
         pos = 0
         prefix = 0          
@@ -1180,7 +1166,6 @@ class MinMaxPfsumArray:
 
     def query_max_prefix(self, l, r):
         
-        cur = 0
         ans = float('-inf')
         pos = 0
         prefix = 0
@@ -1257,6 +1242,1146 @@ class MinMaxPfsumArray:
 
 
 
+
+
+def cost_decrement_relocate(
+        partial: PartialSolution,
+        from_route_idx: int,
+        to_route_idx: int,
+        p_idx_from: int,
+        q_idx_from: int,
+        p_idx_to: int,
+        q_idx_to: int
+    ) -> Tuple[int, int, int]:
+    
+    from_route = partial.routes[from_route_idx]
+    to_route = partial.routes[to_route_idx]
+
+    
+    assert from_route_idx != to_route_idx, \
+        "from_route_idx and to_route_idx must be different for relocate."
+    assert from_route[p_idx_from] != 0 and from_route[q_idx_from] != 0, \
+        "Cannot relocate depot nodes."
+    assert 1 <= p_idx_from < q_idx_from, "Invalid pickup/drop indices in from_route."
+    assert 1 <= p_idx_to < q_idx_to, "Invalid pickup/drop indices in to_route"
+
+    
+    D = partial.problem.D
+    cur_cost = partial.max_cost
+
+    
+    p_from = from_route[p_idx_from]
+    q_from = from_route[q_idx_from]
+
+
+    
+    
+    if p_idx_from + 1 == q_idx_from:    
+        prev_p_from = from_route[p_idx_from - 1]
+        next_q_from = from_route[q_idx_from + 1]
+        in_out_from_before = (
+            D[prev_p_from][p_from] + D[p_from][q_from] + D[q_from][next_q_from]
+        )
+        in_out_from_after = (
+            D[prev_p_from][next_q_from]
+        )
+    else:   
+        prev_p_from = from_route[p_idx_from - 1]
+        next_p_from = from_route[p_idx_from + 1]
+        prev_q_from = from_route[q_idx_from - 1]
+        next_q_from = from_route[q_idx_from + 1]
+        in_out_from_before = (
+            D[prev_p_from][p_from] + D[p_from][next_p_from]
+            + D[prev_q_from][q_from] + D[q_from][next_q_from]
+        )
+        in_out_from_after = (
+            D[prev_p_from][next_p_from] + D[prev_q_from][next_q_from]
+        )
+
+    from_route_next_cost = (
+        partial.route_costs[from_route_idx]
+        - in_out_from_before + in_out_from_after
+    )
+
+
+    
+    
+    if q_idx_to == p_idx_to + 1:
+        prev_p_from = to_route[p_idx_to - 1]
+        next_q_to = to_route[q_idx_to - 1]
+        in_out_to_before = (
+            D[prev_p_from][next_q_to]
+        )
+        in_out_to_after = (
+            D[prev_p_from][p_from] + D[p_from][q_from] + D[q_from][next_q_to]
+        )
+    else:
+        prev_p_from = to_route[p_idx_to - 1]
+        next_p_from = to_route[p_idx_to]
+        prev_q_to = to_route[q_idx_to - 2]
+        next_q_to = to_route[q_idx_to - 1]
+        in_out_to_before = (
+            D[prev_p_from][next_p_from] + D[prev_q_to][next_q_to]
+        )
+        in_out_to_after = (
+            D[prev_p_from][p_from] + D[p_from][next_p_from]
+            + D[prev_q_to][q_from] + D[q_from][next_q_to]
+        )
+
+    
+    to_route_next_cost = (
+        partial.route_costs[to_route_idx]
+        + in_out_to_after - in_out_to_before
+    )
+
+    
+    next_cost = max(
+        from_route_next_cost,
+        to_route_next_cost,
+        *(
+            partial.route_costs[i]
+            for i in range(partial.problem.K)
+            if i != from_route_idx and i != to_route_idx
+        )
+    )
+
+    
+    return from_route_next_cost, to_route_next_cost, cur_cost - next_cost
+
+
+def relocate_from_to(
+        partial: PartialSolution,   
+        from_route_idx: int,        
+        to_route_idx: int,          
+        steps: int,                 
+        mode: str,                  
+        uplift: int = 1,            
+        seed: int = 42,             
+        verbose: bool = False       
+    ) -> Tuple[PartialSolution, List[bool], int]:
+    
+    
+    rng = random.Random(seed)
+
+    
+    prob = partial.problem
+    current_par = partial.copy()
+    
+    route_from = current_par.routes[from_route_idx]
+    route_to = current_par.routes[to_route_idx]
+    n_from = len(route_from)
+    n_to = len(route_to)
+
+    if n_from < 5:
+        return partial, [False] * prob.K, 0    
+
+
+    
+    def build_segment_deltas(route: List[int], n: int):
+        pass_delta = [0] * n
+        parc_delta = [0] * n
+        for i, node in enumerate(route):
+            dp = 0
+            dq = 0
+            if prob.is_ppick(node):
+                dp = 1
+            elif prob.is_pdrop(node):
+                dp = -1
+            elif prob.is_parc_pick(node):
+                jid = prob.rev_parc_pick(node)
+                dq = prob.q[jid - 1]
+            elif prob.is_parc_drop(node):
+                jid = prob.rev_parc_drop(node)
+                dq = -prob.q[jid - 1]
+            pass_delta[i] = dp
+            parc_delta[i] = dq
+
+        pass_delta_manager = MinMaxPfsumArray(pass_delta)
+        parc_delta_manager = MinMaxPfsumArray(parc_delta)
+
+        return pass_delta_manager, parc_delta_manager
+
+
+    
+    pass_delta_from, parc_delta_from = build_segment_deltas(route_from, n_from)
+    pass_delta_to, parc_delta_to = build_segment_deltas(route_to, n_to)
+
+    
+    cap_from = prob.Q[from_route_idx]
+    cap_to = prob.Q[to_route_idx]
+
+
+    
+    def check_passenger(p_idx_a: int, q_idx_a: int, p_idx_b: int, q_idx_b: int) -> bool:
+        
+        
+        
+        node_from_pick = route_from[p_idx_a]
+        d_pass = 1 if prob.is_ppick(node_from_pick) else 0
+
+        
+        if d_pass == 0:
+            return True
+
+        
+        min_from = pass_delta_from.query_min_prefix(p_idx_a, q_idx_a)
+        max_from = pass_delta_from.query_max_prefix(p_idx_a, q_idx_a)
+        if min_from - d_pass < 0 or max_from - d_pass > 1:
+            return False
+
+        
+        min_to = pass_delta_to.query_min_prefix(p_idx_b - 1, q_idx_b - 1)
+        max_to = pass_delta_to.query_max_prefix(p_idx_b - 1, q_idx_b - 1)
+        if min_to + d_pass < 0 or max_to + d_pass > 1:
+            return False
+
+        return True
+
+
+    def check_parcel(p_idx_a: int, q_idx_a: int, p_idx_b: int, q_idx_b: int) -> bool:
+        
+        
+        node_from_pick = route_from[p_idx_a]
+        if prob.is_parc_pick(node_from_pick):
+            jid = prob.rev_parc_pick(node_from_pick)
+            d_parc = prob.q[jid - 1]
+        else:
+            d_parc = 0
+
+        
+        if d_parc == 0:
+            return True
+
+        
+        min_from = parc_delta_from.query_min_prefix(p_idx_a, q_idx_a)
+        max_from = parc_delta_from.query_max_prefix(p_idx_a, q_idx_a)
+        if min_from - d_parc < 0 or max_from - d_parc > cap_from:
+            return False
+
+        
+        min_to = parc_delta_to.query_min_prefix(p_idx_b - 1, q_idx_b - 1)
+        max_to = parc_delta_to.query_max_prefix(p_idx_b - 1, q_idx_b - 1)
+        if min_to + d_parc < 0 or max_to + d_parc > cap_to:
+            return False
+
+        return True
+
+
+    def check_relocate(
+            p_idx_a: int, q_idx_a: int, p_idx_b: int, q_idx_b: int
+        ) -> Tuple[bool, int, int, int]:
+        
+        if not check_passenger(p_idx_a, q_idx_a, p_idx_b, q_idx_b):
+            return False, 0, 0, 0
+        if not check_parcel(p_idx_a, q_idx_a, p_idx_b, q_idx_b):
+            return False, 0, 0, 0
+
+        
+        after_cost_a, after_cost_b, dec = cost_decrement_relocate(
+            current_par,
+            from_route_idx, to_route_idx,
+            p_idx_a, q_idx_a,
+            p_idx_b, q_idx_b,
+        )
+        return True, after_cost_a, after_cost_b, dec
+
+
+    def find_candidates() -> Iterator[Tuple[int, int, int, int, int, int, int]]:
+        
+        
+        pos_from = {node: i for i, node in enumerate(route_from)}
+
+        
+        pickup_indices_from = [
+            i for i in range(1, n_from - 1)
+            if prob.is_ppick(route_from[i]) or prob.is_parc_pick(route_from[i])
+        ]
+
+        
+        insertion_pairs_to = [
+            (p_to, q_to)
+            for p_to in range(1, n_to)
+            for q_to in range(p_to + 1, n_to + 1)
+        ]
+
+        for p_idx_a in pickup_indices_from:
+            
+            node_a = route_from[p_idx_a]
+            if prob.is_ppick(node_a):
+                pid = prob.rev_ppick(node_a)
+                q_node_a = prob.pdrop(pid)
+            else:
+                jid = prob.rev_parc_pick(node_a)
+                q_node_a = prob.parc_drop(jid)
+            q_idx_a = pos_from.get(q_node_a)
+            if q_idx_a is None or q_idx_a <= p_idx_a:
+                continue
+
+            
+            for p_idx_b, q_idx_b in insertion_pairs_to:
+                feasible, after_cost_a, after_cost_b, dec = check_relocate(
+                    p_idx_a, q_idx_a, p_idx_b, q_idx_b
+                )
+                if not feasible or dec < uplift:
+                    continue
+
+                if mode == 'first':
+                    yield (p_idx_a, q_idx_a, p_idx_b, q_idx_b, after_cost_a, after_cost_b, dec)
+                    return
+                else:
+                    yield (p_idx_a, q_idx_a, p_idx_b, q_idx_b, after_cost_a, after_cost_b, dec)
+
+
+    def select_candidate() -> Optional[Tuple[int, int, int, int, int, int, int]]:
+        
+        cand_list = list(find_candidates())
+        if not cand_list:
+            return None
+        if mode == 'stochastic':
+            return rng.choice(cand_list)
+        elif mode == 'best':
+            
+            return max(cand_list, key=lambda x: x[6])
+        else:
+            return cand_list[0]
+
+
+    
+    def update_partial_solution(action: Tuple[int, int, int, int, int, int, int]):
+        
+        (p_from, q_from, p_to, q_to, new_cost_from, new_cost_to, dec) = action
+        nonlocal route_from, route_to, current_par
+
+        
+        node_p = route_from[p_from]
+        node_q = route_from[q_from]
+
+        
+        del route_from[q_from]
+        del route_from[p_from]
+
+        
+        route_to.insert(p_to, node_p)
+        route_to.insert(q_to, node_q)
+
+        
+        current_par.routes[from_route_idx] = route_from
+        current_par.routes[to_route_idx] = route_to
+
+        
+        current_par.route_costs[from_route_idx] = new_cost_from
+        current_par.route_costs[to_route_idx] = new_cost_to
+        current_par.max_cost -= dec
+
+        return
+
+
+    def update_precalc(action: Tuple[int, int, int, int, int, int, int]):
+        
+        nonlocal pass_delta_from, parc_delta_from, pass_delta_to, parc_delta_to
+        nonlocal route_from, route_to
+
+        p_from, q_from, p_to, q_to, *_ = action
+
+        
+        def node_deltas(node: int) -> Tuple[int, int]:
+            if prob.is_ppick(node):
+                return 1, 0
+            if prob.is_pdrop(node):
+                return -1, 0
+            if prob.is_parc_pick(node):
+                jid = prob.rev_parc_pick(node)
+                return 0, prob.q[jid - 1]
+            if prob.is_parc_drop(node):
+                jid = prob.rev_parc_drop(node)
+                return 0, -prob.q[jid - 1]
+            return 0, 0
+
+        
+        
+        pass_delta_from.delete(q_from)
+        parc_delta_from.delete(q_from)
+        pass_delta_from.delete(p_from)
+        parc_delta_from.delete(p_from)
+
+
+        
+        pass_delta_to.insert(p_to, node_deltas(route_from[p_from])[0])
+        parc_delta_to.insert(p_to, node_deltas(route_from[p_from])[1])
+        pass_delta_to.insert(q_to, node_deltas(route_from[q_from])[0])
+        parc_delta_to.insert(q_to, node_deltas(route_from[q_from])[1])
+
+        return
+
+
+    def relocate_to_convergence() -> Tuple[List[bool], int]:
+        
+        nonlocal n_from, n_to, route_from, route_to
+        reloc_done = 0
+        modified_routes = [False] * prob.K
+        while reloc_done < steps:
+            cand = select_candidate()
+            if cand is None:
+                break
+
+            
+            update_precalc(cand)
+            update_partial_solution(cand)
+
+            
+            reloc_done += 1
+            modified_routes[from_route_idx] = True
+            modified_routes[to_route_idx] = True
+
+            
+            n_from -= 2
+            n_to += 2
+            if n_from < 5:
+                break
+
+            
+            if verbose:
+                pf, qf, pt, qt, _, __, dec = cand
+                print(f"[Relocate {from_route_idx}->{to_route_idx}] moved request "
+                      f"(P:{pf},D:{qf}) to ({pt},{qt}) dec={dec}"
+                )
+
+            
+            if mode == 'first':
+                break
+
+        return modified_routes, reloc_done
+
+
+    
+    modified_pair, reloc_done = relocate_to_convergence()
+    return current_par, modified_pair, reloc_done
+
+
+
+def relocate_operator(
+        partial: PartialSolution,           
+        steps: Optional[int] = None,        
+        mode: str = 'first',                
+        uplift: int = 1,                    
+        seed: int = 42,                     
+        verbose: bool = False,              
+    ) -> Tuple[PartialSolution, List[bool], int]:
+    
+    K = partial.problem.K
+    if K < 2:
+        return partial.copy(), [False] * K, 0
+
+    
+    max_steps = steps if steps is not None else 10**9
+
+    
+    rng = random.Random(seed)
+
+    
+    current_par: PartialSolution = partial.copy()
+    modified_total: List[bool] = [False] * K
+    total_moves = 0
+
+
+    
+    
+    while total_moves < max_steps:
+        
+        
+        costs: List[Tuple[int, int]] = list(enumerate(current_par.route_costs))
+        donor_idx = max(costs, key=lambda x: x[1])[0]
+        receivers = [idx for idx, _ in sorted(costs, key=lambda x: x[1])][:max(4, K // 2)]
+
+        
+        
+        if len(current_par.routes[donor_idx]) < 5:
+            break
+
+
+        
+        improved = False
+        for r_idx in receivers:
+            if r_idx == donor_idx:      
+                continue
+            
+            if len(current_par.routes[r_idx]) < 2:
+                continue
+
+            
+            remain = max_steps - total_moves
+            new_partial, modified_pair, moves_made = relocate_from_to(
+                current_par,
+                from_route_idx=donor_idx,
+                to_route_idx=r_idx,
+                steps=remain,
+                mode=mode,
+                uplift=uplift,
+                seed=rng.randint(10, 10**9),  
+                verbose=verbose,
+            )
+
+            
+            if moves_made > 0:
+                current_par = new_partial
+                total_moves += moves_made
+                for i in range(K):
+                    if modified_pair[i]:
+                        modified_total[i] = True
+                improved = True
+
+                
+                if verbose:
+                    print(f"{moves_made} relocation made from route {donor_idx} to route {r_idx}")
+
+                break   
+
+        if not improved:
+            break   
+
+    return current_par, modified_total, total_moves
+
+
+
+
+def _generate_cost_value(
+        i: int, j: int, D: List[List[int]], rng: random.Random,
+        low: int, high: int, lmbd: Optional[float], asymmetric: bool
+    ) -> int:
+    
+    if i == j:
+        return 0
+    if asymmetric:
+        if lmbd is not None:
+            return _sample_poisson(rng, low, high, lmbd)
+        return rng.randint(low, high)
+    if j < i:
+        return D[j][i]
+    if lmbd is not None:
+        return _sample_poisson(rng, low, high, lmbd)
+    return rng.randint(low, high)
+
+
+def _sample_poisson(
+        rng: random.Random,
+        low: int,
+        high: int,
+        lmbd: float,
+    ) -> int:
+    
+
+    while True:
+        
+        L = math.exp(-lmbd)
+        k = 0
+        p = 1.0
+
+        
+        while p > L:
+            k += 1
+            p *= rng.random()
+        value = k - 1
+
+        
+        if low <= value <= high:
+            return value
+
+
+
+def random_distance_matrix(
+        n: int,
+        low: int = 5,
+        high: int = 20,
+        lmbd: float = 10.0,
+        asymmetric: bool = False,
+        seed: int = 42,
+    ) -> List[List[int]]:
+    
+    rng = random.Random(seed)
+    D = [[0] * n for _ in range(n)]
+
+    for i in range(n):
+        for j in range(n):
+            D[i][j] = _generate_cost_value(i, j, D, rng, low, high, lmbd, asymmetric)
+
+    return D
+
+
+def euclidean_distance_matrix(
+        coords: List[Tuple[int, int]]
+    ) -> List[List[int]]:
+    
+    n = len(coords)
+    D = [[0] * n for _ in range(n)]
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            dist = int(round(math.hypot(
+                coords[i][0] - coords[j][0],
+                coords[i][1] - coords[j][1]
+            )))
+            D[i][j] = D[j][i] = dist
+
+    return D
+
+
+def generate_instance_lazy(
+        N: int, M: int, K: int,
+        low: int = 10, high: int = 50, lmbd: float = 20.0,
+        qlow: int = 5, qhigh: int = 15, qlmbd: float = 10.0,
+        Qlow: int = 15, Qhigh: int = 30, Qlmbd: float = 20.0,
+        use_poisson: bool = False,
+        seed: int = 42
+    ) -> ShareARideProblem:
+    
+    rng = random.Random(seed)
+    n_nodes = 2*N + 2*M + 1
+
+    if use_poisson:
+        q = [_sample_poisson(rng, qlow, qhigh, qlmbd) for _ in range(M)]
+        Q = [_sample_poisson(rng, Qlow, Qhigh, Qlmbd) for _ in range(K)]
+        D = random_distance_matrix(n_nodes, low=low, high=high, lmbd=lmbd,
+                               asymmetric=True, seed=seed)
+
+    else:
+        q = [rng.randint(qlow, qhigh) for _ in range(M)]
+        Q = [rng.randint(Qlow, Qhigh) for _ in range(K)]
+        D = random_distance_matrix(n_nodes, low=low, high=high, lmbd=lmbd,
+                               asymmetric=True, seed=seed)
+
+    return ShareARideProblem(N, M, K, q, Q, D)
+
+
+def generate_instance_coords(
+        N: int, M: int, K: int,
+        area: int = 100,
+        qlow: int = 5, qhigh: int = 15, qlmbd: float = 10.0,
+        Qlow: int = 20, Qhigh: int = 45, Qlmbd: float = 30.0,
+        seed: int = 42,
+    ) -> ShareARideProblem:
+
+    
+    rng = random.Random(seed)
+    total_points = 1 + 2 * N + 2 * M
+
+    
+    coords: List[Tuple[int, int]] = [(area // 2, area // 2)]
+    used_coords: set[Tuple[int, int]] = {(area // 2, area // 2)}
+
+    while len(coords) < total_points:
+        new_coord = (
+            round(rng.random() * area + 0.5), 
+            round(rng.random() * area + 0.5)
+        )
+        if new_coord not in used_coords:
+            coords.append(new_coord)
+            used_coords.add(new_coord)
+
+    D = euclidean_distance_matrix(coords)
+    q = [rng.randint(qlow, qhigh) for _ in range(M)]
+    Q = [rng.randint(Qlow, Qhigh) for _ in range(K)]
+    prob = ShareARideProblem(N, M, K, q, Q, D, coords)
+
+    return prob
+
+
+
+
+
+
+
+
+from typing import List, Tuple, Optional
+
+
+
+
+
+
+
+from typing import List
+
+def sample_from_weight(rng: random.Random, weights: List[float]) -> int:
+    
+    total_weight = sum(weights)
+
+    if total_weight < 1e-10:    
+        res_idx = rng.randrange(len(weights))
+    else:                       
+        rand_val = rng.random() * total_weight
+        cumsum = 0.0
+        res_idx = 0
+        for i, weight in enumerate(weights):
+            cumsum += weight
+            if rand_val <= cumsum:
+                res_idx = i
+                break
+
+    return res_idx
+
+
+
+
+
+from typing import List, Union
+
+def softmax_weighter(incs: List[Union[int, float]], T: float) -> List[float]:
+    
+    min_inc, max_inc = min(incs), max(incs)
+    inc_range = max_inc - min_inc
+
+    if inc_range < 1e-6:     
+        return [1.0] * len(incs)
+
+    
+    weights = []
+    for inc in incs:
+        normalized = (inc - min_inc) / inc_range
+        weights.append((1.0 - normalized + 0.1) ** (1.0 / T))
+
+    return weights
+
+
+
+
+def repair_operator(
+        partial: PartialSolution,
+        route_idx: int,
+        steps: int = 5,
+        T: float = 1.0,
+        seed: Optional[int] = 42,
+        verbose: bool = False
+    ) -> Tuple[PartialSolution, List[bool], int]:
+    
+
+    assert steps > 0, "Number of steps must be positive."
+    assert T > 1e-5, "Temperature T must be positive."
+
+    rng = random.Random(seed)
+    added_nodes = 0  
+
+    
+    for _ in range(steps):
+        state = partial.route_states[route_idx]
+        if state["ended"]:
+            break
+
+        actions = partial.possible_actions(route_idx)
+        if verbose:
+            print(f"[build] route {route_idx} available actions: {actions}")
+
+        if not actions:
+            if verbose:
+                print(f"[build] route {route_idx} has no feasible actions, ending.")
+
+                partial.apply_return_to_depot(route_idx)
+                added_nodes += 1
+                break
+
+        incs = [action[2] for action in actions]
+        weights = softmax_weighter(incs, T)
+        selected_idx = sample_from_weight(rng, weights)
+
+        kind, node_idx, inc = actions[selected_idx]
+
+        if verbose:
+            print(f"[build] route {route_idx} selected action: {actions[selected_idx]}")
+
+        partial.apply_action(route_idx, kind, node_idx, inc)
+        added_nodes += 1
+
+    if verbose:
+        print(f"[build] route {route_idx} finished building, added {added_nodes} nodes.")
+
+    modified = [r_idx == route_idx for r_idx in range(partial.problem.K)]
+    return partial, modified, added_nodes
+
+
+
+
+
+
+
+
+from typing import List, Tuple
+
+
+
+
+
+
+def destroy_one_route(
+        route: List[int],
+        route_idx: int,
+        steps: int = 10,
+        verbose: bool = False
+    ) -> List[int]:
+    
+
+    res_route = route[:-1]                              
+    remove_len = min(steps, max(0, len(res_route) - 1)) 
+    if remove_len <= 0:
+        return route[:]
+
+    suffix_start = len(res_route) - remove_len
+    destroyed_route = res_route[:suffix_start]
+    if not destroyed_route:
+        destroyed_route = [0]
+
+    if verbose:
+        print(f"[Operator: Destroy]: last {remove_len} nodes from route {route_idx} removed.")
+
+    return destroyed_route
+
+
+
+def destroy_operator(
+        sol: Solution,
+        destroy_proba: float,
+        destroy_steps: int,
+        seed: int = 42,
+        T: float = 1.0
+    ) -> Tuple[PartialSolution, List[bool], int]:
+    
+    rng = random.Random(seed)
+
+    routes = [route[:] for route in sol.routes]
+    costs = sol.route_costs
+    flags = [False] * len(routes)
+    num_removed = 0
+
+    if not routes:
+        return PartialSolution(problem=sol.problem, routes=routes), flags, num_removed
+    approx_destroyed_count = round(destroy_proba * len(routes) + 0.5)
+    destroyed_count = min(sol.problem.K, max(1, approx_destroyed_count))
+
+    
+    min_cost = min(costs) if costs else 0.0
+    max_cost = max(costs) if costs else 1.0
+    cost_range = max_cost - min_cost
+    temperature = max(T, 1e-6)
+
+    if cost_range < 1e-6:
+        
+        selected_ids = rng.sample(range(sol.problem.K), destroyed_count)
+    else:
+        
+        weights = []
+        for cost in costs:
+            normalized = (cost - min_cost) / cost_range
+            weights.append((normalized + 0.1) ** (1.0 / temperature))
+
+        
+        selected_ids = []
+        available_ids = list(range(sol.problem.K))
+        available_weights = weights
+        for _ in range(destroyed_count):
+            total_weight = sum(available_weights)
+
+            if total_weight < 1e-10:    
+                selected_ids.extend(
+                    available_ids[:destroyed_count - len(selected_ids)]
+                )
+                break
+            else:                       
+                selected_idx = sample_from_weight(rng, available_weights)
+                selected_ids.append(available_ids[selected_idx])
+
+                
+                available_ids.pop(selected_idx)
+                available_weights.pop(selected_idx)
+
+                if not available_ids:
+                    break
+
+
+    
+    for idx in selected_ids:
+        route = routes[idx]
+
+        
+        if len(route) <= 2:
+            continue
+
+        
+        reduced = destroy_one_route(route, idx, steps=destroy_steps, verbose=False)
+        removed = max(0, len(route) - len(reduced))
+
+        if removed > 0:
+            routes[idx] = reduced
+            flags[idx] = True
+            num_removed += removed
+
+    partial_sol = PartialSolution(problem=sol.problem, routes=routes)
+
+    return partial_sol, flags, num_removed
+
+
+
+
+
+def greedy_balanced_solver(
+        problem: ShareARideProblem,
+        premature_routes: List[List[int]] = [],
+        verbose: bool = False
+    ) -> Tuple[Optional[Solution], Dict[str, Any]]:
+    
+
+    start_time = time.time()
+    partial = PartialSolution(problem=problem, routes=premature_routes)
+    taxi_states = partial.route_states
+
+    def has_pending_work() -> bool:
+        return bool(
+            partial.remaining_pass_pick
+            or partial.remaining_pass_drop
+            or partial.remaining_parc_pick
+            or partial.remaining_parc_drop
+        )
+
+    stats = {"iterations": 0, "actions_evaluated": 0}
+    while has_pending_work():
+        stats["iterations"] += 1
+
+        available_taxis = [
+            t_idx for t_idx, t_state in enumerate(taxi_states)
+            if not t_state["ended"]
+        ]
+        if not available_taxis:
+            break
+
+        argmin_t_idx = min(available_taxis, key=lambda i: taxi_states[i]["cost"])
+        actions = partial.possible_actions(argmin_t_idx)
+        stats["actions_evaluated"] += len(actions)
+
+        
+        if not actions:
+            partial.apply_return_to_depot(argmin_t_idx)
+            continue
+
+        
+        kind, idx, inc = min(actions, key=lambda x: x[2])
+        partial.apply_action(argmin_t_idx, kind, idx, inc)
+
+        if verbose:
+            print(f"[Greedy] Taxi {argmin_t_idx} extended route with {kind} {idx} (inc {inc})")
+
+
+    
+    for t_idx, t_state in enumerate(taxi_states):
+        if not t_state["ended"]:
+            partial.apply_return_to_depot(t_idx)
+
+    
+    sol = partial.to_solution()
+
+    
+    elapsed = time.time() - start_time
+    info = {
+        "iterations": stats["iterations"],
+        "actions_evaluated": stats["actions_evaluated"],
+        "time": elapsed
+    }
+
+    
+    if sol and not sol.is_valid():
+        sol = None
+    assert sol.is_valid() if sol else True
+
+    
+    if verbose:
+        print("[Greedy] All tasks completed.")
+        print(f"[Greedy] Solution max cost: {sol.max_cost if sol else 'N/A'}")
+        print(f"[Greedy] Time taken: {elapsed:.4f} seconds")
+
+    return sol, info
+
+
+def iterative_greedy_balanced_solver(
+        problem: ShareARideProblem,
+        iterations: int = 10,
+        time_limit: float = 10.0,
+        seed: int = 42,
+        verbose: bool = False,
+        destroy_proba: float = 0.4,
+        destroy_steps: int = 15,
+        destroy_T: float = 1.0,
+        rebuild_proba: float = 0.3,
+        rebuild_steps: int = 5,
+        rebuild_T: float = 1.0,
+    ) -> Tuple[Optional[Solution], Dict[str, Any]]:
+    
+
+    assert 1e-5 < destroy_proba < 1 - 1e-5
+    assert 1e-5 < rebuild_proba < 1 - 1e-5
+    assert 1 <= rebuild_steps <= destroy_steps
+
+    rng = random.Random(seed)
+    start_time = time.time()
+    deadline = start_time + time_limit if time_limit is not None else None
+
+    
+    best_sol, base_info = greedy_balanced_solver(problem, verbose=False)
+    if not best_sol:
+        return None, {"time": time.time() - start_time, "status": "error"}
+    best_cost = best_sol.max_cost
+
+    
+    total_actions = base_info["actions_evaluated"]
+    improvements = 0
+    nodes_destroyed = 0
+    nodes_rebuilt = 0
+    status = "done"
+    iterations_done = 0
+
+
+    if verbose:
+        print(f"[Iterative Greedy] [Iter 0] initial best cost: {best_cost}")
+
+
+    
+    for it in range(1, iterations + 1):
+        if deadline and time.time() >= deadline:
+            status = "timeout"
+            break
+        iterations_done += 1
+
+        
+        destroy_seed = 2 * seed + it
+        partial_sol, destroyed_flags, removed = destroy_operator(
+            best_sol,
+            destroy_proba,
+            destroy_steps,
+            seed=destroy_seed,
+            T=destroy_T
+        )
+        nodes_destroyed += removed
+
+        
+        for r_idx, was_destroyed in enumerate(destroyed_flags):
+            if not was_destroyed or len(partial_sol.routes[r_idx]) <= 2:
+                continue
+            if rng.random() > rebuild_proba:
+                continue
+
+            partial_sol, repaired_list, new_nodes_count = repair_operator(
+                partial_sol,
+                route_idx=r_idx,
+                steps=rebuild_steps,
+                T=rebuild_T,
+                seed=(destroy_seed + r_idx) if destroy_seed is not None else None,
+                verbose=False
+            )
+            nodes_rebuilt += new_nodes_count
+
+        
+        sol_cand, info_cand = greedy_balanced_solver(
+            problem,
+            premature_routes=partial_sol.routes,
+            verbose=False
+        )
+
+        total_actions += info_cand["actions_evaluated"]
+
+        
+        if (sol_cand and sol_cand.is_valid()
+            and sol_cand.max_cost < best_cost
+        ):
+            best_sol = sol_cand
+            best_cost = sol_cand.max_cost
+            improvements += 1
+
+            if verbose:
+                print(f"[Iterative Greedy] [Iter {it}] improved best to {best_cost}")
+
+
+    
+    elapsed = time.time() - start_time
+    info = {
+        "iterations": iterations_done,
+        "improvements": improvements,
+        "actions_evaluated": total_actions,
+        "nodes_destroyed": nodes_destroyed,
+        "nodes_rebuilt": nodes_rebuilt,
+        "time": elapsed,
+        "status": status,
+    }
+
+    
+    if verbose:
+        print(f"[Iterative Greedy] Finished after {iterations_done} iterations.")
+        print(
+            f"[Iterative Greedy] Best solution max cost: "
+            f"{best_sol.max_cost if best_sol else 'N/A'}."
+        )
+        print(f"[Iterative Greedy] Time taken: {elapsed:.4f} seconds.")
+
+    return best_sol, info
+
+
+
+    
+    problem = generate_instance_coords(
+        N=200, M=300, K=7, area=1000, seed=12345
+    )
+    
+    
+    
+    
+
+    sol, msg = greedy_balanced_solver(problem)
+    assert sol
+    
+    
+    
+
+    st = time.time()
+    par = PartialSolution.from_solution(sol)
+    next_par, modified, n_moves = relocate_operator(
+        par,
+        steps=None,
+        mode='first',
+        seed=100,
+        verbose=True
+    )
+
+    sol_after = next_par.to_solution()
+    assert sol_after
+    
+    
+    
+
+    print()
+    print(f"Relocate operator performed {n_moves} moves, modified routes: {modified}")
+    print(f"Solution cost before: {sol.max_cost}, after: {sol_after.max_cost}")
+    print(f"Relocate operator time: {time.time() - st:.4f} seconds" )
+
+
+
+
+
+
+import cProfile
+
+
+
+from typing import Any, List, Optional, Tuple, Dict
+
+
+
+
+
+
+
+import heapq
+from typing import List, Optional, Tuple
+
+
+
+
+
+
+
 def cost_decrement_intra_swap(
         partial: PartialSolution,
         route_idx: int,
@@ -1272,19 +2397,38 @@ def cost_decrement_intra_swap(
     assert route[a_idx] != 0 and route[b_idx] != 0, "Cannot swap depot nodes."
 
     D = partial.problem.D
+
+    
+    def is_node(idx: int) -> Optional[int]:
+        
+        
+        return route[idx] \
+            if 0 <= idx <= partial.route_states[route_idx]["actions"] else None
+
+    def successor_cost(from_node: int, to_node: Optional[int]) -> int:
+        if to_node is None:
+            return 0
+        return D[from_node][to_node]
+
+
+    
     if a_idx < b_idx - 1:
         delta = (
-            D[route[a_idx - 1]][route[a_idx]] + D[route[a_idx]][route[a_idx + 1]]
-            + D[route[b_idx - 1]][route[b_idx]] + D[route[b_idx]][route[b_idx + 1]]
-            - D[route[a_idx - 1]][route[b_idx]] - D[route[b_idx]][route[a_idx + 1]]
-            - D[route[b_idx - 1]][route[a_idx]] - D[route[a_idx]][route[b_idx + 1]]
+            D[route[a_idx - 1]][route[a_idx]]
+            + successor_cost(route[a_idx], is_node(a_idx + 1))
+            + D[route[b_idx - 1]][route[b_idx]]
+            + successor_cost(route[b_idx], is_node(b_idx + 1))
+            - D[route[a_idx - 1]][route[b_idx]]
+            - successor_cost(route[b_idx], is_node(a_idx + 1))
+            - D[route[b_idx - 1]][route[a_idx]]
+            - successor_cost(route[a_idx], is_node(b_idx + 1))
         )
     else:
         delta = (
             D[route[a_idx - 1]][route[a_idx]] + D[route[a_idx]][route[b_idx]]
-            + D[route[b_idx]][route[b_idx + 1]]
+            + successor_cost(route[b_idx], is_node(b_idx + 1))
             - D[route[a_idx - 1]][route[b_idx]] - D[route[b_idx]][route[a_idx]]
-            - D[route[a_idx]][route[b_idx + 1]]
+            - successor_cost(route[a_idx], is_node(b_idx + 1))
         )
 
     return delta
@@ -1315,7 +2459,7 @@ def intra_swap_one_route_operator(
 
 
     
-    if n < 3:
+    if n < 5:
         return current_par, [False] * K, 0
     if steps is None:
         steps = n ** 2
@@ -1646,53 +2790,71 @@ def cost_decrement_inter_swap(
 
     
     D = partial.problem.D
+
+    
+    
+    
+    def _succ_cost(from_node: int, routechar: str, idx: int) -> int:
+        
+        if routechar == 'a':
+            route = route_a
+            route_idx = route_a_idx
+        else:
+            route = route_b
+            route_idx = route_b_idx
+
+        if idx >= partial.route_states[route_idx]["actions"]:
+            return 0
+        return D[from_node][route[idx + 1]]
+
+    
     if p_idx_a + 1 == d_idx_a:
         in_out_cost_a_before = (
             D[route_a[p_idx_a - 1]][route_a[p_idx_a]]
             + D[route_a[p_idx_a]][route_a[d_idx_a]]
-            + D[route_a[d_idx_a]][route_a[d_idx_a + 1]]
+            + _succ_cost(route_a[d_idx_a], 'a', d_idx_a)
         )
         in_out_cost_a_after = (
             D[route_a[p_idx_a - 1]][route_b[p_idx_b]]
             + D[route_b[p_idx_b]][route_b[d_idx_b]]
-            + D[route_b[d_idx_b]][route_a[d_idx_a + 1]]
+            + _succ_cost(route_b[d_idx_b], 'a', d_idx_a)
         )
     else:
         in_out_cost_a_before = (
-            D[route_a[p_idx_a - 1]][route_a[p_idx_a]] 
+            D[route_a[p_idx_a - 1]][route_a[p_idx_a]]
             + D[route_a[p_idx_a]][route_a[p_idx_a + 1]]
             + D[route_a[d_idx_a - 1]][route_a[d_idx_a]]
-            + D[route_a[d_idx_a]][route_a[d_idx_a + 1]]
+            + _succ_cost(route_a[d_idx_a], 'a', d_idx_a)
         )
         in_out_cost_a_after = (
             D[route_a[p_idx_a - 1]][route_b[p_idx_b]]
             + D[route_b[p_idx_b]][route_a[p_idx_a + 1]]
             + D[route_a[d_idx_a - 1]][route_b[d_idx_b]]
-            + D[route_b[d_idx_b]][route_a[d_idx_a + 1]]
+            + _succ_cost(route_b[d_idx_b], 'a', d_idx_a)
         )
     if p_idx_b + 1 == d_idx_b:
         in_out_cost_b_before = (
             D[route_b[p_idx_b - 1]][route_b[p_idx_b]]
             + D[route_b[p_idx_b]][route_b[d_idx_b]]
-            + D[route_b[d_idx_b]][route_b[d_idx_b + 1]]
+            + _succ_cost(route_b[d_idx_b], 'b', d_idx_b)
         )
         in_out_cost_b_after = (
             D[route_b[p_idx_b - 1]][route_a[p_idx_a]]
             + D[route_a[p_idx_a]][route_a[d_idx_a]]
-            + D[route_a[d_idx_a]][route_b[d_idx_b + 1]]
+            + _succ_cost(route_a[d_idx_a], 'b', d_idx_b)
         )
     else:
         in_out_cost_b_before = (
             D[route_b[p_idx_b - 1]][route_b[p_idx_b]] 
             + D[route_b[p_idx_b]][route_b[p_idx_b + 1]]
             + D[route_b[d_idx_b - 1]][route_b[d_idx_b]]
-            + D[route_b[d_idx_b]][route_b[d_idx_b + 1]]
+            + _succ_cost(route_b[d_idx_b], 'b', d_idx_b)
         )
         in_out_cost_b_after = (
             D[route_b[p_idx_b - 1]][route_a[p_idx_a]]
             + D[route_a[p_idx_a]][route_b[p_idx_b + 1]]
             + D[route_b[d_idx_b - 1]][route_a[d_idx_a]]
-            + D[route_a[d_idx_a]][route_b[d_idx_b + 1]]
+            + _succ_cost(route_a[d_idx_a], 'b', d_idx_b)
         )
 
     
@@ -1737,7 +2899,7 @@ def inter_swap_route_pair_operator (
     n_b = len(route_b)
 
     
-    if n_a < 3 or n_b < 3:
+    if n_a < 5 or n_b < 5:
         return current_par, [False] * prob.K, 0
 
     
@@ -1861,11 +3023,11 @@ def inter_swap_route_pair_operator (
     
     def find_candidates():
         pickup_indices_a = [
-            i for i in range(1, n_a - 1)
+            i for i in range(n_a)
             if prob.is_ppick(route_a[i]) or prob.is_parc_pick(route_a[i])
         ]
         pickup_indices_b = [
-            j for j in range(1, n_b - 1)
+            j for j in range(n_b)
             if prob.is_ppick(route_b[j]) or prob.is_parc_pick(route_b[j])
         ]
 
@@ -1894,6 +3056,10 @@ def inter_swap_route_pair_operator (
                 q_idx_b = pos_b.get(q_node_b)
                 if q_idx_b is None:
                     continue
+
+                
+                
+                
 
                 feasible, after_cost_a, after_cost_b, dec = check_swap(
                     p_idx_a, q_idx_a, p_idx_b, q_idx_b
@@ -2133,6 +3299,850 @@ def inter_swap_operator(
 
 
 
+
+
+
+def parsol_scorer(
+        parsol: PartialSolution,
+        sample_size: int = 15,
+        w_std: float = 0.15,
+        seed: int = 42,
+    ) -> float:
+    
+    rng = random.Random(seed)
+    effective_size = max(1, sample_size)
+    costs = parsol.route_costs
+    if len(costs) == 1:
+        return parsol.max_cost
+
+    sampled = rng.choices(costs, k=effective_size)
+    mean = math.fsum(sampled) / len(sampled)
+    variance = math.fsum((value - mean) ** 2 for value in sampled) / len(sampled)
+    std_dev = math.sqrt(max(0.0, variance))
+
+    return parsol.max_cost + w_std * std_dev
+
+
+
+def beam_search_swarm_solver(
+        problem: ShareARideProblem,
+        cost_function: Any = parsol_scorer,
+        initial: Optional[PartialSolutionSwarm] = None,
+        l_width: int = 10,
+        r_intra: float = 0.75,
+        r_inter: float = 0.90,
+        f_intra: float = 0.05,
+        f_inter: float = 0.10,
+        verbose: bool = False
+    ) -> Tuple[PartialSolutionSwarm, Dict[str, Any]]:
+    
+    
+    start = time.time()
+    total_actions = max(1, 2 * (problem.N + problem.M) + problem.K)
+
+    
+    def _clamp(value: float) -> float:
+        return min(max(value, 0.0), 1.0)
+    r_intra_clamped = _clamp(r_intra)
+    r_inter_clamped = _clamp(r_inter)
+    f_intra_clamped = _clamp(f_intra)
+    f_inter_clamped = _clamp(f_inter)
+
+    
+    until_intra_depth = max(0, int(total_actions * r_intra_clamped))
+    until_inter_depth = max(0, int(total_actions * r_inter_clamped))
+    intra_frequency = max(1, int(total_actions * f_intra_clamped))
+    inter_frequency = max(1, int(total_actions * f_inter_clamped))
+
+
+    
+    def expand(parsol: PartialSolution) -> List[PartialSolution]:
+        candidates: List[PartialSolution] = []
+
+        
+        available_taxis = [
+            idx for idx, state in enumerate(parsol.route_states)
+            if not state["ended"]
+        ]
+        if not available_taxis:
+            return candidates
+
+        
+        taxi_order = sorted(
+            available_taxis,
+            key=lambda idx: parsol.route_states[idx]["cost"]
+        )
+        taxi_considered = min(
+            2 if problem.K >= 50
+            else 3 if problem.K >= 20
+            else 4,
+            len(taxi_order)
+        )
+        taxi_branches = taxi_order[:taxi_considered]
+
+        
+        
+        closing_depth = max(0, total_actions - 2 * parsol.problem.K)
+
+        
+        for t_idx in taxi_branches:
+            state = parsol.route_states[t_idx]
+            actions = parsol.possible_actions(t_idx)
+
+            
+            can_return = (
+                state["passenger"] == 0 and
+                not state["parcels"] and
+                not state["ended"] and
+                state["pos"] != 0
+            )
+
+            
+            if actions:
+                
+                action_limit = min(
+                    1 if problem.num_nodes >= 500   
+                    else 2 if problem.num_nodes >= 200  
+                    else 4, 
+                    len(actions)
+                )
+                for kind, node_idx, inc in sorted(actions, key=lambda item: item[2])[:action_limit]:
+                    parsol.apply_action(t_idx, kind, node_idx, inc)
+                    candidates.append(parsol.copy())
+                    parsol.reverse_action(t_idx)
+
+                if can_return and depth >= closing_depth:
+                    parsol.apply_return_to_depot(t_idx)
+                    candidates.append(parsol.copy())
+                    parsol.reverse_action(t_idx)
+
+            
+            elif can_return:
+                parsol.apply_return_to_depot(t_idx)
+                candidates.append(parsol.copy())
+                parsol.reverse_action(t_idx)
+
+            
+            
+            else:
+                if verbose:
+                    print(
+                        f"[BeamSearch] Taxi {t_idx} has no feasible actions "
+                        f"and cannot return to depot."
+                    )
+
+        
+        candidates.sort(key=cost_function)
+        return candidates
+
+
+    
+    def apply_local_refinements(
+            parsols: List[PartialSolution],
+            use_intra: bool,
+            use_inter: bool,
+            seed_offset: int
+        ) -> List[PartialSolution]:
+        if not (use_intra or use_inter):
+            return parsols
+
+        
+        refined: List[PartialSolution] = []
+        for idx, base in enumerate(parsols):
+            updated = base
+            if use_intra:
+                updated, _, _ = intra_swap_operator(
+                    updated,
+                    steps=None,
+                    mode='first',
+                    uplift=1,
+                    seed=1337 + seed_offset + idx,
+                    verbose=False
+                )
+            if use_inter:
+                updated, _, _ = inter_swap_operator(
+                    updated,
+                    steps=None,
+                    mode='first',
+                    uplift=1,
+                    seed=2671 + seed_offset + idx,
+                    verbose=False
+                )
+            refined.append(updated)
+
+        
+        return refined
+
+
+    
+    if initial is None:
+        initial = PartialSolutionSwarm(
+            solutions=[PartialSolution(problem=problem, routes=[])]
+        )
+    beam = initial.parsol_list
+    depth = initial.parsol_list[0].n_actions  
+    iterations = 0
+
+    assert all(ps.n_actions == depth for ps in beam), \
+        "All initial partial solutions must have the same action count."
+
+
+    
+    while beam:
+        
+        if all(ps.is_complete() for ps in beam):
+            break
+
+        
+        iterations += 1
+
+        
+        use_intra_phase = (
+            intra_frequency is not None and
+            depth >= until_intra_depth and
+            (depth - until_intra_depth) % intra_frequency == 0
+        )
+        use_inter_phase = (
+            inter_frequency is not None and
+            depth >= until_inter_depth and
+            (depth - until_inter_depth) % inter_frequency == 0
+        )
+
+        
+        if use_intra_phase or use_inter_phase:
+            beam = apply_local_refinements(
+                beam,
+                use_intra_phase,
+                use_inter_phase,
+                seed_offset=depth
+            )
+
+        
+        diversity_relaxed = False
+        beam.sort(key=cost_function)
+        next_beam: List[Tuple[float, PartialSolution]] = []
+
+        
+        
+        def _insert_candidate(cost: float, parsol: PartialSolution) -> None:
+            
+            if any(parsol.is_identical(other) for _, other in next_beam):
+                return
+
+            insert_idx = len(next_beam)
+            while insert_idx > 0 and cost < next_beam[insert_idx - 1][0]:
+                insert_idx -= 1
+            next_beam.insert(insert_idx, (cost, parsol))
+            if len(next_beam) > l_width:
+                next_beam.pop()
+
+
+        
+        for ps in beam:
+            if ps.n_actions != depth:
+                continue
+
+            
+            for cand in expand(ps)[:min(5, l_width)]:
+                candidate_cost = cost_function(cand)
+                _insert_candidate(candidate_cost, cand)
+
+
+        
+        if not next_beam:
+            raise RuntimeError("Beam search stalled: no candidates generated.")
+
+        
+        beam = [item[1] for item in next_beam]
+        depth += 1
+
+        
+        
+        
+        
+        
+        
+        
+        
+
+        
+        if verbose:
+            if diversity_relaxed:
+                print(
+                    f"[BeamSearch] Depth {depth}. Diversity relaxed due to empty beam."
+                )
+            max_costs = [ps.max_cost for ps in beam]
+            print(
+                f"[BeamSearch] Depth {depth}. Max_cost range: "
+                f"{min(max_costs)} - {max(max_costs)}. "
+                f"Avg max_cost: {sum(max_costs) / len(max_costs):.1f}"
+            )
+
+    
+    beam.sort(key=cost_function)
+    swarm = PartialSolutionSwarm(solutions=beam)
+    search_info = {
+        "iterations": iterations,
+        "time": time.time() - start,
+    }
+
+    
+    if verbose:
+        print(f"[BeamSearch] Completed. Final beam size {len(beam)}")
+        print(f"[BeamSearch] Beam max_cost range: {swarm.min_cost} - {swarm.max_cost}")
+        print(f"[BeamSearch] Avg max_cost: {swarm.avg_cost}")
+        print(f"[BeamSearch] Time taken: {search_info['time']:.4f} seconds")
+
+    return swarm, search_info
+
+
+
+def beam_search_solver(
+        problem: ShareARideProblem,
+        cost_function: Any = parsol_scorer,
+        initial: Optional[PartialSolutionSwarm] = None,
+        l_width: int = 10,
+        r_intra: float = 0.75,
+        r_inter: float = 0.90,
+        f_intra: float = 0.05,
+        f_inter: float = 0.10,
+        verbose: bool = False
+    ) -> Tuple[Optional[Solution], Dict[str, Any]]:
+    
+    solswarm, msg = beam_search_swarm_solver(
+        problem, cost_function, initial, l_width,
+        r_intra, r_inter, f_intra, f_inter, verbose
+    )
+
+    best_sol = solswarm.extract_best_solution()
+    if verbose and best_sol:
+        print(f"[BeamSearch] Best solution max_cost: {best_sol.max_cost}")
+
+    return best_sol, msg
+
+import heapq
+from dataclasses import dataclass, field
+from itertools import count
+from typing import Callable, Dict, List, Optional, Tuple
+
+
+Action = Tuple[int, str, int, int]
+ValueFunction = Callable[[PartialSolution], float]
+SelectionPolicy = Callable[[PartialSolution, List[Action]], Optional[Action]]
+SimulationPolicy = Callable[[PartialSolution], Optional[PartialSolution]]
+DefensePolicy = Callable[[PartialSolution], Optional[Solution]]
+
+FAILED_ROLLOUT_COST = 10**12  
+
+
+def _enumerate_actions_greedily(partial: PartialSolution, width: Optional[int]) -> List[Action]:
+    
+    assert width is not None and width > 0, "Width must be a positive integer"
+
+    
+    available_taxis = [
+        idx for idx, state in enumerate(partial.route_states)
+        if not state["ended"]
+    ]
+    if not available_taxis:
+        return []
+    taxi_order = sorted(
+        available_taxis,
+        key=lambda idx: partial.route_states[idx]["cost"],
+    )
+    problem = partial.problem
+    taxi_considered = min(
+        2 if problem.K >= 50
+        else 3 if problem.K >= 20
+        else 4,
+        len(taxi_order),
+    )
+    taxi_branches = taxi_order[:taxi_considered]
+
+
+    
+    
+    total_actions = max(1, 2 * (problem.N + problem.M) + problem.K)
+    closing_depth = max(0, total_actions - 2 * problem.K)
+
+
+    
+    actions: List[Action] = []
+    for t_idx in taxi_branches:
+        
+        state = partial.route_states[t_idx]
+        potential_actions = partial.possible_actions(t_idx)
+        can_return = (
+            state["passenger"] == 0 and
+            not state["parcels"] and
+            not state["ended"] and
+            state["pos"] != 0
+        )
+
+        
+        if potential_actions:
+            
+            action_limit = min(
+                1 if problem.num_nodes >= 500
+                else 2 if problem.num_nodes >= 200
+                else 4,
+                len(potential_actions),
+            )
+            limited_actions = sorted(
+                potential_actions, key=lambda item: item[2]
+            )[:action_limit]
+
+            
+            for kind, node_idx, inc in limited_actions:
+                actions.append((t_idx, kind, node_idx, inc))
+
+
+        
+        if can_return and partial.n_actions >= closing_depth:
+            inc_back = problem.D[state["pos"]][0]
+            actions.append((t_idx, "return", 0, inc_back))
+
+    
+    filtered_actions = [
+        a for a in actions
+        if not (a[1] == "return" and partial.n_actions < closing_depth)
+    ]
+
+    
+    final_actions = sorted(filtered_actions, key=lambda item: item[3])[:width]
+
+    return final_actions
+
+
+
+def _apply_action(partial: PartialSolution, action: Action) -> None:
+    
+    taxi, kind, node_idx, inc = action
+    if kind == "return":
+        partial.apply_return_to_depot(taxi)
+    else:
+        partial.apply_action(taxi, kind, node_idx, inc)
+
+
+
+
+
+@dataclass
+class RewardFunction:
+    
+    visits: int = 0
+    min_value: float = float("inf")
+    max_value: float = float("-inf")
+
+
+    def update(self, value: float) -> None:
+        
+        if not math.isfinite(value):
+            return
+        self.visits += 1
+        self.min_value = min(self.min_value, value)
+        self.max_value = max(self.max_value, value)
+
+
+    def reward_from_value(self, value: float) -> float:
+        
+        if not math.isfinite(value):
+            return 0.0
+        if self.visits == 0:
+            return 0.5
+        if self.max_value == self.min_value:
+            return 0.5
+        span = self.max_value - self.min_value
+        norm = (value - self.min_value) / span
+        return max(0.0, min(1.0, norm))
+
+
+
+@dataclass
+class MCTSNode:
+    
+    partial: PartialSolution  
+    parent: Optional["MCTSNode"] = None  
+    action: Optional[Action] = None  
+    width: Optional[int] = None  
+    children: List["MCTSNode"] = field(default_factory=list)    
+    visits: int = 0  
+    total_cost: int = 0     
+    total_reward: float = 0.0  
+    untried_actions: List[Action] = field(default_factory=list)  
+
+
+    def __post_init__(self) -> None:
+        self.untried_actions = _enumerate_actions_greedily(self.partial, self.width)
+
+
+    @property
+    def is_terminal(self) -> bool:
+        
+        return self.partial.is_complete()
+
+
+    @property
+    def average_reward(self) -> float:
+        
+        if self.visits == 0:
+            return 0.0
+        return self.total_reward / self.visits
+
+
+    @property
+    def average_cost(self) -> float:
+        
+        if self.visits == 0:
+            return 0.0
+        return self.total_cost / self.visits
+
+
+    def uct_score(self, uct_c: float) -> float:
+        
+        if self.visits == 0:
+            return float("inf")
+
+        exploit_term = self.average_reward
+
+        parent_visits = self.parent.visits if self.parent else self.visits
+        explore_term = uct_c * math.sqrt(
+            math.log(parent_visits + 1) / self.visits
+        )
+
+        return exploit_term + explore_term
+
+
+
+def _select(root: MCTSNode, exploration: float) -> List[MCTSNode]:
+    
+    path = [root]
+    current = root
+    while True:
+        if current.untried_actions:
+            return path
+        if not current.children:
+            return path
+        current = max(current.children, key=lambda child: child.uct_score(exploration))
+        path.append(current)
+
+
+
+def _expand(
+    node: MCTSNode,
+    selection_policy: SelectionPolicy,
+    width: Optional[int]
+) -> Optional[MCTSNode]:
+    
+    
+    if not node.untried_actions:
+        node.untried_actions = _enumerate_actions_greedily(node.partial, width)
+
+    
+    if not node.untried_actions:
+        return None
+
+    
+    action = selection_policy(node.partial, node.untried_actions)
+    if action is None:
+        return None
+
+    
+    try:
+        node.untried_actions.remove(action)
+    except ValueError:
+        pass
+
+    
+    child_partial = node.partial.copy()
+    _apply_action(child_partial, action)
+
+    
+    child = MCTSNode(child_partial, parent=node, action=action, width=width)
+    node.children.append(child)
+
+    
+    return child
+
+
+
+def _backpropagate(path: List[MCTSNode], cost: int, reward: float) -> None:
+    
+    for node in reversed(path):
+        node.visits += 1
+        node.total_reward += reward
+        node.total_cost += cost
+
+
+def _gather_leaves(
+    node: MCTSNode,
+    value_function: ValueFunction,
+    limit: Optional[int] = None,
+) -> List[MCTSNode]:
+    
+    if limit is None:
+        limit = 10 ** 6  
+
+    assert limit is not None and limit > 0, "Limit must be positive"
+
+    
+    heap: List[Tuple[float, int, MCTSNode]] = []
+    ticket = count()
+
+    
+    def _collect_limited(current: MCTSNode) -> None:
+        
+        if not current.children:
+            score = value_function(current.partial)
+            entry = (score, next(ticket), current)
+            if len(heap) < limit:
+                heapq.heappush(heap, entry)
+            elif score > heap[0][0]:
+                heapq.heapreplace(heap, entry)
+            return
+
+        
+        for child in current.children:
+            _collect_limited(child)
+
+    _collect_limited(node)
+
+    
+    ordered = sorted(heap, key=lambda item: item[0], reverse=True)
+    return [item[2] for item in ordered]
+
+
+
+def _run_mcts(
+    problem: ShareARideProblem,
+    partial: Optional[PartialSolution],
+
+    value_function: ValueFunction,
+    selection_policy: SelectionPolicy,
+    simulation_policy: SimulationPolicy,
+
+    width: Optional[int],
+    uct_c: float,
+    max_iters: Optional[int],
+
+    seed: Optional[int],
+    time_limit: Optional[float],
+    verbose: bool,
+) -> Tuple[MCTSNode, Optional[PartialSolution], Dict[str, float]]:
+    
+    start = time.time()
+    reward_function = RewardFunction()
+
+    if seed is not None:
+        random.seed(seed)
+    if partial is None:
+        partial = PartialSolution(problem=problem, routes=[])
+
+    
+    base_partial = partial or PartialSolution(problem=problem, routes=[])
+    root = MCTSNode(base_partial, width=width)
+
+    
+    iterations = 0
+    best_rollout: Optional[PartialSolution] = None
+    best_rollout_cost = 10 ** 9
+    max_depth = 0
+
+
+    
+    while True:
+        
+        if max_iters is not None and iterations >= max_iters:
+            if verbose:
+                print(f"[MCTS] Reached max iterations: {max_iters}")
+            break
+        if time_limit is not None and (time.time() - start) >= time_limit:
+            if verbose:
+                print(f"[MCTS] Reached time limit: {time_limit:.2f}s")
+            break
+
+        
+        path = _select(root, uct_c)
+        leaf = path[-1]
+        current_depth = len(path) - 1
+        if current_depth > max_depth:
+            max_depth = current_depth
+
+        
+        if not leaf.is_terminal:
+            child = _expand(leaf, selection_policy, width)
+            if child is not None:
+                path.append(child)
+                working = child
+            else:
+                working = leaf
+        else:
+            break   
+
+        
+        rollout_result = simulation_policy(working.partial.copy())
+        
+        if rollout_result and rollout_result.is_complete():
+            rollout_cost = rollout_result.max_cost  
+            if rollout_cost < best_rollout_cost:
+                best_rollout_cost = rollout_cost
+                best_rollout = rollout_result
+
+            
+            
+            value = float(value_function(rollout_result))
+
+            
+            reward_function.update(value)
+            reward = reward_function.reward_from_value(value)
+
+        
+        else:
+            rollout_cost = FAILED_ROLLOUT_COST  
+            value = -float(rollout_cost)
+            reward_function.update(value)
+            reward = reward_function.reward_from_value(value)
+
+        
+        _backpropagate(path, rollout_cost, reward)
+        iterations += 1
+
+        
+        if verbose and (iterations % 1000 == 0):
+            elapsed = time.time() - start
+            print(
+                f"[MCTS] [Iteration {iterations}] "
+                f"Best rollout cost={best_rollout_cost:.3f} "
+                f"MaxDepth={max_depth} Time={elapsed:.2f}s"
+            )
+
+    
+
+
+    
+    info = {
+        "iterations": iterations,
+        "time": time.time() - start,
+        "best_rollout_cost": best_rollout_cost,
+    }
+
+    
+    if verbose:
+        print(
+            f"[MCTS] Iterations count={iterations} "
+            f"Time={info['time']:.3f}s. Best rollout cost={best_rollout_cost:.3f}"
+        )
+
+    return root, best_rollout, info
+
+
+
+def mcts_enumerator(
+    problem: ShareARideProblem,
+    partial: Optional[PartialSolution],
+
+    
+    value_function: ValueFunction,
+    selection_policy: SelectionPolicy,
+    simulation_policy: SimulationPolicy,
+
+    
+    best_k: int = 5,
+    width: Optional[int] = 5,
+    uct_c: float = math.sqrt(2),
+    max_iters: Optional[int] = 500,
+
+    
+    seed: Optional[int] = None,
+    time_limit: Optional[float] = None,
+    verbose: bool = False,
+) -> Tuple[List[PartialSolution], Dict[str, float]]:
+    
+
+    tree, _, info = _run_mcts(
+        problem,
+        partial,
+        width=width,
+        uct_c=uct_c,
+        max_iters=max_iters,
+        value_function=value_function,
+        selection_policy=selection_policy,
+        simulation_policy=simulation_policy,
+        time_limit=time_limit,
+        seed=seed,
+        verbose=verbose,
+    )
+
+    top_leaves = _gather_leaves(
+        tree,
+        value_function=value_function,
+        limit=max(1, best_k),
+    )
+    
+    top = [leaf.partial.copy() for leaf in top_leaves]
+
+    return top, info
+
+
+
+def mcts_solver(
+    problem: ShareARideProblem,
+    partial: Optional[PartialSolution],
+
+    value_function: ValueFunction,
+    selection_policy: SelectionPolicy,
+    simulation_policy: SimulationPolicy,
+    defense_policy: DefensePolicy,
+
+    width: Optional[int] = 5,
+    uct_c: float = math.sqrt(2),
+    max_iters: Optional[int] = 1000,
+
+    seed: Optional[int] = None,
+    time_limit: Optional[float] = None,
+    verbose: bool = False,
+) -> Tuple[Optional[Solution], Dict[str, float]]:
+    
+    start = time.time()
+
+    
+    _, best_rollout, info = _run_mcts(
+        problem=problem,
+        partial=partial,
+        value_function=value_function,
+        selection_policy=selection_policy,
+        simulation_policy=simulation_policy,
+        width=width,
+        uct_c=uct_c,
+        max_iters=max_iters,
+        seed=seed,
+        time_limit=time_limit,
+        verbose=verbose,
+    )
+
+    
+    if best_rollout is None:
+        info["used_best_rollout"] = False
+        info["final_value"] = float("nan")
+        return None, info
+
+    
+    sol = best_rollout.to_solution()
+    assert sol is not None and sol.is_valid(), "Best rollout is not a valid solution."
+
+    
+    info["used_best_rollout"] = True
+    info["iterations"] = info.get("iterations", 0)
+    info["time"] = time.time() - start
+
+    return sol, info
+
+
+
+
+
+
+
 def read_instance() -> ShareARideProblem:
     
 
@@ -2149,57 +4159,100 @@ def read_instance() -> ShareARideProblem:
 
 def main(verbose: bool = False):
     prob: ShareARideProblem = read_instance()
-    sol, info1 = iterative_greedy_balanced_solver(
-        prob=prob,
-        iterations=100000, time_limit=60.0, seed=42, verbose=False,
-        destroy_proba=0.5, destroy_steps=min(6, prob.num_nodes // (2 * prob.K) + 1), destroy_T=1.0,
-        rebuild_proba=0.25, rebuild_steps=2, rebuild_T=10.0
-    )
-    assert sol is not None, "No solution found by IG solver."
-    if verbose:
-        print(f"Initial solution cost: {sol.max_cost:.2f}")
-        print()
-        print()
 
+
+    
+    def v_func(
+        parsol: PartialSolution,
+    ) -> float:
+        
+        cost = parsol_scorer(parsol)
+        return -cost    
+
+
+    def stochastic_select_policy(
+        _ps: PartialSolution,
+        actions: List[Action],
+    ) -> Optional[Action]:
+        
+        rng = random.Random()
+        if not actions:
+            return None
+        increments = [float(action[3]) for action in actions]
+        weights = softmax_weighter(increments, T=0.1)
+        chosen_idx = sample_from_weight(rng, weights)
+        return actions[chosen_idx]
+
+
+    def sim_policy(
+        ps: PartialSolution,
+    ) -> Optional[PartialSolution]:
+        
+        sim_solution, _ = greedy_balanced_solver(
+            ps.problem,
+            premature_routes=[r.copy() for r in ps.routes],
+            verbose=False,
+        )
+        return ps if sim_solution is None else PartialSolution.from_solution(sim_solution)
+
+
+    def def_policy(
+        ps: PartialSolution,
+    ) -> Optional[Solution]:
+        
+        beam_solution, _ = beam_search_solver(
+            ps.problem,
+            cost_function=parsol_scorer,
+            initial=PartialSolutionSwarm([ps]),
+        )
+
+        return beam_solution
+
+
+    sol, _ = mcts_solver(
+        problem=prob,
+        partial=None,
+        value_function=v_func,
+        selection_policy=stochastic_select_policy,
+        simulation_policy=sim_policy,
+        defense_policy=def_policy,
+
+        width=3,
+        uct_c=5.0,
+        max_iters=100000,
+
+        seed=42,
+        time_limit=200.0,
+        verbose=verbose,
+    )
+
+    assert sol, "No solution found by MCTS."
+    if verbose:
+        print()
+        print(f"Cost after MCTS: {sol.max_cost:.2f}")
+        print("===============================")
+
+
+    
     st1 = time.time()
     par = PartialSolution.from_solution(sol)
-    new_par, modified, n_relocates = inter_swap_operator(
+    new_par, modified, n_relocates = relocate_operator(
         partial=par,
         steps=None,
         mode='first',
-        seed=100,
-        verbose=False
+        seed=111,
+        verbose=verbose
     )
-
     sol = new_par.to_solution()
-    assert sol, "No solution found after int."
+    assert sol, "No solution found after relocate."
     if verbose:
-        print(f"Total inter-swap performed: {n_relocates}")
-        print(f"Cost after inter-swap: {sol.max_cost:.2f}")
-        print(f"Time for inter-swap: {time.time() - st1:.2f} seconds")
         print()
-        print()
+        print(f"Total relocate performed: {n_relocates}")
+        print(f"Cost after relocate: {sol.max_cost:.2f}")
+        print(f"Time for relocate: {time.time() - st1:.2f} seconds")
+        print("===============================")
 
-    st2 = time.time()
-    par = PartialSolution.from_solution(sol)
-    new_par, modified, n_relocates = intra_swap_operator(
-        partial=par,
-        steps=None,
-        mode='best',
-        seed=200,
-        verbose=False
-    )
-
-    sol = new_par.to_solution()
-    assert sol, "No solution found after relocates."
-    if verbose:
-        print(f"Total relocates performed: {n_relocates}")
-        print(f"Cost after relocates: {sol.max_cost:.2f}")
-        print(f"Time for relocates: {time.time() - st2:.2f} seconds")
-        print()
-        print()
-
-    sol.stdin_print(verbose=False)
+    sol.stdin_print(verbose=verbose)
 
 
 if __name__ == "__main__":

@@ -168,7 +168,7 @@ def relocate_from_to(
     n_from = len(route_from)
     n_to = len(route_to)
 
-    if n_from < 3:
+    if n_from < 5:
         return partial, [False] * prob.K, 0    # No requests to relocate
 
 
@@ -477,7 +477,7 @@ def relocate_from_to(
             # Update local route lengths
             n_from -= 2
             n_to += 2
-            if n_from < 3:
+            if n_from < 5:
                 break
 
             # Verbose logging
@@ -514,11 +514,11 @@ def relocate_operator(
     Perform up to ``steps`` relocations based on the specified ``mode``.
     Use in post-processing or local search.
 
-    The procedure attempts to relocate requests from the higher-cost routes 
-    to the lower-cost routes (traverse from the lowest to the highest). Then it
-    iterates over all pairs of the donor routes, in descending order of their 
-    in-out contribution to the route cost, then tries to relocate requests to
-    the receiver routes. If not successful, it moves to the next donor route. 
+    The procedure attempts to relocate requests from the highest-cost route
+    to the 1/3 lower-cost routes (traverse from the lowest to the highest) by
+    iterating over all insertion pairs of the receiver routes, in ascending 
+    order of their in-out contribution to the route cost.
+    If not successful, it moves to the next donor route.
 
     Parameters:
     - partial: PartialSolution object representing the current solution.
@@ -554,71 +554,70 @@ def relocate_operator(
     # receivers from lowest-cost upwards, as per procedure description.
     while total_moves < max_steps:
         # Sort candidate donor and receiver routes by current costs
+        # Note: we only pick top 5 from each to limit attempts
         costs: list[tuple[int, int]] = list(enumerate(current_par.route_costs))
-        donors = [idx for idx, _ in sorted(costs, key=lambda x: x[1], reverse=True)]
-        receivers = [idx for idx, _ in sorted(costs, key=lambda x: x[1])]
+        donor_idx = max(costs, key=lambda x: x[1])[0]
+        receivers = [idx for idx, _ in sorted(costs, key=lambda x: x[1])][:max(4, K // 2)]
 
-        # Try all donor-receiver pairs
+        # Break if the donor is too short
+        # Note that if it is too short, all other routes must be too short as well
+        if len(current_par.routes[donor_idx]) < 5:
+            break
+
+
+        # Attempt relocations from donor donor_idx to each receiver r_idx
         improved = False
-        for d_idx in donors:
-            # Skip empty/too-short donor routes
-            if len(current_par.routes[d_idx]) < 3:
+        for r_idx in receivers:
+            if r_idx == donor_idx:      # Skip same route
+                continue
+            # Skip too-short receivers (no place to insert between depots)
+            if len(current_par.routes[r_idx]) < 2:
                 continue
 
-            for r_idx in receivers:
-                if r_idx == d_idx:      # Skip same route
-                    continue
-                # Skip too-short receivers (no place to insert between depots)
-                if len(current_par.routes[r_idx]) < 2:
-                    continue
+            # Attempt relocation from donor_idx to r_idx
+            remain = max_steps - total_moves
+            new_partial, modified_pair, moves_made = relocate_from_to(
+                current_par,
+                from_route_idx=donor_idx,
+                to_route_idx=r_idx,
+                steps=remain,
+                mode=mode,
+                uplift=uplift,
+                seed=rng.randint(10, 10**9),  # vary seed between attempts
+                verbose=verbose,
+            )
 
-                # Attempt relocation from d_idx to r_idx
-                remain = max_steps - total_moves
-                new_partial, modified_pair, moves_made = relocate_from_to(
-                    current_par,
-                    from_route_idx=d_idx,
-                    to_route_idx=r_idx,
-                    steps=remain,
-                    mode=mode,
-                    uplift=uplift,
-                    seed=rng.randint(10, 10**9),  # vary seed between attempts
-                    verbose=verbose,
-                )
+            # If successful, update current solution and tracking variables
+            if moves_made > 0:
+                current_par = new_partial
+                total_moves += moves_made
+                for i in range(K):
+                    if modified_pair[i]:
+                        modified_total[i] = True
+                improved = True
 
-                # If successful, update current solution and tracking variables
-                if moves_made > 0:
-                    current_par = new_partial
-                    total_moves += moves_made
-                    for i in range(K):
-                        if modified_pair[i]:
-                            modified_total[i] = True
-                    improved = True
+                # Verbose logging
+                if verbose:
+                    print(f"{moves_made} relocation made from route {donor_idx} to route {r_idx}")
 
-                    # Verbose logging
-                    if verbose:
-                        print(f"{moves_made} relocation made from route {d_idx} to route {r_idx}")
-
-                    break   # break receivers loop, re-sort donors/receivers
-
-            if improved:
-                break   # break donors loop to restart outer while with new costs
+                break   # break receivers loop, re-sort donors/receivers
 
         if not improved:
-            break   # convergence
+            break   # No improvement found, exit main loop
 
     return current_par, modified_total, total_moves
 
 
 
 if __name__ == "__main__":
+    import time
     from share_a_ride.core.utils.generator import generate_instance_coords
     from share_a_ride.solvers.algo.greedy import greedy_balanced_solver
 
     # Simple test case
     problem = generate_instance_coords(
-        N=20, M=30, K=5, area=50, seed=12345
+        N=200, M=300, K=7, area=1000, seed=12345
     )
-    problem.stdin_print()
     # dataset = "H"
     # instance_name = "H-n30-m25-k10"
     # path = path_router(dataset, "readfile", instance_name)
@@ -626,25 +625,27 @@ if __name__ == "__main__":
 
     sol, msg = greedy_balanced_solver(problem)
     assert sol
-    print("Solution before relocation:")
-    sol.stdin_print(True)
-    print()
+    # print("Solution before relocation:")
+    # sol.stdin_print(True)
+    # print()
 
+    st = time.time()
     par = PartialSolution.from_solution(sol)
     next_par, modified, n_moves = relocate_operator(
         par,
-        steps=10,
-        mode='best',
+        steps=None,
+        mode='first',
         seed=100,
         verbose=True
     )
 
     sol_after = next_par.to_solution()
     assert sol_after
-    print("Solution after relocation:")
-    sol_after.stdin_print(True)
-    print()
+    # print("Solution after relocation:")
+    # sol_after.stdin_print(True)
+    # print()
 
     print()
     print(f"Relocate operator performed {n_moves} moves, modified routes: {modified}")
     print(f"Solution cost before: {sol.max_cost}, after: {sol_after.max_cost}")
+    print(f"Relocate operator time: {time.time() - st:.4f} seconds" )

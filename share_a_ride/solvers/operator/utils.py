@@ -241,9 +241,35 @@ class MinMaxPfsumArray:
         Insert val at position idx in the overall array.
         Return None.
         """
+        # Support append at end without relying on _find_block assertion
+        if idx == self.n_data:
+            if not self.block_arr:
+                self.block_arr.append(self.Block([val]))
+            else:
+                last = self.block_arr[-1]
+                # If last block is too large, start a new block to keep sqrt decomposition
+                if last.size >= 2 * self.block_size:
+                    self.block_arr.append(self.Block([val]))
+                else:
+                    last.insert(last.size, val)
+
+            # Update data structure
+            self.n_data += 1
+            self._rebuild_indexing()
+            return
+
         # Retrieve block and inner indices, then perform insertion
         bid, iid = self._find_block(idx)
-        self.block_arr[bid].insert(iid, val)
+        blk = self.block_arr[bid]
+        blk.insert(iid, val)
+
+        # If block grows too large, split it to maintain O(sqrt n) bounds
+        if blk.size > 2 * self.block_size:
+            arr = blk.arr
+            mid = len(arr) // 2
+            left = self.Block(arr[:mid])
+            right = self.Block(arr[mid:])
+            self.block_arr[bid:bid + 1] = [left, right]
 
         # Update data structure
         self.n_data += 1
@@ -259,10 +285,29 @@ class MinMaxPfsumArray:
         bid, iid = self._find_block(idx)
         self.block_arr[bid].erase(iid)
 
-        # Update data structure
-        self.n_data -= 1
+        # If block becomes empty, drop it; otherwise consider merging small blocks
         if self.block_arr[bid].size == 0:
             del self.block_arr[bid]
+        else:
+            # Merge with next block if both are small enough
+            min_size = max(1, self.block_size // 2)
+            if self.block_arr[bid].size < min_size:
+                # Prefer merge with next if possible
+                if bid + 1 < len(self.block_arr):
+                    nxt = self.block_arr[bid + 1]
+                    if self.block_arr[bid].size + nxt.size <= 2 * self.block_size:
+                        merged = self.block_arr[bid].arr + nxt.arr
+                        self.block_arr[bid:bid + 2] = [self.Block(merged)]
+
+                # Otherwise try merge with previous
+                elif bid - 1 >= 0:
+                    prv = self.block_arr[bid - 1]
+                    if prv.size + self.block_arr[bid].size <= 2 * self.block_size:
+                        merged = prv.arr + self.block_arr[bid].arr
+                        self.block_arr[bid - 1:bid + 1] = [self.Block(merged)]
+
+        # Update data structure
+        self.n_data -= 1
         self._rebuild_indexing()
 
 
@@ -272,7 +317,6 @@ class MinMaxPfsumArray:
         (Global means we do NOT subtract the prefix up to l-1; i.e. we look at the array's
         cumulative sum up to k.)
         """
-        csum = 0
         ans = float('inf')
         pos = 0
         prefix = 0          # global prefix up to current processed position
@@ -317,7 +361,6 @@ class MinMaxPfsumArray:
         Query the maximum GLOBAL prefix sum value attained at any position k in [l, r-1].
         (Global means we do NOT subtract prefix up to l-1.)
         """
-        cur = 0
         ans = float('-inf')
         pos = 0
         prefix = 0

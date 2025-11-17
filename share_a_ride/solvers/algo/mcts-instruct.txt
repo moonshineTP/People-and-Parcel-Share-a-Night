@@ -1,0 +1,88 @@
+Monte Carlo Tree Search General Developing Instructions
+
+The Monte Carlo Tree Search (MCTS) is a search algorithm for decision processes.
+In this context. We have already formulated the problem as a decision process to
+expand nodes into routes using the #PartialSolution API like #apply_action,
+#apply_return_to_depot, #reverse_action, #is_complete with helpers to find feasible actions
+like #possible_actions. Furthermore, we have implemented some searcher like
+#greedy_balanced_solver, #branch_and_bound_solver, and #beam_search_solver.
+So you can refer to them for the structure and logic of a tree search algorithm.
+
+The MCTS algorithm has five main components:
+- A tree structure to represent the current observed partial solution of the search
+- A value function to evaluate the quality of nodes in the tree. This function guides
+the search towards promising areas of the solution space.
+- A search algorithm, in here is a greedy search, that in each iteration,
+selects a path from the root to a leaf node based on the recognized value function
+of the nodes.
+- A simulation policy that, from the selected leaf node, simulates
+a complete solution by some heuristic search methods like greedy/random search.
+The result of the simulation is then used to update the state of the search tree
+and to recalculate the value function of the nodes
+- A backpropagation method that updates the value function of the nodes
+based on the results of the simulation.
+
+The MCTS algorithm should use a tree data structure to represent and retrieve
+the nodes and their values efficiently. Also, it should be aided by five helper functions:
+- #select: to select a leaf node from the tree based on the value function
+This traverse from the root to a leaf node in a greedy manner.
+- #expand: to expand the selected leaf node by adding a child leaf node.
+This function should use #possible_actions to find feasible actions
+and choose a leaf based on the value function (it should be easy to apply a choosing
+heuristic here too).
+- #simulate: to simulate a complete solution from the selected leaf node
+using some heuristic search methods like greedy/random search that is another parameter.
+- #backpropagate: to update the value function of the nodes (they should be the ones
+that is in the tree path from the root to the selected leaf node) based on the result
+of the simulation.
+- #defense: if the time limit is approaching, this function should terminate the search,
+extract the best leaf node from the tree, perform a search from that node by another
+function parameter and return the best complete solution found by it.
+
+There should be two functions:
+-#mcts_enumerator: returns the best `k` leaf node in the search tree. This is for future use
+of building a #PartialSolutionSwarm for some metaheuristics.
+-#mcts_solver: returns the best complete solution found by the MCTS algorithm
+using #defense. 
+
+Note the signature of #mcts_solver should be a #Solution and a dict of info
+like other solvers.
+
+The parameters of the MCTS algorithm should include:
+- Problem objects, such as:
+    - problem: the #ShareARideProblem instance
+    - partial: the initial #PartialSolution instance as the root of the search tree
+
+- Search parameters, such as:
+    /// Numerics
+    - k: the number of best leaf nodes to return in #mcts_enumerator
+    - width: the max number of child nodes that should be extended from a node at any time
+    in the search tree
+    - uct_c: the exploration constant for the UCT (Upper Confidence Bound for Trees)
+      formula to balance exploration and exploitation in the selection phase
+    - max_sims: the maximum number of simulations to run before terminating the search
+    - max_iters: the maximum number of iterations to run before terminating the search
+
+    //// Callables
+    - value_function: a callable that takes a #PartialSolution and returns a higher-better float
+      as the value of the node. This should have some normalizing scheme so that different cost
+      distribution can be handled well.
+    - selection_policy: a callable that takes a #PartialSolution and a list of actions returned
+    by #possible_actions and returns an action to expand the node.
+    - simulation_policy: a callable that takes a #PartialSolution and returns a #PartialSolution
+      (a complete solution) by some heuristic search method
+    - defense_policy: a callable that takes a #PartialSolution and returns a #Solution
+      (a complete solution) by some heuristic search method
+
+- Search meta-parameters, such as:
+    - time_limit: the time limit for the search
+    - seed: the random seed for reproducibility
+    - verbose: the verbosity level for logging
+
+    
+
+
+
+
+
+

@@ -52,7 +52,7 @@ def destroy_operator(
     The selection use a temperature-based heuristic with probabilities    
     Temperature controls the selection bias:
     - temperature = 0: always select the most expensive routes (greedy)
-    - temperature → ∞: uniform random selection
+    - temperature = inf: uniform random selection
     - temperature = 1: balanced probabilistic selection    
     Higher cost routes have higher probability of being selected, but with
     some randomness to allow exploration.

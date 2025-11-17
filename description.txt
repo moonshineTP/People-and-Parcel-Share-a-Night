@@ -1,10 +1,10 @@
-The OG People and Parcel Share a Ride Problem by Li et al. (2014).
-Restated as problem for our project.
-The input format is simplified and is used in online judge.
+This statements adhere mostly to the original People and Parcel Share-a-Ride Problem by Li et al. (2014).
+Restated a little bit problem for our project.
+The input and output format is simplified and is used in online judge.
 
 
 """
-Project 11 - People and Parcel Share a Ride Large Size
+Project 11 - People and Parcel Share a Ride
 
 Problem Description:
 --------------------
