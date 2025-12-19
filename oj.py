@@ -4,12 +4,9 @@
     The final output is submission.py
 """
 import sys
-import time
 
-from share_a_ride.solvers.algo.greedy import iterative_greedy_balanced_solver
 from share_a_ride.core.problem import ShareARideProblem
-from share_a_ride.core.solution import PartialSolution
-from share_a_ride.solvers.operator.swap import inter_swap_operator, intra_swap_operator
+from share_a_ride.solvers.algo.aco import aco_solver
 
 
 def read_instance() -> ShareARideProblem:
@@ -28,59 +25,47 @@ def read_instance() -> ShareARideProblem:
     return ShareARideProblem(N, M, K, q, Q, D)
 
 
+
 def main(verbose: bool = False):
+    """
+    Main execution function.
+    """
     prob: ShareARideProblem = read_instance()
-    sol, info1 = iterative_greedy_balanced_solver(
-        prob=prob,
-        iterations=100000, time_limit=60.0, seed=42, verbose=True,
-        destroy_proba=0.5, destroy_steps=min(6, prob.num_nodes // (2 * prob.K) + 1), destroy_T=1.0,
-        rebuild_proba=0.25, rebuild_steps=2, rebuild_T=10.0
-    )
-    assert sol is not None, "No solution found by IG solver."
-    if verbose:
-        print(f"Initial solution cost: {sol.max_cost:.2f}")
-        print()
-        print()
 
-    st1 = time.time()
-    par = PartialSolution.from_solution(sol)
-    new_par, modified, n_relocates = inter_swap_operator(
-        partial=par,
-        steps=None,
-        mode='first',
-        seed=100,
-        verbose=True
-    )
+    # //////// Initial solution ////////
+    sol, _ = aco_solver(
+        prob,
+        cutoff=10,
+        num_ants=(
+            500 if prob.num_nodes <= 100
+            else 150 if prob.num_nodes <= 250
+            else 50 if prob.num_nodes <= 500
+            else 25 if prob.num_nodes <= 1000
+            else 10
+        ),
+        runs=(
+            100 if prob.num_nodes <= 100
+            else 75 if prob.num_nodes <= 250
+            else 50 if prob.num_nodes <= 500
+            else 20 if prob.num_nodes <= 1000
+            else 10
+        ),
+        width=(
+            10 if prob.num_nodes <= 100
+            else 8 if prob.num_nodes <= 250
+            else 6 if prob.num_nodes <= 500
+            else 4 if prob.num_nodes <= 1000
+            else 2
+        ),
 
-    sol = new_par.to_solution()
-    assert sol, "No solution found after int."
-    if verbose:
-        print(f"Total inter-swap performed: {n_relocates}")
-        print(f"Cost after inter-swap: {sol.max_cost:.2f}")
-        print(f"Time for inter-swap: {time.time() - st1:.2f} seconds")
-        print()
-        print()
-
-    st2 = time.time()
-    par = PartialSolution.from_solution(sol)
-    new_par, modified, n_relocates = intra_swap_operator(
-        partial=par,
-        steps=None,
-        mode='best',
-        seed=200,
-        verbose=True
+        seed=42,
+        time_limit=250.0,
+        verbose=verbose,
     )
 
-    sol = new_par.to_solution()
-    assert sol, "No solution found after relocates."
-    if verbose:
-        print(f"Total relocates performed: {n_relocates}")
-        print(f"Cost after relocates: {sol.max_cost:.2f}")
-        print(f"Time for relocates: {time.time() - st2:.2f} seconds")
-        print()
-        print()
+    assert sol, "No solution found by ACO."
 
-    sol.stdin_print(verbose=True)
+    sol.stdin_print(verbose=verbose)
 
 
 if __name__ == "__main__":

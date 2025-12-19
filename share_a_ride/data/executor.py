@@ -20,7 +20,7 @@ import os
 import csv
 import json
 
-from typing import Optional
+from typing import Optional, List, Tuple
 from datetime import datetime, timezone
 
 from share_a_ride.data.parser import parse_sarp_to_problem
@@ -50,12 +50,11 @@ ATTEMPT_COLUMNS = [
 
 
 def attempt_dataset(
-
         solver: AlgoSolver | LearnerSolver,
         dataset: str,
         note: str = "",
         verbose: bool = False
-    ) -> tuple[list[Solution], list[float], str]:
+    ) -> Tuple[List[Solution], List[float], str]:
     """
     Attempt to solve all instances in a dataset with a given solver.
     Use attempt_instance for each instance.
@@ -140,7 +139,7 @@ def attempt_instance(
         instance_name: str,
         note: str = "",
         verbose: bool = False
-    ) -> tuple[Optional[Solution], float, str]:
+    ) -> Tuple[Optional[Solution], float, str]:
     """
     Attempt to solve a single instance in a dataset with a given solver.
     Also if the attempt was successful, it saves the results in a csv file.
@@ -264,9 +263,9 @@ def attempt_instance(
 
 
 if __name__ == "__main__":
-    from share_a_ride.solvers.algo.greedy import iterative_greedy_balanced_solver
+    from share_a_ride.solvers.algo.greedy import iterative_greedy_solver
     chosen_solver = AlgoSolver(
-        algo=iterative_greedy_balanced_solver,
+        algo=iterative_greedy_solver,
         args={"iterations": 10000, "time_limit": 10.0, "seed": 42, "verbose": 1},
         hyperparams={
             "destroy_proba"      : 0.5,

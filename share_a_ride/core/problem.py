@@ -1,73 +1,109 @@
 """
-Module defining the Share-a-Ride Problem (SARP) class and related functionalities.
+Module defining the Share-a-Ride Problem (SARP) class to represent the problem instance
+and some related functionalities.
 """
-from __future__ import annotations
-from typing import Optional
-from typing import TYPE_CHECKING
+from typing import List, Tuple, Optional
 
 
-if TYPE_CHECKING:
-    import matplotlib.pyplot as plt
 
 
 class ShareARideProblem:
+    """
+    Class representing a Share-a-Ride Problem (SARP) instance.
+    Attributes:
+    - N: Number of passenger requests
+    - M: Number of parcel requests
+    - K: Number of vehicles
+    - q: List of parcel quantities for each parcel request
+    - Q: List of vehicle capacities
+    - D: Distance matrix between all nodes
+    - num_nodes: Total number of nodes in the problem
+    - num_requests: Total number of requests (passenger + parcel)
+    - num_actions: Total number of possible actions
+    - num_expansions: Total number of possible expansions
+    - Coordinate helper functions for node indexing
+    - coords: Optional list of (x, y) coordinates for each node
+    - name: Optional name of the problem instance
+
+    """
     def __init__(
             self, N: int, M: int, K: int,
-            parcel_qty: list[int], vehicle_caps: list[int],
-            dist: list[list[int]], coords: Optional[list[tuple[int, int]]] = None
+            parcel_qty: List[int], vehicle_caps: List[int], dist: List[List[int]],
+            coords: Optional[List[Tuple[int, int]]] = None, name: Optional[str] = None
         ):
+        """
+        Initialize a Share-a-Ride Problem instance.
+        """
 
-        # Basic parameters
+        # //// Basic parameters
         self.N = N
         self.M = M
         self.K = K
         self.q = list(parcel_qty)
         self.Q = list(vehicle_caps)
         self.D = [row[:] for row in dist]
-        self.num_nodes = 2*N + 2*M + 1
-        self.num_requests = N + M
+        self.num_nodes = 2*N + 2*M + 1      # D edge size, including depot
+        self.num_requests = N + M           # N passenger requests, M parcel requests
+        self.num_actions = N + 2*M + K      # N passenger serves, 2M parcel serves, K returns
+        self.num_expansions = N + 2*M
 
-        # index helpers
-        self.ppick = lambda i: i
-        self.pdrop = lambda i: N + M + i
-        self.parc_pick = lambda j: N + j
-        self.parc_drop = lambda j: 2*N + M + j
 
-        self.rev_ppick = lambda i: i
-        self.rev_pdrop = lambda n: n - (N + M)
-        self.rev_parc_pick = lambda n: n - N
-        self.rev_parc_drop = lambda n: n - (2 * N + M)
+        # //// Index helper
+        # pid/lid -> node_id
+        self.pserve = lambda pid: (pid, pid + N + M)
+        self.lpick = lambda lid: N + lid
+        self.ldrop = lambda lid: 2*N + M + lid
 
-        # Node check helpers
-        self.is_ppick = lambda x: 1 <= x <= N
-        self.is_pdrop = lambda x: N + M + 1 <= x <= 2 * N + M
-        self.is_parc_pick = lambda x: N + 1 <= x <= N + M
-        self.is_parc_drop = lambda x: 2 * N + M + 1 <= x <= 2 * (N + M)
+        # nodeid -> pid/lid
+        self.rev_ppick = lambda nodeid: nodeid
+        self.rev_pdrop = lambda nodeid: nodeid - (N + M)
+        self.rev_lpick = lambda n: n - N
+        self.rev_ldrop = lambda n: n - (2 * N + M)
 
+        # nodeid checker
+        self.is_ppick = lambda nodeid: 1 <= nodeid <= N
+        self.is_pdrop = lambda nodeid: N + M + 1 <= nodeid <= 2 * N + M
+        self.is_lpick = lambda nodeid: N + 1 <= nodeid <= N + M
+        self.is_ldrop = lambda nodeid: 2 * N + M + 1 <= nodeid <= 2 * (N + M)
+
+
+        # //// Metadata
         # Coordinate (mainly for visualization)
         self.coords = coords
+        self.name = name
 
 
     def is_valid(self) -> bool:
-        try:
-            assert len(self.q) == self.M
-            assert len(self.Q) == self.K
-            assert len(self.D) == self.num_nodes
-            assert all(len(row) == self.num_nodes for row in self.D)
-            assert len(self.coords) == self.num_nodes \
-                if self.coords is not None else True
-
-            return True
-        except:
+        """
+        Check if the containers are consistent with the declared size.
+        """
+        if len(self.q) != self.M:
+            return False
+        if len(self.Q) != self.K:
+            return False
+        if len(self.D) != self.num_nodes:
+            return False
+        if not all(len(row) == self.num_nodes for row in self.D):
             return False
 
+        return True
+
+
     def copy(self):
-        return ShareARideProblem(self.N, self.M, self.K,
-            list(self.q), list(self.Q), [row[:] for row in self.D]
+        """
+        Create a deep copy of the problem instance.
+        """
+        return ShareARideProblem(
+            self.N, self.M, self.K,
+            self.q[:], self.Q[:], [row[:] for row in self.D],
+            self.coords, self.name
         )
 
 
     def stdin_print(self):
+        """
+        Print the problem instance in standard input format.
+        """
         print(self.N, self.M, self.K)
         print(*self.q)
         print(*self.Q)
@@ -76,6 +112,10 @@ class ShareARideProblem:
 
 
     def pretty_print(self, verbose: bool = False):
+        """
+        Pretty-print the problem instance details.
+        Note: this is quite a legacy code
+        """
         print(f"Share-a-Ride: N={self.N} passengers, M={self.M} parcels, "
             f"K={self.K}, num_nodes={self.num_nodes}")
 
@@ -88,18 +128,25 @@ class ShareARideProblem:
 
 
     def to_sarp_text(self) -> str:
-        dimension = self.num_nodes
-
+        """
+        Export the problem instance to str in SARP text format.
+        """
+        # Check validity befor exporting
         if not self.is_valid():
             raise ValueError("Instance data is invalid.")
         if self.coords is None:
             raise ValueError("Coordinates are required for SARP text export.")
 
+        # Variables
+        dimension = self.num_nodes
         name = getattr(self, "name", "Generated_SARP")
         comment = getattr(self, "comment", f"Generated by 'share_a_ride.util.generator. "
                             f"Node count: N={self.N}, M={self.M}, K={self.K}")
 
-        lines: list[str] = []
+
+        # //// Joining lines
+        # Header
+        lines: List[str] = []
         lines.append(f"NAME : {name}")
         lines.append(f"COMMENT : {comment}")
         lines.append("TYPE : SARP")
@@ -109,18 +156,21 @@ class ShareARideProblem:
         if len(set(self.Q)) == 1:
             lines.append(f"CAPACITY : {self.Q[0]}")
 
+        # Edge weight
         lines.append("")
         lines.append("EDGE_WEIGHT_SECTION")
         for row in self.D:
             lines.append(" ".join(str(value) for value in row))
-        lines.append("EOF_EDGE_WEIGHT_SECTION")
+        lines.append("END_EDGE_WEIGHT_SECTION")
 
+        # Coordinates
         lines.append("")
         lines.append("NODE_COORD_SECTION")
         for idx, (x, y) in enumerate(self.coords, start=1):
             lines.append(f"{idx} {x} {y}")
-        lines.append("EOF_NODE_COORD_SECTION")
+        lines.append("END_NODE_COORD_SECTION")
 
+        # Node types
         lines.append("")
         lines.append("NODE_TYPE_SECTION")
         for idx in range(dimension):
@@ -129,51 +179,55 @@ class ShareARideProblem:
                 node_type = 0
             elif self.is_ppick(idx):
                 node_type = 1
-            elif self.is_parc_pick(idx):
+            elif self.is_lpick(idx):
                 node_type = 2
             elif self.is_pdrop(idx):
                 node_type = 3
-            elif self.is_parc_drop(idx):
+            elif self.is_ldrop(idx):
                 node_type = 4
             else:
                 raise ValueError("Invalid node index encountered.")
 
             lines.append(f"{node_id} {node_id} {node_type}")
-        lines.append("EOF_NODE_TYPE_SECTION")
+        lines.append("END_NODE_TYPE_SECTION")
 
+        # Serve types pairing
         lines.append("")
         lines.append("PAIR_SECTION")
         pair_id = 1
         for i in range(1, self.N + 1):
-            pickup = self.ppick(i) + 1
-            drop = self.pdrop(i) + 1
+            pickup, drop = self.pserve(i)
             lines.append(f"{pair_id} {pickup} P {drop}")
             pair_id += 1
         for j in range(1, self.M + 1):
-            pickup = self.parc_pick(j) + 1
-            drop = self.parc_drop(j) + 1
+            pickup = self.lpick(j) + 1
+            drop = self.ldrop(j) + 1
             lines.append(f"{pair_id} {pickup} L {drop}")
             pair_id += 1
-        lines.append("EOF_PAIR_SECTION")
+        lines.append("END_PAIR_SECTION")
 
+        # Vehicle capacities
         lines.append("")
         lines.append("VEHICLE_CAPACITY_SECTION")
         for vehicle_id, cap in enumerate(self.Q, start=1):
             lines.append(f"{vehicle_id} {vehicle_id} {cap}")
-        lines.append("EOF_VEHICLE_CAPACITY_SECTION")
+        lines.append("END_VEHICLE_CAPACITY_SECTION")
 
+        # Parcel quantities
         lines.append("")
         lines.append("PARCEL_QUANTITY_SECTION")
         for idx, qty in enumerate(self.q, start=1):
-            pickup = self.parc_pick(idx) + 1
+            pickup = self.lpick(idx) + 1
             lines.append(f"{idx} {pickup} {qty}")
-        lines.append("EOF_PARCEL_QUANTITY_SECTION")
+        lines.append("END_PARCEL_QUANTITY_SECTION")
 
+        # Depot section
         lines.append("")
         lines.append("DEPOT_SECTION")
         lines.append("1")
-        lines.append("EOF_DEPOT_SECTION")
+        lines.append("END_DEPOT_SECTION")
 
+        # End of file
         lines.append("")
         lines.append("EOF")
 
@@ -184,44 +238,53 @@ class ShareARideProblem:
         """
         Visualize the problem instance (nodes) on the given Axes.
         If no Axes provided, creates a new figure and its Axes.
-        You should import matplotlib.pyplot as plt before using this function.
+        
+        Prerequisite: matplotlib must be installed.
         """
+        # Import matplotlib only when needed
         try:
-            import matplotlib.pyplot as plt
+            import matplotlib.pyplot as plt     # pylint: disable=C0415
         except ImportError:
             print("matplotlib is required for visualization.")
             return
 
+        # Check if coordinates are available
         if self.coords is None:
             print("No coordinates available for visualization.")
             return
 
+
+        # //// Setting up the plot
+        # Axes
         only_show = False
         if ax is None:
             only_show = True
             plt.figure(figsize=(6,6))
             ax = plt.gca()
 
+        # Styles
         styles = {
             "depot": {"marker": "s", "color": "black", "label": "Depot"},
-            "ppick": {"marker": "o", "color": "tab:blue", "label": "Passenger pickup"},
-            "pdrop": {"marker": "o", "color": "tab:cyan", "label": "Passenger drop"},
-            "parc_pick": {"marker": "^", "color": "tab:orange", "label": "Parcel pickup"},
-            "parc_drop": {"marker": "^", "color": "tab:olive", "label": "Parcel drop"},
+            "pickP": {"marker": "o", "color": "tab:blue", "label": "Passenger pickup"},
+            "dropP": {"marker": "o", "color": "tab:cyan", "label": "Passenger drop"},
+            "pickL": {"marker": "^", "color": "tab:orange", "label": "Parcel pickup"},
+            "dropL": {"marker": "^", "color": "tab:olive", "label": "Parcel drop"},
         }
 
+
+        # //// Plotting nodes
         legend_handles = {}
         for idx, (x, y) in enumerate(self.coords):
             if idx == 0:
                 style_key = "depot"
             elif self.is_ppick(idx):
-                style_key = "ppick"
-            elif self.is_parc_pick(idx):
-                style_key = "parc_pick"
+                style_key = "pickP"
             elif self.is_pdrop(idx):
-                style_key = "pdrop"
-            elif self.is_parc_drop(idx):
-                style_key = "parc_drop"
+                style_key = "dropP"
+            elif self.is_lpick(idx):
+                style_key = "pickL"
+            elif self.is_ldrop(idx):
+                style_key = "dropL"
             else:
                 continue
 
@@ -236,6 +299,7 @@ class ShareARideProblem:
             ax.text(x, y, str(idx), fontsize=8, ha="left", va="bottom")
 
 
+        # //// Finalizing plot
         ax.set_title("Share-a-Ride Instance")
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
@@ -251,5 +315,7 @@ class ShareARideProblem:
         ax.axis("equal")
         ax.grid(True, linestyle="--", color="gray", alpha=0.2)
 
+
+        # //// Show plot if created
         if only_show:
             plt.show()

@@ -1,0 +1,1 @@
+Manual developer guide for algorithm modules.

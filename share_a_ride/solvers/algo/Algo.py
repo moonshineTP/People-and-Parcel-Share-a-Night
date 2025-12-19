@@ -1,4 +1,4 @@
-from typing import Callable, Any, Optional
+from typing import Callable, Any, Optional, Tuple, Dict
 
 from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.core.solution import Solution
@@ -33,9 +33,9 @@ class AlgoSolver():
     """
     def __init__(
             self,
-            algo: Callable[..., tuple[Optional[Solution], dict[str, Any]]],
-            args: dict[str, Any] = {},
-            hyperparams: dict[str, Any] = {},
+            algo: Callable[..., Tuple[Optional[Solution], Dict[str, Any]]],
+            args: Dict[str, Any] = {},
+            hyperparams: Dict[str, Any] = {},
         ):
         """
         Initialize the solver with problem instance and common parameters.
@@ -63,7 +63,7 @@ class AlgoSolver():
     def solve(
             self,
             problem: ShareARideProblem
-        ) -> tuple[Optional[Solution], dict[str, Any]]:
+        ) -> Tuple[Optional[Solution], Dict[str, Any]]:
         """
         Main solving method to execute the solver.
         Params:
@@ -84,9 +84,9 @@ class AlgoSolver():
             self,
             problem: ShareARideProblem,
             n_trials: int,
-            lb_hyperparams: dict[str, Any],
-            ub_hyperparams: dict[str, Any],
-        ) -> dict[str, Any]:
+            lb_hyperparams: Dict[str, Any],
+            ub_hyperparams: Dict[str, Any],
+        ) -> Dict[str, Any]:
         """
         Hyperparameter tuning method to be implemented by each solver.
 
@@ -130,7 +130,7 @@ class AlgoSolver():
 
             # Return objective value (max_cost to minimize)
             if sol is None:
-                return float('inf')
+                return 10**18
             return sol.max_cost
 
         study = optuna.create_study(direction='minimize')

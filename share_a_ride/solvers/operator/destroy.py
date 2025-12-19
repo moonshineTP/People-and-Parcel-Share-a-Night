@@ -1,145 +1,169 @@
 """
-Module implementing destroy operators for Share-a-Ride solutions.
+Destroy Operator Module.
+Implements destroy operators for route modification in Share-a-Ride solutions.
 These operators remove parts of vehicle routes to allow for solution improvement.
 """
-
 import random
+from typing import List, Tuple, Optional, Union
 
-from typing import List, Tuple
-
+from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.core.solution import Solution, PartialSolution
 from share_a_ride.solvers.utils.sampler import sample_from_weight
+from share_a_ride.solvers.utils.weighter import softmax_weighter
+
 
 
 
 def destroy_one_route(
+        problem: ShareARideProblem,
         route: List[int],
         route_idx: int,
         steps: int = 10,
         verbose: bool = False
-    ) -> List[int]:
+    ) -> Tuple[List[int], int]:
     """
     Remove a suffix of the given route (keeping the starting depot).
     The resulting route is still a valid partial route.
+
+    Args:
+        route: List of node indices representing the route.
+        route_idx: Index of the route (for logging purposes).
+        steps: Maximum number of nodes to remove from the suffix.
+        verbose: If True, print detailed logs.
+
+    Returns:
+        The destroyed route with suffix removed.
     """
+    # Define the route and remove length
+    res_route = route[:]  # Make a copy
+    actions_removed = 0
 
-    res_route = route[:-1]                              # Exclude the ending depot
-    remove_len = min(steps, max(0, len(res_route) - 1)) # Ensure at least the starting depot remains
-    if remove_len <= 0:
-        return route[:]
+    # Remove up to `steps` actions from the end
+    while actions_removed < steps and len(res_route) > 1:
+        nodeid = res_route.pop()
+        if problem.is_pdrop(nodeid):
+            pid = problem.rev_pdrop(nodeid)
+            pickid = problem.pserve(pid)[0]
+            if res_route.pop() != pickid:
+                raise RuntimeError(
+                    "The destroyed route is likely invalid beforehand."
+                )
+        elif problem.is_lpick(nodeid) or problem.is_ldrop(nodeid) or nodeid == 0:
+            pass    # for other node type, it is quite safe to remove directly
+        else:
+            raise RuntimeError(
+                "The destroyed route is likely invalid beforehand."
+            )
 
-    suffix_start = len(res_route) - remove_len
-    destroyed_route = res_route[:suffix_start]
-    if not destroyed_route:
-        destroyed_route = [0]
+        actions_removed += 1
 
+    # Logging
     if verbose:
-        print(f"[Operator: Destroy]: last {remove_len} nodes from route {route_idx} removed.")
+        print(f"[Destroy] Route {route_idx}: removed {actions_removed} actions.")
 
-    return destroyed_route
+    return res_route, actions_removed
+
 
 
 
 def destroy_operator(
-        sol: Solution,
+        sol: Union[PartialSolution, Solution],
         destroy_proba: float,
         destroy_steps: int,
-        seed: int = 42,
-        T: float = 1.0
+        seed: Optional[int] = None,
+        t: float = 1.0,
+        verbose: bool = False
     ) -> Tuple[PartialSolution, List[bool], int]:
     """
-    Select a subset of routes to destroy based on their cost
-    The selection use a temperature-based heuristic with probabilities    
-    Temperature controls the selection bias:
-    - temperature = 0: always select the most expensive routes (greedy)
-    - temperature → ∞: uniform random selection
-    - temperature = 1: balanced probabilistic selection    
+    Destroy operator that selects routes to partially destroy based on their cost.
+
+    The selection uses a temperature-based softmax heuristic:
+    - t -> 0: greedily select the most expensive routes
+    - t -> inf: uniform random selection
+    - t = 1: balanced probabilistic selection
+
     Higher cost routes have higher probability of being selected, but with
     some randomness to allow exploration.
-    
+
     Args:
-        prob: ShareARideProblem instance
-        sol: Current solution
-        destroy_proba: Fraction of routes to destroy (0 to 1)
-        destroy_steps: Maximum number of nodes to remove per route
-        seed: for reproducibility
-        temperature: Controls selection randomness (default 1.0)
-    
+        - sol: Current Solution instance.
+        - destroy_proba: Fraction of routes to destroy (0 to 1).
+        - destroy_steps: Maximum number of nodes to remove per route.
+        - seed: Random seed for reproducibility.
+        - t: Temperature for softmax selection (default 1.0).
+        - verbose: If True, print detailed logs.
+
     Returns:
-        (partial_sol, flags, num_removed): 
-            - partial_sol: The modified partial solution after destruction
-            - flags: Boolean list indicating which routes were destroyed
-            - num_removed: Total number of nodes removed
+        - partial_sol: The modified PartialSolution after destruction.
+        - flags: Boolean list indicating which routes were destroyed.
+        - num_removed: Total number of nodes removed.
     """
     rng = random.Random(seed)
 
+    # Initialize working copies
+    K = sol.problem.K   # number of vehicles
     routes = [route[:] for route in sol.routes]
     costs = sol.route_costs
-    flags = [False] * len(routes)
-    num_removed = 0
 
-    if not routes:
-        return PartialSolution(problem=sol.problem, routes=routes), flags, num_removed
-    approx_destroyed_count = round(destroy_proba * len(routes) + 0.5)
-    destroyed_count = min(sol.problem.K, max(1, approx_destroyed_count))
-
-    # Normalize costs to probabilities using temperature
-    min_cost = min(costs) if costs else 0.0
-    max_cost = max(costs) if costs else 1.0
-    cost_range = max_cost - min_cost
-    temperature = max(T, 1e-6)
-
-    if cost_range < 1e-6:
-        # All routes have similar cost, select uniformly at random
-        selected_ids = rng.sample(range(sol.problem.K), destroyed_count)
-    else:
-        # Collect weights based on normalized costs
-        weights = []
-        for cost in costs:
-            normalized = (cost - min_cost) / cost_range
-            weights.append((normalized + 0.1) ** (1.0 / temperature))
-
-        # Select routes based on weights
-        selected_ids = []
-        available_ids = list(range(sol.problem.K))
-        available_weights = weights
-        for _ in range(destroyed_count):
-            total_weight = sum(available_weights)
-
-            if total_weight < 1e-10:    # All weights zero: pick any subset
-                selected_ids.extend(
-                    available_ids[:destroyed_count - len(selected_ids)]
-                )
-                break
-            else:                       # Weighted random selection
-                selected_idx = sample_from_weight(rng, available_weights)
-                selected_ids.append(available_ids[selected_idx])
-
-                # Remove selected index from available
-                available_ids.pop(selected_idx)
-                available_weights.pop(selected_idx)
-
-                if not available_ids:
-                    break
+    # Compute number of routes to destroy
+    approx_destroyed_count = round(destroy_proba * K + 0.5)
+    destroyed_count = min(K, max(1, approx_destroyed_count))
 
 
-    # Destroy selected routes
+    # //// Route sampling based on cost ////
+    # Extract weights using softmax
+    weights = softmax_weighter(costs, t=t)
+
+    # Sampling loop
+    selected_ids: List[int] = []
+    available_ids = list(range(K))
+    available_weights = weights[:]
+
+    for _ in range(destroyed_count):
+        if not available_ids:
+            break
+
+        # Sample one route based on weights
+        selected_idx = sample_from_weight(rng, available_weights)
+        selected_ids.append(available_ids[selected_idx])
+
+        # Remove selected from available pool
+        available_ids.pop(selected_idx)
+        available_weights.pop(selected_idx)
+
+
+    # //// Route destruction ////
+    flags = [False] * K
+    actions_removed = 0
     for idx in selected_ids:
         route = routes[idx]
 
-        # Skip empty routes
+        # Skip empty or minimal routes
         if len(route) <= 2:
             continue
 
-        # Update if any nodes were removed
-        reduced = destroy_one_route(route, idx, steps=destroy_steps, verbose=False)
-        removed = max(0, len(route) - len(reduced))
+        # Apply destruction
+        reduced_route, num_removed = destroy_one_route(
+            sol.problem, route, idx, steps=destroy_steps, verbose=verbose
+        )
 
-        if removed > 0:
-            routes[idx] = reduced
+        # Update route and tracking variables
+        if num_removed > 0:
+            routes[idx] = reduced_route
             flags[idx] = True
-            num_removed += removed
+            actions_removed += num_removed
 
-    partial_sol = PartialSolution(problem=sol.problem, routes=routes)
+    # Logging
+    if verbose:
+        print()
+        print("[Destroy] Operation complete.")
+        print(
+            f"[Destroy] Destroyed {len(selected_ids)} routes, "
+            f"removed {actions_removed} nodes total."
+        )
+        print("------------------------------")
+        print()
 
-    return partial_sol, flags, num_removed
+    # Create new PartialSolution
+    new_partial = PartialSolution(problem=sol.problem, routes=routes)
+    return new_partial, flags, actions_removed
