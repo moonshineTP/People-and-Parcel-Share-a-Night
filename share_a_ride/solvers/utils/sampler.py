@@ -3,9 +3,9 @@ Helper functions for sampling in solvers/operators.
 """
 
 import random
-from typing import List
+from typing import Union, Sequence
 
-def sample_from_weight(rng: random.Random, weights: List[float]) -> int:
+def sample_from_weight(rng: random.Random, weights: Sequence[Union[int, float]]) -> int:
     """
     Sample an index from a list of weights using Knuth's algorithm.
     Returns the selected index.

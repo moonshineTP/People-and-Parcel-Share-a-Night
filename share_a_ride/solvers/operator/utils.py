@@ -1,7 +1,7 @@
 """
 Utility data structures for operator solvers.
 """
-from typing import Callable, Union, Sequence
+from typing import Callable, Union, Sequence, List, Tuple
 import math
 import bisect
 
@@ -146,8 +146,8 @@ class MinMaxPfsumArray:
             self.size = len(self.arr)
             self.sum = sum(self.arr)
             csum = 0
-            mn = float('inf')
-            mx = float('-inf')
+            mn = 10**18
+            mx = -10**18
             for x in self.arr:
                 csum += x
                 mn = min(mn, csum)
@@ -173,7 +173,7 @@ class MinMaxPfsumArray:
 
 
 
-    def __init__(self, data: list[int]):
+    def __init__(self, data: List[int]):
         """
         Initialize the block array from the given array.
         This includes building the block structure and a block indexing:
@@ -181,12 +181,12 @@ class MinMaxPfsumArray:
         assert data
         self.block_arr = []
         self.n_data = 0                      # total number of elements
-        self.block_prefix: list[int] = []       # prefix element count (len = #blocks)
+        self.block_prefix: List[int] = []       # prefix element count (len = #blocks)
 
         self.build(data)
 
 
-    def build(self, data: list[int]):
+    def build(self, data: List[int]):
         """
         Build the block array from the given array.
         """
@@ -216,7 +216,7 @@ class MinMaxPfsumArray:
         self.n_data = cumid
 
 
-    def _find_block(self, idx: int) -> tuple[int, int]:
+    def _find_block(self, idx: int) -> Tuple[int, int]:
         """
         Find the block containing the given global idx.
         Returns (block_index, inner_index).
@@ -317,10 +317,10 @@ class MinMaxPfsumArray:
         (Global means we do NOT subtract the prefix up to l-1; i.e. we look at the array's
         cumulative sum up to k.)
         """
-        ans = float('inf')
+        ans = 10**18
         pos = 0
         prefix = 0          # global prefix up to current processed position
-        ans = float('inf')  # track minimum global prefix encountered inside [l,r)
+        ans = 10**18        # track minimum global prefix encountered inside [l,r)
         pos = 0             # starting index of current block
         for b in self.block_arr:
             blen = b.size
@@ -408,7 +408,7 @@ class MinMaxPfsumArray:
         return self.block_arr[bid].arr[iid]
 
 
-    def get_data_segment(self, l: int, r: int) -> list[int]:
+    def get_data_segment(self, l: int, r: int) -> List[int]:
         """
         Retrieve a contiguous data segment for half-open interval [l, r).
         Raises IndexError if the range is invalid or out of bounds.
@@ -416,7 +416,7 @@ class MinMaxPfsumArray:
         if l < 0 or r < 0 or l > r or r > self.n_data:
             raise IndexError("Invalid segment range")
 
-        result: list[int] = []
+        result: List[int] = []
         pos = 0
         for b in self.block_arr:
             blen = b.size
@@ -436,7 +436,7 @@ class MinMaxPfsumArray:
         return result
 
 
-    def get_data(self) -> list[int]:
+    def get_data(self) -> List[int]:
         """
         Retrieve the entire data array
         """

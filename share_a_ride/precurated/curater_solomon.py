@@ -2,15 +2,13 @@ import os
 import math
 import random
 
-from typing import Any
+from typing import Any, List, Optional, Dict
 from share_a_ride.precurated.utils import text2lines, parse_distances
 
 
-Instance = dict[str, Any]
+Instance = Dict[str, Any]
 
-
-
-def _is_valid_solomon_instance(lines: list[str]):
+def _is_valid_solomon_instance(lines: List[str]):
     """
     Checks if the passed-in lines follow the Solomon format requirements.
     """
@@ -64,14 +62,14 @@ def _parse_solomon(text: str, compute_edge_weights: bool = True) -> Instance:
     ]
 
     # Parse data lines
-    rows: list[list[int]] = []
+    rows: List[List[int]] = []
     for line in lines[6:]:
         line = line.strip()
         if not line:
             continue
 
         parts = line.split()
-        ints: list[int] = []
+        ints: List[int] = []
         for tok in parts:
             try:
                 ints.append(int(tok))
@@ -109,7 +107,7 @@ def _curate_solomon_to_sarp_text(
         inst: Instance,
         request_ratio: float = 0.5,
         capacity_factor: float = 1.0,
-        seed: int = 42,
+        seed: Optional[int] = None,
     ) -> str:
     """
     Curate a parsed Solomon instance into SARP text
@@ -166,7 +164,7 @@ def _curate_solomon_to_sarp_text(
 
 
     # ========= NODE_TYPE_SECTION (1-based IDs) ==========
-    node_types: list[tuple[int, int, int]] = []
+    node_types: List[tuple[int, int, int]] = []
     # depot
     node_types.append((1, 1, 0))
     # passenger pickups
@@ -188,7 +186,7 @@ def _curate_solomon_to_sarp_text(
 
 
     # ============ PAIR_SECTION (1-based IDs) ============
-    pairs: list[tuple[int, int, str, int]] = []
+    pairs: List[tuple[int, int, str, int]] = []
     # passengers
     for j in range(N):
         pid = j + 1
@@ -204,7 +202,7 @@ def _curate_solomon_to_sarp_text(
 
     # Compose SARP text (sections 1-based; EDGE_WEIGHT and DEPOT 0-based)
     name = inst["name"].replace(" ", "_")
-    lines: list[str] = []
+    lines: List[str] = []
     lines.append(f"NAME : {name}_SARP")
     lines.append("COMMENT : Curated from Solomon to SARP")
     lines.append("TYPE : SARP")
@@ -214,44 +212,44 @@ def _curate_solomon_to_sarp_text(
     lines.append("EDGE_WEIGHT_SECTION")
     for row in D:
         lines.append(" ".join(str(int(c)) for c in row))
-    lines.append("EOF_EDGE_WEIGHT_SECTION")
+    lines.append("END_EDGE_WEIGHT_SECTION")
     lines.append("")
 
     if include_coords:
         lines.append("NODE_COORD_SECTION")
         for i, (x, y) in enumerate(coords, start=1):
             lines.append(f"{i} {float(x)} {float(y)}")
-        lines.append("EOF_NODE_COORD_SECTION")
+        lines.append("END_NODE_COORD_SECTION")
         lines.append("")
 
     lines.append("NODE_TYPE_SECTION")
     for id, node_id, type in node_types:
         lines.append(f"{id} {node_id} {type}")
-    lines.append("EOF_NODE_TYPE_SECTION")
+    lines.append("END_NODE_TYPE_SECTION")
     lines.append("")
 
     lines.append("PAIR_SECTION")
     for id, pnode, cat, dnode in pairs:
         lines.append(f"{id} {pnode} {cat} {dnode}")
-    lines.append("EOF_PAIR_SECTION")
+    lines.append("END_PAIR_SECTION")
     lines.append("")
 
     lines.append("VEHICLE_CAPACITY_SECTION")
     for i, cap in enumerate(Q, start=1):
         lines.append(f"{i} {i} {cap}")
-    lines.append("EOF_VEHICLE_CAPACITY_SECTION")
+    lines.append("END_VEHICLE_CAPACITY_SECTION")
     lines.append("")
 
     lines.append("PARCEL_QUANTITY_SECTION")
     for id, qty in enumerate(q, start=1):
         pick_node = N + 1 + id
         lines.append(f"{id} {pick_node} {qty}")
-    lines.append("EOF_PARCEL_QUANTITY_SECTION")
+    lines.append("END_PARCEL_QUANTITY_SECTION")
     lines.append("")
 
     lines.append("DEPOT_SECTION")
     lines.append("1")
-    lines.append("EOF_DEPOT_SECTION")
+    lines.append("END_DEPOT_SECTION")
     lines.append("")
     lines.append("EOF")
 
@@ -263,7 +261,7 @@ def write_sarp_from_solomon(solomon_file: str, sarp_file: str, purpose: str) -> 
     """
     Read a Solomon file and write a curated .sarp file.
     Params:
-    - solomon_file: filename of the Solomon instance 
+    - solomon_file: filename of the Solomon instance
         (preferably in share_a_ride/precurated/Solomon/)
     - sarp_file: filename to write the curated SARP instance
         (preferably in share_a_ride/data/{purpose}/Solomon/)

@@ -4,12 +4,12 @@ Main script to demonstrate/test the SARP solvers and utilities in each developme
 from share_a_ride.data.executor import attempt_dataset
 from share_a_ride.data.summarizer import summarize_dataset
 
-from share_a_ride.utils.generator import generate_instance_coords
+from share_a_ride.core.utils import generate_instance_coords
 
 from share_a_ride.solvers.algo.algo import AlgoSolver
-from share_a_ride.solvers.algo.exhaust import exhaustive_solver
-from share_a_ride.solvers.algo.bnb import branch_and_bound_solver
-from share_a_ride.solvers.algo.greedy import greedy_balanced_solver, iterative_greedy_balanced_solver
+from share_a_ride.solvers.algo.exhaust import exhaust_solver
+from share_a_ride.solvers.algo.bnb import bnb_enumerator
+from share_a_ride.solvers.algo.greedy import greedy_solver, iterative_greedy_solver
 
 
 
@@ -42,16 +42,16 @@ def demo_sprint_1():
     type_I_results = []
     for prob in type_I:
         # Describe
-        prob.pretty_print(verbose=1)
+        prob.pretty_print(verbose=True)
 
         # Solve
-        sol, info = exhaustive_solver(prob, max_solutions=2000000,
+        sol, info = exhaust_solver(prob, max_solutions=2000000,
                 time_limit=10.0, verbose=False)
 
         # Show result info
         print("Enumeration info:", info)
         if sol:
-            sol.stdin_print(verbose=1)
+            sol.stdin_print(verbose=True)
         else:
             print("No solution enumerated within time limit.")
         print("\n")
@@ -61,17 +61,17 @@ def demo_sprint_1():
     type_II_results = []
     for prob in type_II:
         # Describe
-        prob.pretty_print(verbose=1)
+        prob.pretty_print(verbose=True)
 
         # Solve
-        sol, info = branch_and_bound_solver(prob, time_limit=10.0, verbose=False)
+        sol, info = bnb_enumerator(prob, time_limit=10.0, verbose=False)
 
         # Show result info
         print("Enumeration info:", info)
 
         # Show results
         if sol:
-            sol.stdin_print(verbose=1)
+            sol.stdin_print(verbose=True)
         else:
             print("No solution found within time limit.")
         print("\n")
@@ -83,7 +83,7 @@ def demo_sprint_1():
 def demo_sprint_2():
     # AlgoSolver container demo
     chosen_solver = AlgoSolver(
-        algo=iterative_greedy_balanced_solver,
+        algo=iterative_greedy_solver,
         args={"iterations": 10000, "time_limit": 10.0, "seed": 42, "verbose": 1},
         hyperparams={
             "destroy_proba"      : 0.4,
@@ -101,13 +101,13 @@ def demo_sprint_2():
     # Visualize functionality demo
     for sol in sols:
         if sol:
-            sol.stdin_print(verbose=1)
+            sol.stdin_print(verbose=True)
             sol.visualize()
 
 
 def demo_sprint_3():
     solver_bnb = AlgoSolver(
-        algo=branch_and_bound_solver,
+        algo=bnb_enumerator,
         args={"time_limit": 5.0, "verbose": 0},
         hyperparams={}
     )
@@ -120,7 +120,7 @@ def demo_sprint_3():
     summarize_dataset("H", verbose=True)
 
     solver_iter_greedy = AlgoSolver(
-        algo=iterative_greedy_balanced_solver,
+        algo=iterative_greedy_solver,
         args={"iterations": 10000, "time_limit": 10.0, "seed": 42, "verbose": 1},
         hyperparams={
             "destroy_proba"      : 0.5,

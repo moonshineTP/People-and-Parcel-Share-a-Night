@@ -1,6 +1,7 @@
+from optparse import Option
 import random, os
 
-from typing import Any
+from typing import Any, Optional
 from share_a_ride.precurated.utils import infer_type, text2lines, parse_distances
 
 # Type alias for instance dict
@@ -228,7 +229,7 @@ def _curate_vrplib_to_sarp_text(
         num_vehicles: int,
         request_ratio: float = 0.5,
         capacity_factor: float = 1.0,
-        seed: int = 42
+        seed: Optional[int] = None,
     ) -> str:
     """
     Curate a parsed VRPLIB instance into SARP text
@@ -343,35 +344,35 @@ def _curate_vrplib_to_sarp_text(
     lines.append("EDGE_WEIGHT_SECTION")
     for row in D:
         lines.append(" ".join(str(int(v)) for v in row))
-    lines.append("EOF_EDGE_WEIGHT_SECTION")
+    lines.append("END_EDGE_WEIGHT_SECTION")
     lines.append("")
 
     # coords
     lines.append("NODE_COORD_SECTION")
     for idx, (x, y) in enumerate(coords, start=1):
         lines.append(f"{idx} {float(x)} {float(y)}")
-    lines.append("EOF_NODE_COORD_SECTION")
+    lines.append("END_NODE_COORD_SECTION")
     lines.append("")
 
     # node types
     lines.append("NODE_TYPE_SECTION")
     for sid, nid, typ in node_types:
         lines.append(f"{sid} {nid} {typ}")
-    lines.append("EOF_NODE_TYPE_SECTION")
+    lines.append("END_NODE_TYPE_SECTION")
     lines.append("")
 
     # pairs
     lines.append("PAIR_SECTION")
     for rid, pick, cat, drop in pairs:
         lines.append(f"{rid} {pick} {cat} {drop}")
-    lines.append("EOF_PAIR_SECTION")
+    lines.append("END_PAIR_SECTION")
     lines.append("")
 
     # vehicle capacities
     lines.append("VEHICLE_CAPACITY_SECTION")
     for vid, cap in enumerate(Q, start=1):
         lines.append(f"{vid} {vid} {cap}")
-    lines.append("EOF_VEHICLE_CAPACITY_SECTION")
+    lines.append("END_VEHICLE_CAPACITY_SECTION")
     lines.append("")
 
     # parcel quantities
@@ -379,13 +380,13 @@ def _curate_vrplib_to_sarp_text(
     for pid, qty in enumerate(q, start=1):
         pickup_node = N + pid + 1
         lines.append(f"{pid} {pickup_node} {qty}")
-    lines.append("EOF_PARCEL_QUANTITY_SECTION")
+    lines.append("END_PARCEL_QUANTITY_SECTION")
     lines.append("")
 
     # depot
     lines.append("DEPOT_SECTION")
     lines.append("1")
-    lines.append("EOF_DEPOT_SECTION")
+    lines.append("END_DEPOT_SECTION")
     lines.append("")
     lines.append("EOF")
 

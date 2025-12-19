@@ -1,21 +1,22 @@
 """
 Greedy balanced heuristic and its iterative improvement.
 """
-
 import time
 import random
-from typing import Any, List, Optional, Tuple, Dict
+from typing import Any, Optional, Tuple, Dict
 
 from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.core.solution import PartialSolution, Solution
-from share_a_ride.solvers.operator.repair import repair_operator
+
+from share_a_ride.solvers.algo.utils import apply_general_action, enumerate_actions_greedily
+from share_a_ride.solvers.operator.repair import repair_one_route
 from share_a_ride.solvers.operator.destroy import destroy_operator
 
 
 
-def greedy_balanced_solver(
+def greedy_solver(
         problem: ShareARideProblem,
-        premature_routes: List[List[int]] = [],
+        partial: Optional[PartialSolution] = None,
         verbose: bool = False
     ) -> Tuple[Optional[Solution], Dict[str, Any]]:
     """
@@ -33,92 +34,82 @@ def greedy_balanced_solver(
         + actions_evaluated: total number of actions evaluated
         + time: total time taken
     """
+    start = time.time()
 
-    start_time = time.time()
-    partial = PartialSolution(problem=problem, routes=premature_routes)
-    taxi_states = partial.route_states
+    # Initialize partial solution if not provided
+    if partial is None:
+        partial = PartialSolution(problem=problem)
 
-    def has_pending_work() -> bool:
-        return bool(
-            partial.remaining_pass_pick
-            or partial.remaining_pass_drop
-            or partial.remaining_parc_pick
-            or partial.remaining_parc_drop
-        )
 
-    stats = {"iterations": 0, "actions_evaluated": 0}
-    while has_pending_work():
-        stats["iterations"] += 1
+    # //// Main greedy loop ////
+    iterations = 0
+    pre_depth = partial.num_actions
+    while partial.is_pending():
+        iterations += 1
 
-        available_taxis = [
-            t_idx for t_idx, t_state in enumerate(taxi_states)
-            if not t_state["ended"]
-        ]
-        if not available_taxis:
-            break
-
-        argmin_t_idx = min(available_taxis, key=lambda i: taxi_states[i]["cost"])
-        actions = partial.possible_actions(argmin_t_idx)
-        stats["actions_evaluated"] += len(actions)
-
-        # No feasible actions: return to depot and end route
+        actions = enumerate_actions_greedily(partial, 1)
         if not actions:
-            partial.apply_return_to_depot(argmin_t_idx)
-            continue
+            if verbose:
+                print("[Greedy] [Error] The partial has no feasible actions available.")
+
+            return None, {
+                "iterations": iterations,
+                "time": time.time() - start,
+                "actions_done": partial.num_actions - pre_depth,
+                "status": "error",
+            }
 
         # Else, choose action with minimal added cost
-        kind, idx, inc = min(actions, key=lambda x: x[2])
-        partial.apply_action(argmin_t_idx, kind, idx, inc)
+        action = actions[0]
+        apply_general_action(partial, action)
 
         if verbose:
-            print(f"[Greedy] Taxi {argmin_t_idx} extended route with {kind} {idx} (inc {inc})")
+            taxi, kind, idx, _inc = action
+            print(
+                f"[Greedy] [Depth {partial.num_actions}] "
+                f"Taxi {taxi} extended route with action {kind} on passenger/parcel {idx}"
+            )
 
-
-    # All taxis return to depot if not already ended
-    for t_idx, t_state in enumerate(taxi_states):
-        if not t_state["ended"]:
-            partial.apply_return_to_depot(t_idx)
-
-    # Build final solution
+    # Finalize
     sol = partial.to_solution()
-
-    # Final stats
-    elapsed = time.time() - start_time
-    info = {
-        "iterations": stats["iterations"],
-        "actions_evaluated": stats["actions_evaluated"],
-        "time": elapsed
+    stats = {
+        "iterations": iterations,
+        "time": time.time() - start,
+        "actions_done": partial.num_actions - pre_depth,
+        "status": "done",
     }
-
-    # Validate solution and return
-    if sol and not sol.is_valid():
-        sol = None
-    assert sol.is_valid() if sol else True
 
     # Summary
     if verbose:
-        print("[Greedy] All tasks completed.")
+        print()
+        print("[Greedy] Completed.")
         print(f"[Greedy] Solution max cost: {sol.max_cost if sol else 'N/A'}")
-        print(f"[Greedy] Time taken: {elapsed:.4f} seconds")
+        print(f"[Greedy] Time taken: {stats['time']:.4f} seconds")
+        print("------------------------------")
+        print()
 
-    return sol, info
+    return sol, stats
 
 
-def iterative_greedy_balanced_solver(
+
+
+def iterative_greedy_solver(    # Actually quite like a large neighborhood search
         problem: ShareARideProblem,
-        iterations: int = 10,
-        time_limit: float = 10.0,
-        seed: int = 42,
-        verbose: bool = False,
+        partial: Optional[PartialSolution] = None,
+        iterations: int = 10000,
         destroy_proba: float = 0.4,
         destroy_steps: int = 15,
-        destroy_T: float = 1.0,
+        destroy_t: float = 1.0,
         rebuild_proba: float = 0.3,
         rebuild_steps: int = 5,
-        rebuild_T: float = 1.0,
+        rebuild_t: float = 1.0,
+        time_limit: float = 30.0,
+        seed: Optional[int] = None,
+        verbose: bool = False,
     ) -> Tuple[Optional[Solution], Dict[str, Any]]:
     """
-    Iterative improvement of greedy balanced heuristic using destroy-and-rebuild.
+    Iterative improvement of a greedy solution using destroy and rebuild operators
+
     At each iteration:
     - Destroy a fraction of routes (randomly selected based on cost)
     - Rebuild those routes partially with some randomness
@@ -138,8 +129,7 @@ def iterative_greedy_balanced_solver(
         - rebuild_steps: Max number of nodes to add during rebuild
         - rebuild_T: Temperature parameter for rebuild operator
     
-    Returns:
-        (sol, info): tuple where
+    Returns: (sol, info): tuple where
         - sol: Best Solution found (or None if no valid solution)
         - Info dictionary contains:
             + iterations: number of iterations performed
@@ -150,109 +140,133 @@ def iterative_greedy_balanced_solver(
             + time: total time taken
             + status: "done" if completed, "timeout" if time limit reached
     """
+    start = time.time()
+    deadline = start + time_limit
+    rng = random.Random(seed)
 
+    # Validate parameters
     assert 1e-5 < destroy_proba < 1 - 1e-5
     assert 1e-5 < rebuild_proba < 1 - 1e-5
     assert 1 <= rebuild_steps <= destroy_steps
 
-    rng = random.Random(seed)
-    start_time = time.time()
-    deadline = start_time + time_limit if time_limit is not None else None
+    # Initialize partial solution if not provided
+    if partial is None:
+        partial = PartialSolution(problem=problem, routes=[])
 
-    # Initial solution and best cost
-    best_sol, base_info = greedy_balanced_solver(problem, verbose=False)
+
+    # //// Greedy initialization ////
+    best_sol, greedy_info = greedy_solver(problem, partial=partial, verbose=verbose)
     if not best_sol:
-        return None, {"time": time.time() - start_time, "status": "error"}
+        return None, {"time": time.time() - start, "status": "error"}
     best_cost = best_sol.max_cost
 
-    # Stats
-    total_actions = base_info["actions_evaluated"]
+    if verbose:
+        print(f"[Iterative Greedy] [Iter 0] initial best cost: {best_cost}")
+
+
+    # //// Main iterative loop ////
+    actions = greedy_info["actions_done"]
+    all_cost = best_cost
     improvements = 0
     nodes_destroyed = 0
     nodes_rebuilt = 0
     status = "done"
     iterations_done = 0
 
-
-    if verbose:
-        print(f"[Iterative Greedy] [Iter 0] initial best cost: {best_cost}")
-
-
-    # ================= Main loop =================
     for it in range(1, iterations + 1):
         if deadline and time.time() >= deadline:
             status = "timeout"
             break
-        iterations_done += 1
 
-        # ============== Destroy phase ==============
-        destroy_seed = 2 * seed + it
-        partial_sol, destroyed_flags, removed = destroy_operator(
+        # Seed for operators
+        operators_seed = None if seed is None else 2 * seed + 98 * it
+
+
+        # //// Destroy phase
+        destroyed_partial, destroyed_flags, removed = destroy_operator(
             best_sol,
             destroy_proba,
             destroy_steps,
-            seed=destroy_seed,
-            T=destroy_T
+            seed=operators_seed,
+            t=destroy_t
         )
         nodes_destroyed += removed
+        actions += removed
 
-        # ============= Temporary rebuild phase ==============
+
+        # //// Temporary rebuild phase
+        rebuilt_partial = destroyed_partial
         for r_idx, was_destroyed in enumerate(destroyed_flags):
-            if not was_destroyed or len(partial_sol.routes[r_idx]) <= 2:
+            if not was_destroyed:
                 continue
-            if rng.random() > rebuild_proba:
+            if rng.random() > rebuild_proba:    # Sample rebuild
                 continue
 
-            partial_sol, repaired_list, new_nodes_count = repair_operator(
-                partial_sol,
+            rebuilt_partial, new_actions_count = repair_one_route(
+                rebuilt_partial,
                 route_idx=r_idx,
                 steps=rebuild_steps,
-                T=rebuild_T,
-                seed=(destroy_seed + r_idx) if destroy_seed is not None else None,
-                verbose=False
+                T=rebuild_t,
+                seed=operators_seed,
             )
-            nodes_rebuilt += new_nodes_count
+            nodes_rebuilt += new_actions_count
+            actions += new_actions_count
 
-        # ============== Greedy build phase ==============
-        sol_cand, info_cand = greedy_balanced_solver(
+
+        # //// Greedy completion phase
+        new_sol, new_info = greedy_solver(
             problem,
-            premature_routes=partial_sol.routes,
+            partial=rebuilt_partial,
             verbose=False
         )
+        all_cost += new_sol.max_cost if new_sol else 0
+        actions += new_info["actions_done"]
+        iterations_done += 1 if new_sol else 0
 
-        total_actions += info_cand["actions_evaluated"]
 
-        # If improved, update best solution
-        if (sol_cand and sol_cand.is_valid()
-            and sol_cand.max_cost < best_cost
-        ):
-            best_sol = sol_cand
-            best_cost = sol_cand.max_cost
+        # //// Improvement check
+        if new_sol and new_sol.max_cost < best_cost:
+            best_sol = new_sol
+            best_cost = new_sol.max_cost
             improvements += 1
 
+            # Verbose output
             if verbose:
                 print(f"[Iterative Greedy] [Iter {it}] improved best to {best_cost}")
 
-
     # Final stats
-    elapsed = time.time() - start_time
-    info = {
+    elapsed = time.time() - start
+    stats = {
         "iterations": iterations_done,
+        "actions_done": actions,
         "improvements": improvements,
-        "actions_evaluated": total_actions,
-        "nodes_destroyed": nodes_destroyed,
-        "nodes_rebuilt": nodes_rebuilt,
+        "actions_destroyed": nodes_destroyed,
+        "actions_rebuilt": nodes_rebuilt,
+        "average_cost": all_cost / (iterations_done + 1),   # including initial
         "time": elapsed,
         "status": status,
     }
 
     # Summary
     if verbose:
+        print()
         print(f"[Iterative Greedy] Finished after {iterations_done} iterations.")
         print(
             f"[Iterative Greedy] Best solution max cost: "
             f"{best_sol.max_cost if best_sol else 'N/A'}."
         )
         print(f"[Iterative Greedy] Time taken: {elapsed:.4f} seconds.")
+        print("------------------------------")
+        print()
 
-    return best_sol, info
+    return best_sol, stats
+
+
+
+
+# ================ Playground ================
+if __name__ == "__main__":
+    from share_a_ride.solvers.algo.utils import test_problem
+
+    # Run greedy solver
+    solution, info = greedy_solver(test_problem, verbose=True)

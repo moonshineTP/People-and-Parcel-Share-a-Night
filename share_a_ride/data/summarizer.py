@@ -139,7 +139,7 @@ def summarize_instance(
 
     # Scan through attempts to find the best one
     best_attempt = None
-    best_cost = float('inf')
+    best_cost = 10**18
     for attempt in instance_attempts:
         if attempt['status'] == 'done' and attempt['cost']:
             cost = float(attempt['cost'])

@@ -4,4 +4,4 @@ __pycache__/
 *.pyc
 .VSCodeCounter/
 .idea/
-*.prof
+*.prof=

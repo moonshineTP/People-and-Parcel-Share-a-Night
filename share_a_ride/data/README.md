@@ -51,47 +51,47 @@ Each `<name>.sarp` file follows **TSPLIB** header syntax.
         ```  
         D lines of D integers each  
         ```  
-- `EOF_EDGE_WEIGHT_SECTION`  
+- `END_EDGE_WEIGHT_SECTION`  
 
 - `NODE_COORD_SECTION`  
         ```  
         D lines of "<id> <x> <y>"  
         ```  
-- `EOF_NODE_COORD_SECTION`  
+- `END_NODE_COORD_SECTION`  
 
 - `NODE_TYPE_SECTION`  
         ```
         id  node_id  type  
         ```  
     type ∈ {0=DEPOT,1=PASS_PICKUP,2=PARC_PICKUP,3=PASS_DROPOFF,4=PARC_DROPOFF}  
-- `EOF_NODE_TYPE_SECTION`
+- `END_NODE_TYPE_SECTION`
 
 - `PAIR_SECTION`  
         ```
         id  pickup_node  category  drop_node  
         ```  
     category ∈ {P=passenger, L=parcel}  
-- `EOF_PAIR_SECTION`
+- `END_PAIR_SECTION`
 
 - `VEHICLE_CAPACITY_SECTION`  
         ```
         id  vehicle_id  capacity  
         ```  
-- `EOF_VEHICLE_CAPACITY_SECTION`
+- `END_VEHICLE_CAPACITY_SECTION`
 
 - `PARCEL_QUANTITY_SECTION`  
         ```
         id  parcel_node_id  quantity  
         ```  
-- `EOF_PARCEL_QUANTITY_SECTION`
+- `END_PARCEL_QUANTITY_SECTION`
 
 - `DEPOT_SECTION`  
         ```
         depot_node_id  
         ```  
-- `EOF_DEPOT_SECTION`
+- `END_DEPOT_SECTION`
 
-All sections end with `EOF_<SECTION>_SECTION`. 
+All sections end with `END_<SECTION>_SECTION`. 
 File ends with **EOF**.
 
 ---

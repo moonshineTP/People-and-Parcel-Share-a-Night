@@ -5,7 +5,6 @@ Module to parse SARP instance files into ShareARideProblem objects.
 import os
 
 from typing import Dict, Any
-
 from share_a_ride.core.problem import ShareARideProblem
 
 Instance = Dict[str, Any]
@@ -48,7 +47,7 @@ def parse_sarp_to_problem(file_path: str) -> ShareARideProblem:
         elif line == 'EDGE_WEIGHT_SECTION':
             i += 1
             dist_matrix = []
-            while i < len(lines) and lines[i] != 'EOF_EDGE_WEIGHT_SECTION':
+            while i < len(lines) and lines[i] != 'END_EDGE_WEIGHT_SECTION':
                 row = list(map(int, lines[i].split()))
                 dist_matrix.append(row)
                 i += 1
@@ -58,7 +57,7 @@ def parse_sarp_to_problem(file_path: str) -> ShareARideProblem:
         elif line == 'NODE_COORD_SECTION':
             i += 1
             coords = []
-            while i < len(lines) and lines[i] != 'EOF_NODE_COORD_SECTION':
+            while i < len(lines) and lines[i] != 'END_NODE_COORD_SECTION':
                 parts = lines[i].split()
                 coords.append((float(parts[1]), float(parts[2])))
                 i += 1
@@ -68,7 +67,7 @@ def parse_sarp_to_problem(file_path: str) -> ShareARideProblem:
         elif line == 'NODE_TYPE_SECTION':
             i += 1
             node_types = {}
-            while i < len(lines) and lines[i] != 'EOF_NODE_TYPE_SECTION':
+            while i < len(lines) and lines[i] != 'END_NODE_TYPE_SECTION':
                 parts = lines[i].split()
                 node_id = int(parts[1])
                 node_type = int(parts[2])
@@ -81,7 +80,7 @@ def parse_sarp_to_problem(file_path: str) -> ShareARideProblem:
             i += 1
             passenger_pairs = []
             parcel_pairs = []
-            while i < len(lines) and lines[i] != 'EOF_PAIR_SECTION':
+            while i < len(lines) and lines[i] != 'END_PAIR_SECTION':
                 parts = lines[i].split()
                 pickup = int(parts[1])
                 category = parts[2]
@@ -98,7 +97,7 @@ def parse_sarp_to_problem(file_path: str) -> ShareARideProblem:
         elif line == 'VEHICLE_CAPACITY_SECTION':
             i += 1
             capacities = []
-            while i < len(lines) and lines[i] != 'EOF_VEHICLE_CAPACITY_SECTION':
+            while i < len(lines) and lines[i] != 'END_VEHICLE_CAPACITY_SECTION':
                 parts = lines[i].split()
                 capacity = int(parts[2])
                 capacities.append(capacity)
@@ -109,7 +108,7 @@ def parse_sarp_to_problem(file_path: str) -> ShareARideProblem:
         elif line == 'PARCEL_QUANTITY_SECTION':
             i += 1
             parcel_quantities = []
-            while i < len(lines) and lines[i] != 'EOF_PARCEL_QUANTITY_SECTION':
+            while i < len(lines) and lines[i] != 'END_PARCEL_QUANTITY_SECTION':
                 parts = lines[i].split()
                 quantity = int(parts[2])
                 parcel_quantities.append(quantity)
@@ -142,6 +141,47 @@ def parse_sarp_to_problem(file_path: str) -> ShareARideProblem:
 
     return problem
 
+
+def parse_simple_input(content: str) -> ShareARideProblem:
+    """
+    Parse the simplified input format described in description.txt.
+    """
+    lines = content.strip().splitlines()
+    lines = [l for l in lines if l.strip()]
+    
+    if not lines:
+        raise ValueError("Empty input")
+        
+    # Line 1: N M K
+    nmk = list(map(int, lines[0].split()))
+    if len(nmk) != 3:
+        raise ValueError("First line must contain N, M, K")
+    N, M, K = nmk
+    
+    idx = 1
+    
+    # Line 2: q
+    q = []
+    if M > 0:
+        q = list(map(int, lines[idx].split()))
+        idx += 1
+        
+    # Line 3: Q
+    Q = list(map(int, lines[idx].split()))
+    idx += 1
+    
+    # Distance matrix
+    dist = []
+    num_nodes = 2*N + 2*M + 1
+    
+    for _ in range(num_nodes):
+        if idx >= len(lines):
+            raise ValueError("Insufficient lines for distance matrix")
+        row = list(map(int, lines[idx].split()))
+        dist.append(row)
+        idx += 1
+        
+    return ShareARideProblem(N, M, K, q, Q, dist)
 
 
 if __name__ == "__main__":

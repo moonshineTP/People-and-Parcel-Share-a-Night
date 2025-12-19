@@ -1,8 +1,14 @@
-import random, math
+"""
+Utility functions for precurated problem processing.
+"""
 
-def text2lines(text: str) -> list[str]:
+import random
+import math
+from typing import List, Tuple, Union, Optional
+
+def text2lines(text: str) -> List[str]:
     """
-    Takes a string and returns a list of non-empty, stripped lines. 
+    Takes a string and returns a list of non-empty, stripped lines.
     Also removes any comment lines from the given string.
     """
     return [
@@ -12,7 +18,10 @@ def text2lines(text: str) -> list[str]:
     ]
 
 
-def infer_type(s: str) -> int | float | str:
+def infer_type(s: str) -> Union[int, float, str]:
+    """
+    Infers and converts the type of the given string to int, float, or str.
+    """
     try:
         return int(s)
     except ValueError:
@@ -24,8 +33,8 @@ def infer_type(s: str) -> int | float | str:
 
 def parse_distances(
         edge_weight_type: str,
-        node_coord: list[tuple[int | float, int | float]],
-    ) -> list[list[int]]:
+        node_coord: List[Tuple[Union[int, float], Union[int, float]]],
+    ) -> List[List[int]]:
     """
     Computes the pairwise Euclidean distance matrix for the given coordinates.
     Distances are rounded to the nearest integer (TSPLIB EUC_2D convention).
@@ -54,7 +63,7 @@ def sample_poisson(
         low: int,
         high: int,
         lmbd: float,
-        seed: int = 42,
+        seed: Optional[int] = None,
     ) -> int:
     """
     Sample from Poisson(lmbd) until result is in [low, high].
@@ -63,12 +72,12 @@ def sample_poisson(
     rng = random.Random(seed)
     while True:
         # Parameters
-        L = math.exp(-lmbd)
+        l = math.exp(-lmbd)
         k = 0
         p = 1.0
 
         # Generate Poisson sample using Knuth's algorithm
-        while p > L:
+        while p > l:
             k += 1
             p *= rng.random()
         value = k - 1
