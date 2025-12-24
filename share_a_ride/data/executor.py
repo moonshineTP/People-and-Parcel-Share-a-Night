@@ -19,264 +19,252 @@
 import os
 import csv
 import json
-
-from typing import Optional, List, Tuple
+from typing import Optional, Tuple, Dict
 from datetime import datetime, timezone
 
-from share_a_ride.data.parser import parse_sarp_to_problem
-from share_a_ride.data.router import path_router
-from share_a_ride.solvers.algo.algo import AlgoSolver
-from share_a_ride.solvers.learner.learner import LearnerSolver
+from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.core.solution import Solution
+from share_a_ride.data.classes import Dataset, ATTEMPT_COLUMNS
+from share_a_ride.data.parser import parse_dataset
+from share_a_ride.data.router import path_router
+from share_a_ride.solvers.classes import Solver, SolverName, SolverMode, SolverParams
 
 
 
-ATTEMPT_COLUMNS = [
-    'attempt_id',
-    'timestamp',
-    'dataset',
-    'instance',
-    'solver',
-    'seed',
-    'time_limit',
-    'hyperparams',
-    'status',
-    'elapsed_time',
-    'cost',
-    'info',
-    'note'
-]
 
-
-
+# ================ Main Functions ================
 def attempt_dataset(
-        solver: AlgoSolver | LearnerSolver,
-        dataset: str,
+        dataset: Dataset,
+        solver_name: SolverName,
+        solver_mode: SolverMode = SolverMode.STANDARD,
         note: str = "",
-        verbose: bool = False
-    ) -> Tuple[List[Solution], List[float], str]:
+        seed: Optional[int] = None,
+        verbose: bool = False,
+        **solver_kwargs
+    ) -> Tuple[Dict[str, Optional[Solution]], Dict[str, float]]:
     """
     Attempt to solve all instances in a dataset with a given solver.
     Use attempt_instance for each instance.
 
     Params:
-    - solver: a callable in share_a_ride/solvers/algo that solve the SARP instance
-    - dataset: name of the dataset folder to attempt (must exist in share_a_ride/data)
+    - dataset: Dataset enum member
+    - solver_name: SolverName enum member
+    - solver_mode: SolverMode enum member
     - note: any additional notes or comments
     - verbose: whether to print information during execution
+    - solver_kwargs: additional keyword arguments for the solver
 
     Returns: a tuple of:
-    - solutions: ist of Solution objects or None for each instance in the dataset
+    - solutions: List of Solution objects or None for each instance in the dataset
     - gaps: List of gaps (in percentage) for each instance where a solution was found
-    - result_summary: A string summarizing the attempt information.
     """
 
     # Get all instance files in the dataset directory
-    dataset_dir = path_router(dataset, "readall")
-    instance_files = [f for f in os.listdir(dataset_dir) if f.endswith('.sarp')]
+    instances_dict = parse_dataset(dataset)
+    n_instances = len(instances_dict)
 
     if verbose:
         print(f"\n{'='*40}")
-        print(f"Starting dataset attempt: '{dataset}'")
-        print(f"Total instances: {len(instance_files)}")
-        print(f"Solver: {solver.name}")
+        print(f"Starting dataset attempt: '{dataset.value.name}'")
+        print(f"Total instances: {n_instances}")
+        print(f"Solver: {solver_name.name} ({solver_mode.name})")
         print(f"{'='*40}\n")
 
     # Prepare lists to collect results
-    solutions = []
-    gaps = []
-    results_summary = []
+    solutions = {}
+    gaps = {}
 
     # Attempt each instance
-    for idx, instance_file in enumerate(instance_files, 1):
+    for inst_id, (inst_name, instance) in enumerate(instances_dict.items(), start=1):
         if verbose:
-            print(f"\n[{idx}/{len(instance_files)}] Processing: {instance_file}")
+            print(f"\n[{inst_id}/{n_instances}] Processing: {inst_name}")
             print("-" * 20)
 
-        # Remove extension
-        instance_name = instance_file.replace('.sarp', '')
-
         # Use attempt_instance to solve this instance
-        sol, gap_percentage, result_msg = attempt_instance(
-            solver=solver,
+        sol, gap = try_instance(
             dataset=dataset,
-            instance_name=instance_name,
+            inst_name=inst_name,
+            instance=instance,
+            solver_name=solver_name,
+            solver_mode=solver_mode,
             note=note,
-            verbose=verbose
+            seed=seed,
+            verbose=verbose,
+            **solver_kwargs
         )
 
-        solutions.append(sol)
-        gaps.append(gap_percentage)
-        results_summary.append(result_msg)
-
-        # Calculate summary statistics
-        successful_attempts = sum(1 for sol in solutions if sol is not None)
-        failed_attempts = len(solutions) - successful_attempts
+        solutions[inst_name] = sol
+        gaps[inst_name] = gap
 
 
-    # Create final summary
-    final_summary = f"Attempted {len(instance_files)} instances in dataset '{dataset}':\n"
-    for summary in results_summary:
-        final_summary += f"  - {summary}\n"
+    # Calculate summary statistics
+    successful_attempts = sum(1 for sol in solutions.values() if sol)
+    failed_attempts = n_instances - successful_attempts
 
+    # final_summary = f"Attempted {len(instances)} instances in dataset '{dataset.value.name}':\n"
+    # for summary in results_summary:
+    #     final_summary += f"  - {summary}\n"
 
+    # Logging
     if verbose:
         print(f"\n{'='*40}")
-        print(f"Dataset attempt completed: '{dataset}'")
+        print(f"Dataset attempt completed: '{dataset.value.name}'")
         print(f"{'='*40}")
-        print(f"Successful attempts: {successful_attempts}/{len(instance_files)}")
-        print(f"Failed attempts: {failed_attempts}/{len(instance_files)}")
+        print(f"Successful attempts: {successful_attempts}/{n_instances}")
+        print(f"Failed attempts: {failed_attempts}/{n_instances}")
         print(f"{'='*40}\n")
 
 
-    return (solutions, gaps, final_summary)
+    return (solutions, gaps)
 
 
 
-def attempt_instance(
-        solver: AlgoSolver | LearnerSolver,
-        dataset: str,
-        instance_name: str,
+
+def try_instance(
+        dataset: Dataset,
+        inst_name: str,
+        instance: ShareARideProblem,
+        solver_name: SolverName,
+        solver_mode: SolverMode,
         note: str = "",
-        verbose: bool = False
-    ) -> Tuple[Optional[Solution], float, str]:
+        seed: Optional[int] = None,
+        verbose: bool = False,
+        **solver_kwargs
+    ) -> Tuple[Optional[Solution], Optional[float]]:
     """
     Attempt to solve a single instance in a dataset with a given solver.
-    Also if the attempt was successful, it saves the results in a csv file.
-    Return a string describing the result of the attempt.
+    If the attempt was successful, record the results in a csv file.
 
 
     Params:
-    - solver: a callable in share_a_ride/solvers/algo that solve the SARP instance
-    - dataset: name of the dataset folder to attempt (must exist in share_a_ride/data)
-    - instance_name: name of the instance file without extension (must exist in dataset)
+    - dataset: Dataset enum member
+    - inst_name: name of the instance file (must exist in dataset)
+    - instance: ShareARideProblem object
+    - solver_name: SolverName enum member
+    - solver_mode: SolverMode enum member
     - note: any additional notes or comments
+    - verbose: whether to print information during execution
+    - solver_kwargs: additional keyword arguments for the solver
 
     Returns: a tuple of:
-    - solution: Solution object or None if no solution was found
-    - gap: gap (in percentage) if a solution was found, else None
-    - result_summary: A string summarizing the attempt information.
+    - solution: Solution object if a solution is found, else None
+    - gap: gap (in percentage) if a solution is found, else None
     """
-    # Get the CSV file path for the dataset
-    csv_path = path_router(dataset, "attempt")
+    # Get path to the results csv file
+    csv_path = path_router(dataset.value.name, "record")
 
-    # Check if CSV exists. If not, raise error.
-    if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"CSV file for dataset '{dataset}' not found at {csv_path}.")
+    # Open the file and determine the next attempt_id
+    attempt_id = 1
+    if os.path.exists(csv_path):    # File exist
+        with open(csv_path, 'r', newline='', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+            if len(rows) == 0:  # No header found
+                with open(csv_path, 'a', newline='', encoding='utf-8') as f_write:
+                    writer = csv.writer(f_write)
+                    writer.writerow(ATTEMPT_COLUMNS)
+            else:
+                attempt_id = len(rows)  # Header is row 0
 
-    # Open the file and get next attempt_id
-    with open(csv_path, 'r+', newline='', encoding='utf-8') as f:
-        reader = csv.reader(f)
-        rows = list(reader)
-
-        # Write header if file is empty
-        if len(rows) == 0:
+    else:    # Create the file and write header
+        os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+        with open(csv_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             writer.writerow(ATTEMPT_COLUMNS)
-            attempt_id = 1
-        else:
-            # Next id is the number of data rows (excluding header)
-            attempt_id = len(rows)
 
-
-    # Get best cost from scoreboard
-    scoreboard_path = path_router(dataset, "summarize")
+    # Extract best known cost from scoreboard if available
+    scoreboard_path = path_router(dataset.value.name, "summarize")
     best_cost = None
-    if os.path.exists(scoreboard_path):
+    if os.path.exists(scoreboard_path):     # File exist
         with open(scoreboard_path, 'r', newline='', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             for row in reader:
-                if row['instance'] == instance_name:
-                    best_cost = float(row['best_cost']) if row['best_cost'] else None
+                if row['instance'] == inst_name:
+                    best_cost = int(row['best_cost'])
                     break
 
-    # Print the instance and best cost if found
+    # Logging
     if verbose:
-        print(f"Attempting instance: {instance_name}")
+        print(f"Attempting instance: {inst_name}")
         if best_cost:
             print(f"Best known cost: {best_cost}")
 
+
+    # //// Solve the instance
     try:
-        # Parse the problem instance
-        instance_path = path_router(dataset, "readfile", filename=instance_name)
-        prob = parse_sarp_to_problem(instance_path)
-
-        # Get solver arguments data
-        solver_name = solver.name
-        seed = solver.args.get('seed', None)
-        time_limit = solver.args.get('time_limit', None)
-        hyperparams_json = json.dumps(solver.hyperparams) if solver.hyperparams else "{}"
-
-        # Solve the instance
+        # Timestamp
         timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-        sol, info = solver.solve(problem=prob)
+
+        # Extract solver arguments data
+        full_params = SolverParams.run_params(solver_name, solver_mode)
+        full_params.update(solver_kwargs)
+        full_params["seed"] = seed
+        time_limit = full_params.get("time_limit", None)
+
+        # Extract solver hyperparams
+        hyperparams = SolverParams.hyperparams(solver_name)
+        hyperparams_json = json.dumps(hyperparams) if hyperparams else ""
+
+        # Run the solver
+        solver = Solver(solver_name, solver_mode)
+        sol, info = solver.run(
+            problem=instance,
+            verbose=verbose,
+            seed=seed,
+            **solver_kwargs
+        )
 
         # Extract results
-        status = info['status']
-        elapsed_time = info['time']
+        status = info.get("status", 'error')
+        elapsed_time = info.get("time", 0.0)
         cost = sol.max_cost if sol is not None else None
+        if verbose:
+            print(f"Status: {status}, Cost: {cost}, Elapsed time: {elapsed_time}")
 
         # Calculate gap percentage
         gap_percentage = 0.0
         if cost and best_cost:
             gap_percentage = ((best_cost - cost) / best_cost) * 100.0
+            print(f"Gap percentage: {gap_percentage:.2f}%")
 
-        if verbose:
-            print(f"Status: {status}, Cost: {cost}, Elapsed time: {elapsed_time}")
-            if best_cost:
-                print(f"Gap percentage: {gap_percentage:.2f}%")
-
-        # Remove redundant fields from info for CSV
+        # Deduplicate fields from info for CSV
         info_copy = info.copy()
-        info_copy.pop('status', None)
-        info_copy.pop('time', None)
+        info_copy.pop("status", None)
+        info_copy.pop("time", None)
         info_json = json.dumps(info_copy) if info_copy else "{}"
 
         # Write to CSV
         with open(csv_path, 'a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             writer.writerow([
-                attempt_id, timestamp, dataset, instance_name, solver_name,
+                attempt_id, timestamp, dataset.value.name, inst_name, solver_name.name,
                 seed, time_limit, hyperparams_json, status, elapsed_time,
                 cost, info_json, note
             ])
 
-        return (sol, gap_percentage, f"{instance_name}: {status} (cost={cost})")
-
+        return sol, gap_percentage
 
     except Exception as e:
-        raise e
-        # if verbose:
-        #     print(f"Error occurred: {str(e)}")
-
-        # # Write error to CSV
-        # timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-        # with open(csv_path, 'a', newline='', encoding='utf-8') as f:
-        #     writer = csv.writer(f)
-        #     writer.writerow([
-        #         attempt_id, timestamp, dataset, instance_name,
-        #         solver.name, None, None, "{}", "error", 0,
-        #         None, "{}", f"{str(e)}"
-        #     ])
-
-        # return (None, 0.0, f"{instance_name}: error ({str(e)})")
+        if verbose:
+            print(f"Error solving instance: {e}")
+        return None, None
 
 
+
+
+# ================ Playground ================
 if __name__ == "__main__":
-    from share_a_ride.solvers.algo.greedy import iterative_greedy_solver
-    chosen_solver = AlgoSolver(
-        algo=iterative_greedy_solver,
-        args={"iterations": 10000, "time_limit": 10.0, "seed": 42, "verbose": 1},
-        hyperparams={
-            "destroy_proba"      : 0.5,
-            "destroy_steps"     : 5,
-            "destroy_T"         : 1.0,
-            "rebuild_proba"      : 0.3,
-            "rebuild_steps"     : 2,
-            "rebuild_T"         : 5.0,
-        }
-    )
-
-    sol, gap, msg = attempt_instance(
-        chosen_solver, "Cvrplib", "M-n101-k10", note="test attempt", verbose=True
-    )
+    solvernames = [
+        SolverName.ACO, SolverName.ALNS, SolverName.ASTAR,
+        SolverName.BEAM, SolverName.GREEDY, SolverName.MCTS
+    ]
+    dts = Dataset.CMT
+    for solver in solvernames:
+        attempt_dataset(
+            dataset=dts,
+            solver_name=solver,
+            solver_mode=SolverMode.HEAVY,
+            note="First full test run",
+            seed=42,
+            verbose=True,
+        )

@@ -97,12 +97,12 @@ def iterative_greedy_solver(    # Actually quite like a large neighborhood searc
         problem: ShareARideProblem,
         partial: Optional[PartialSolution] = None,
         iterations: int = 10000,
-        destroy_proba: float = 0.4,
-        destroy_steps: int = 15,
-        destroy_t: float = 1.0,
-        rebuild_proba: float = 0.3,
-        rebuild_steps: int = 5,
-        rebuild_t: float = 1.0,
+        destroy_proba: float = 0.53,
+        destroy_steps: int = 13,
+        destroy_t: float = 1.3,
+        rebuild_proba: float = 0.29,
+        rebuild_steps: int = 3,
+        rebuild_t: float = 1.2,
         time_limit: float = 30.0,
         seed: Optional[int] = None,
         verbose: bool = False,
@@ -175,7 +175,7 @@ def iterative_greedy_solver(    # Actually quite like a large neighborhood searc
 
     for it in range(1, iterations + 1):
         if deadline and time.time() >= deadline:
-            status = "timeout"
+            status = "overtime"
             break
 
         # Seed for operators

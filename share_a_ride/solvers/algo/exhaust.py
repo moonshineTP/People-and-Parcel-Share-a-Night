@@ -14,9 +14,10 @@ from share_a_ride.solvers.algo.utils import enumerate_actions_greedily, apply_ge
 def exhaust_enumerator(
         problem: ShareARideProblem,
         partial: Optional[PartialSolution] = None,
-        max_solutions: int = 100000,
+        n_return: int = 100000,
         imcumbent: Optional[int] = None,
         time_limit: float = 30.0,
+        seed: Optional[int] = None,
         verbose: bool = False
     ) -> Tuple[List[Solution], Dict[str, Any]]:
     """
@@ -68,7 +69,7 @@ def exhaust_enumerator(
         sols_next, info_sub = exhaust_enumerator(
             problem,
             partial_next,
-            max_solutions=max_solutions - solutions_count,
+            n_return=n_return - solutions_count,
             imcumbent=imcumbent,
             time_limit=end - time.time(),
             verbose=False
@@ -82,13 +83,13 @@ def exhaust_enumerator(
             heapq.heappush(solutions_heap, (sol_next.max_cost, solutions_count, sol_next))
             solutions_count += 1
 
-            if solutions_count >= max_solutions:
+            if solutions_count >= n_return:
                 break
 
         # Update stats
         actions_done += info_sub["num_actions"]
 
-        if solutions_count >= max_solutions:
+        if solutions_count >= n_return:
             break
 
     # Extract solutions from heap
@@ -101,7 +102,7 @@ def exhaust_enumerator(
         "num_solutions": solutions_count,
         "best_cost": solutions[0].max_cost if solutions else 'N/A',
         "time": elapsed,
-        "status": "timeout" if timeout else "done"
+        "status": "overtime" if timeout else "done"
     }
 
     # logging
@@ -122,8 +123,10 @@ def exhaust_enumerator(
 
 def exhaust_solver(
         problem: ShareARideProblem,
-        partial: PartialSolution,
+        partial: Optional[PartialSolution] = None,
+        imcumbent: Optional[int] = None,
         time_limit: float = 30.0,
+        seed: Optional[int] = None,
         verbose: bool = False
     ) -> Tuple[Optional[Solution], Dict[str, Any]]:
     """
@@ -133,7 +136,8 @@ def exhaust_solver(
     solutions, info = exhaust_enumerator(    # pylint: disable=W0621
         problem,
         partial,
-        max_solutions=1,
+        n_return=1,
+        imcumbent=imcumbent,
         time_limit=time_limit,
         verbose=verbose
     )
@@ -169,7 +173,7 @@ if __name__ == "__main__":
     )
     sols, info = exhaust_enumerator(
         exhaustive_problem,
-        max_solutions=100000,
+        n_return=100000,
         imcumbent = imcumbent_sol.max_cost if imcumbent_sol else None,
         time_limit=30.0,
         verbose=True

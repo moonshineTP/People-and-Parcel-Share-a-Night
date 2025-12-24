@@ -14,16 +14,17 @@ from pyvrp.diversity import broken_pairs_distance
 from pyvrp.crossover import selective_route_exchange
 
 from share_a_ride.core.problem import ShareARideProblem
-from share_a_ride.core.solution import Solution
+from share_a_ride.core.solution import Solution, PartialSolutionSwarm
 from share_a_ride.solvers.algo.beam import beam_enumerator
 
 
 
 
 def hgs_solver(
-        problem: ShareARideProblem,
+        problem: ShareARideProblem,\
+        swarm: Optional[PartialSolutionSwarm] = None,
         iterations: int = 20,
-        n_populations: int = 50,
+        n_partials: int = 50,
         time_limit: float = 30.0,
         seed: Optional[int] = None,
         verbose: bool = False
@@ -256,21 +257,20 @@ def hgs_solver(
     if verbose:
         print("[HGS] Generating initial greedy solutions...")
 
-    # [Insert code to generate initial solutions]
-    init_swarm, _ = beam_enumerator(
-        problem,
-        width=n_populations,
-        time_limit=10**9,   # Effectively no limit
-        seed=11*seed if seed is not None else None,
-        verbose=verbose,
-    )
-    init_best_sol: Optional[Solution] = None
-    init_best_cost = 10**18
-    if init_swarm:
-        # Extract best complete solution from the swarm
-        init_best_sol = init_swarm.opt()
-        assert init_best_sol is not None
-        init_best_cost = init_best_sol.max_cost
+    # Generate initial swarm if not provided
+    if swarm is not None:
+        init_swarm = swarm
+    else:
+        init_swarm, _ = beam_enumerator(
+            problem,
+            n_partials=n_partials,
+            time_limit=10**9,   # Effectively no limit
+            seed=11*seed if seed is not None else None,
+            verbose=verbose,
+        )
+
+    init_best_sol = init_swarm.opt()
+    init_best_cost = init_best_sol.max_cost if init_best_sol else 10**18
     # [End of initial solution generation]
 
     if verbose:
@@ -314,9 +314,9 @@ def hgs_solver(
         if init_best_cost < 10**18:
             if verbose:
                 print("[HGS] Falling back to Greedy solution.")
-            return init_best_sol, {"method": "greedy", "cost": init_best_cost}
+            return init_best_sol, {"method": "greedy", "cost": init_best_cost, "status": "done"}
 
-        return None, {"error": "Infeasible"}
+        return None, {"error": "Infeasible", "status": "error"}
 
     # Calculate current max cost
     current_max = max((r.distance() for r in res.best.routes()), default=0)
@@ -382,7 +382,7 @@ def hgs_solver(
     # Extract results
     res = best_res
     if not res.is_feasible():
-        return None, {"error": "Infeasible"}
+        return None, {"error": "Infeasible", "status": "error"}
     used_routes: List[Route] = res.best.routes()
     routes_by_cap: Dict[int, List[List[int]]] = {}
 
@@ -438,7 +438,8 @@ def hgs_solver(
         "cost": res.cost(),
         "runtime": res.runtime,
         "iterations": iterations,
-        "best_max_cost": sol.max_cost
+        "best_max_cost": sol.max_cost,
+        "status": "done" if time.time() - start < time_limit else "overtime"
     }
 
     # Logging

@@ -18,69 +18,147 @@ The summary has the following columns:
 If there is no successful attempt, best cost and related fields are None.
 If there is no previous best cost, gap fields are None.
 """
-
 import os
 import csv
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 
 from share_a_ride.data.router import path_router
-
-
-SCOREBOARD_COLUMNS = [
-    'dataset',
-    'instance',
-    'num_attempts',
-    'successful_attempts',
-    'best_cost',
-    'best_attempt_id',
-    'best_timestamp',
-    'best_solver',
-    'best_solver_args',
-    'best_solver_hyperparams',
-    'best_time_taken',
-    'cost_gap',
-    'pct_gap',
-    'note'
-]
+from share_a_ride.data.classes import SCOREBOARD_COLUMNS, Dataset
 
 
 
-def summarize_dataset(dataset: str, verbose: bool = False) -> Dict[str, Any]:
+
+def summarize_dataset(dataset: Dataset, verbose: bool = False) -> Dict[str, Any]:
     """
     Summarize the dataset attempts in the attempts csv file.
     This is saved as a summary csv, grouped by instance names as entry rows.
     If verbose, print the summary to standard output.
     Return a summary dictionary of all instances.
+
+    Params:
+    - dataset: Dataset enum member
+    - verbose: whether to print information during execution
+
+    Returns:
+    - summaries: Dictionary of summary dictionaries for each instance
     """
-
     # Get paths
-    attempts_file = path_router(dataset, "attempt")
-    scoreboard_file = path_router(dataset, "summarize")
-    dataset_folder = path_router(dataset, "readall")
-
+    dataset_name = dataset.value.name
+    dataset_path = path_router(dataset_name, "readall")
+    attempts_file = path_router(dataset_name, "record")
+    scoreboard_file = path_router(dataset_name, "summarize")
 
     # Get all instance names from the dataset folder
-    instance_files = [f for f in os.listdir(dataset_folder) if f.endswith('.sarp')]
+    instance_files = [f for f in os.listdir(dataset_path) if f.endswith('.sarp')]
     instances = [os.path.splitext(f)[0] for f in instance_files]
+    n_instances = len(instances)
+
+    if verbose:
+        print(f"Starting dataset summary: '{dataset_name}'")
+        print(f"Total instances: {n_instances}")
+        print(f"{'='*40}\n")
 
 
-    # Summarize each instance (each call writes to scoreboard itself)
+    # //// Read attempts file
+    attempts_by_instance = {}
+    if os.path.exists(attempts_file):
+        with open(attempts_file, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                inst = row['instance']
+                # Normalize instance name by removing extension if present
+                if inst.endswith('.sarp'):
+                    inst = os.path.splitext(inst)[0]
+                
+                if inst not in attempts_by_instance:
+                    attempts_by_instance[inst] = []
+                attempts_by_instance[inst].append(row)
+
+
+    # //// Read scoreboard file
+    scoreboard_rows = []
+    if os.path.exists(scoreboard_file):
+        with open(scoreboard_file, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            scoreboard_rows = list(reader)
+
+    scoreboard_map = {row['instance']: row for row in scoreboard_rows}
+
+
+    # //// Summarize each instance
     summaries = {}
-    for inst in instances:
-        summary = summarize_instance(dataset, inst, verbose=verbose)
+    for i, inst in enumerate(instances, start=1):
+        if verbose:
+            print(f"[{i}/{n_instances}] Summarizing: {inst}")
+
+        # Get attempts info for this instance
+        inst_attempts = attempts_by_instance.get(inst, [])
+
+        # Get previous best cost
+        previous_best_cost: Optional[int] = None
+        if inst in scoreboard_map:
+            row = scoreboard_map.get(inst, {})
+            if row.get('best_cost'):
+                try:
+                    previous_best_cost = int(row['best_cost'])
+                except ValueError:
+                    previous_best_cost = None
+
+        # Summarize
+        summary = summarize_per_instance(
+            dataset,
+            inst,
+            inst_attempts,
+            previous_best_cost,
+            verbose=verbose
+        )
+
+        # Store summary
         summaries[inst] = summary
 
 
-    # Print summary if verbose
+    # //// Update scoreboard rows
+    new_scoreboard_rows = []
+    processed_instances = set()
+
+    # Update scoreboard rớ
+    for row in scoreboard_rows:
+        inst = row['instance']
+        if inst in summaries and summaries[inst]:
+            new_scoreboard_rows.append(summaries[inst])
+            processed_instances.add(inst)
+        else:
+            new_scoreboard_rows.append(row)
+
+    # Append new rows (if there are new instances)
+    for inst in instances:
+        if inst not in processed_instances and summaries[inst]:
+            new_scoreboard_rows.append(summaries[inst])
+
+
+    # //// Write the content
+    os.makedirs(os.path.dirname(scoreboard_file), exist_ok=True)
+    with open(scoreboard_file, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=SCOREBOARD_COLUMNS)
+        writer.writeheader()
+        writer.writerows(new_scoreboard_rows)
+
+
+    # //// Logging
     if verbose:
-        print(f"{'='*60}")
-        print(f"Dataset summary for {dataset}:")
-        print(f"{'-'*40}")
-        print(f"Total instances: {len(summaries)}")
+        print(f"\n{'='*40}")
+        print(f"Dataset summary completed: '{dataset_name}'")
+        print(f"{'='*40}")
+
+        valid_summaries = [s for s in summaries.values() if s]
+        print(f"Instances with attempts: {len(valid_summaries)}/{n_instances}")
+
         for inst, summary in summaries.items():
             if summary:     # Only print if there is a summary
-                print(f"  - {inst}: {summary['successful_attempts']}/{summary['num_attempts']}" \
-                        f" successful, best cost: {summary['best_cost']}")
+                print(
+                    f"  - {inst}: {summary['successful_attempts']}/{summary['num_attempts']}" \
+                    f" successful, best cost: {summary['best_cost']}, solver: {summary['best_solver']}"
+                )
         print(f"{'='*60}\n")
 
 
@@ -88,70 +166,59 @@ def summarize_dataset(dataset: str, verbose: bool = False) -> Dict[str, Any]:
 
 
 
-def summarize_instance(
-        dataset: str,
+
+def summarize_per_instance(
+        dataset: Dataset,
         inst_name: str,
+        instance_attempts: List[Dict[str, Any]],
+        previous_best_cost: Optional[int],
         verbose: bool = False
     ) -> Dict[str, Any]:
     """
     Summarize the dataset attempts for a specific instance.
-    This updates or creates an entry row in the scoreboard csv file.
-    If verbose, print the summary to standard output.
     Return a summary dictionary.
+
+    Params:
+    - dataset: Dataset enum member
+    - inst_name: name of the instance file without extension
+    - instance_attempts: list of attempt dictionaries for this instance
+    - previous_best_cost: previous best cost from scoreboard, or None
+    - verbose: whether to print information during execution
+
+    Returns:
+    - summary: Dictionary containing summary statistics for the instance
     """
-    attempts_file = path_router(dataset, "attempt")
-    scoreboard_file = path_router(dataset, "summarize")
+    dataset_name = dataset.value.name
 
-
-    # Check if attempts file exists
-    if not os.path.exists(attempts_file):
-        raise FileNotFoundError(f"Attempts file not found: {attempts_file}")
-    if not os.path.exists(scoreboard_file):
-        raise FileNotFoundError(f"Scoreboard file not found: {scoreboard_file}")
-
-
-    # Read and filter attempts for the instance name
-    with open(attempts_file, 'r', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        instance_attempts = [row for row in reader if row['instance'] == inst_name]
+    # If no attempts found, return empty dict
     if not instance_attempts:
         if verbose:
-            print(f"No attempts found for instance {inst_name} in dataset {dataset}.")
+            print(f"No attempts found for instance {inst_name} in dataset {dataset_name}.")
         return {}
 
-    # Find previous best cost from scoreboard
-    previous_best_cost = None
-    if os.path.getsize(scoreboard_file) == 0:
-        with open(scoreboard_file, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            writer.writerow(SCOREBOARD_COLUMNS)
-    else:
-        with open(scoreboard_file, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                if row['instance'] == inst_name and row['best_cost']:
-                    previous_best_cost = float(row['best_cost'])
 
-
-    # Calculate summary statistics
+    # //// Calculate summary statistics
     num_attempts = len(instance_attempts)
     successful_attempts = sum(1 for att in instance_attempts if att['status'] == 'done')
 
-    # Scan through attempts to find the best one
+    # //// Iterating to find best attempt
     best_attempt = None
     best_cost = 10**18
     for attempt in instance_attempts:
         if attempt['status'] == 'done' and attempt['cost']:
-            cost = float(attempt['cost'])
-            if cost < best_cost:
-                best_cost = cost
-                best_attempt = attempt
+            try:
+                cost = float(attempt['cost'])
+                if cost < best_cost:
+                    best_cost = cost
+                    best_attempt = attempt
+            except ValueError:
+                continue
 
 
-    # Build summary dictionary
-    if best_attempt is None:
+    # //// Build summary dictionary
+    if best_attempt is None:    # No successful attempts
         summary = {
-            'dataset'                   : dataset,
+            'dataset'                   : dataset_name,
             'instance'                  : inst_name,
             'num_attempts'              : num_attempts,
             'successful_attempts'       : 0,
@@ -167,18 +234,16 @@ def summarize_instance(
             'note'                      : None
         }
 
-    else:
+    else:                       # There is a best attempt
         # Calculate gap over previous best
         cost_gap = None
         pct_gap = None
-
         if previous_best_cost is not None:
             cost_gap = previous_best_cost - best_cost
             pct_gap = round((cost_gap / previous_best_cost) * 100, 2)
-
         improved = cost_gap and cost_gap > 1e-6
 
-        # Build args dict from seed and time_limit
+        # Build args dict
         args_dict = {}
         if best_attempt['seed']:
             args_dict['seed'] = best_attempt['seed']
@@ -186,7 +251,7 @@ def summarize_instance(
             args_dict['time_limit'] = best_attempt['time_limit']
 
         summary = {
-            'dataset'                   : dataset,
+            'dataset'                   : dataset_name,
             'instance'                  : inst_name,
             'num_attempts'              : num_attempts,
             'successful_attempts'       : successful_attempts,
@@ -202,31 +267,8 @@ def summarize_instance(
             'note'                      : 'improved' if improved else None
         }
 
-    # Write or update the scoreboard
-    scoreboard_rows = []
-    row_found = False
 
-    if os.path.getsize(scoreboard_file) > 0:
-        with open(scoreboard_file, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                if row['instance'] == inst_name:
-                    scoreboard_rows.append(summary)     # Update existing row
-                    row_found = True
-                else:
-                    scoreboard_rows.append(row)         # Keep other rows unchanged
-
-    if not row_found:
-        scoreboard_rows.append(summary)
-
-    # Write back to scoreboard
-    with open(scoreboard_file, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=SCOREBOARD_COLUMNS)
-        writer.writeheader()
-        writer.writerows(scoreboard_rows)
-
-
-    # Print summary if verbose
+    # //// Logging
     if verbose:
         print(f"{'-'*40}")
         print(  f"Instance summary for {inst_name}:")
@@ -244,5 +286,8 @@ def summarize_instance(
     return summary
 
 
+
+
+# ================= Playground ==================
 if __name__ == "__main__":
-    summarize_dataset("H", verbose=True)
+    summarize_dataset(Dataset.CMT, verbose=True)

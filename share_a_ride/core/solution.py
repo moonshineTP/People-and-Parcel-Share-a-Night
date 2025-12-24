@@ -315,7 +315,7 @@ class PartialSolution:
 
 
         # //// Simulate over route
-        for ridx, route in enumerate(self.routes):
+        for _, route in enumerate(self.routes):
             route_len = len(route)
             onboard_parcels = set()
             current_load = 0
@@ -1040,11 +1040,6 @@ class PartialSolution:
                 )
             return False
 
-        if not all(state["ended"] for state in self.states):
-            if verbose:
-                print("Not completed: at least one route has not ended at depot.")
-            return False
-
         return True
 
 
@@ -1052,10 +1047,6 @@ class PartialSolution:
         """Convert the PartialSolution to a full Solution if complete and valid."""
         if not self.is_completed(verbose=True):
             print("Warning: Solution is not complete, cannot convert.")
-            return None
-
-        if not self.is_valid(verbose=True):
-            print("Warning: Solution is not valid, cannot convert.")
             return None
 
         solution = Solution(

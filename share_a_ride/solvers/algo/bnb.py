@@ -30,9 +30,10 @@ def _admissive_lb(partial: PartialSolution) -> float:
 def bnb_enumerator(
         problem: ShareARideProblem,
         partial: Optional[PartialSolution] = None,
-        max_solutions: int = 100000,
+        n_return: int = 100000,
         imcumbent: Optional[int] = None,
         time_limit: float = 30.0,
+        seed: Optional[int] = None,
         verbose: bool = False,
     ) -> Tuple[List[Solution], Dict[str, Any]]:
 
@@ -89,7 +90,7 @@ def bnb_enumerator(
         sols_next, info_sub = bnb_enumerator(
             problem,
             partial_next,
-            max_solutions=max_solutions - solutions_count,
+            n_return=n_return - solutions_count,
             imcumbent=imcumbent,
             time_limit=end - time.time(),
             verbose=False
@@ -103,13 +104,13 @@ def bnb_enumerator(
             heapq.heappush(solutions_heap, (sol_next.max_cost, solutions_count, sol_next))
             solutions_count += 1
 
-            if solutions_count >= max_solutions:
+            if solutions_count >= n_return:
                 break
 
         # Update stats
         actions_done += info_sub["num_actions"]
 
-        if solutions_count >= max_solutions:
+        if solutions_count >= n_return:
             break
 
     # Extract solutions from heap
@@ -122,7 +123,7 @@ def bnb_enumerator(
         "num_solutions": solutions_count,
         "best_cost": solutions[0].max_cost if solutions else 'N/A',
         "time": elapsed,
-        "status": "timeout" if timeout else "done"
+        "status": "overtime" if timeout else "done"
     }
 
     # logging
@@ -141,8 +142,10 @@ def bnb_enumerator(
 
 def bnb_solver(
         problem: ShareARideProblem,
-        partial: PartialSolution,
+        partial: Optional[PartialSolution] = None,
+        imcumbent: Optional[int] = None,
         time_limit: float = 30.0,
+        seed: Optional[int] = None,
         verbose: bool = False
     ) -> Tuple[Optional[Solution], Dict[str, Any]]:
     """
@@ -152,7 +155,8 @@ def bnb_solver(
     solutions, info = bnb_enumerator(    # pylint: disable=W0621
         problem,
         partial,
-        max_solutions=1,
+        n_return=1,
+        imcumbent=imcumbent,
         time_limit=time_limit,
         verbose=verbose
     )
@@ -189,7 +193,7 @@ if __name__ == "__main__":
     )
     sols, info = bnb_enumerator(
         bnb_problem,
-        max_solutions=1000,
+        n_return=1000,
         imcumbent = imcumbent_sol.max_cost if imcumbent_sol else None,
         time_limit=30.0,
         verbose=True

@@ -1,7 +1,7 @@
 venv/
 .vscode/
 __pycache__/
-*.pyc
+.pyc/
 .VSCodeCounter/
 .idea/
-*.prof
+.prof/

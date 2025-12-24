@@ -8,35 +8,32 @@ import math
 import random
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple, ParamSpec, Concatenate, Union
-
+from typing import Any, Callable, Dict, List, Optional, Tuple, ParamSpec, Concatenate, Union, Set
 
 from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.core.solution import PartialSolution, PartialSolutionSwarm, Solution
-from share_a_ride.solvers.algo.greedy import (
-    greedy_solver, iterative_greedy_solver
-)
-from share_a_ride.solvers.algo.utils import (
-    enumerate_actions_greedily, apply_general_action, Action
-)
+from share_a_ride.solvers.algo.greedy import greedy_solver, iterative_greedy_solver
+from share_a_ride.solvers.algo.utils import enumerate_actions_greedily, apply_general_action, Action
 from share_a_ride.solvers.operator.swap import intra_swap_operator
 from share_a_ride.solvers.utils.weighter import weighted, action_weight
 from share_a_ride.solvers.utils.sampler import sample_from_weight
 
 
-# Type aliases
+
+
+# ================ Type aliases ================
 Params = ParamSpec("Params")
-ActionNode = Tuple[int, int]    # (phys_in, phys_out)
+ActionNode = Tuple[int, int]
 ValueFunction = Callable[Concatenate[PartialSolution, Params], float]
 FinalizePolicy = Callable[Concatenate[PartialSolution, Params], Optional[Solution]]
 
 
 
 
-# ============= ACO Policies Implementation ==============
+# ================ ACO Policies Implementation ================
 def _default_value_function(
         partial: PartialSolution,
-        perturbed_samples: int = 10,    # perturb
+        perturbed_samples: int = 8,     # perturb
         seed: Optional[int] = None,     # pylint: disable=unused-argument
     ) -> float:
     """
@@ -52,14 +49,15 @@ def _default_value_function(
 
 def _default_finalize_policy(
         partial: PartialSolution,
+        iterations: int = 1000,
         seed: Optional[int] = None,
     ) -> Optional[Solution]:
 
     sol, _info = iterative_greedy_solver(
         partial.problem,
         partial,
-        iterations=5000,
-        time_limit=5.0,
+        iterations=iterations,
+        time_limit=3.0,
         seed=seed,
         verbose=False
     )
@@ -79,7 +77,7 @@ def _default_finalize_policy(
 
 
 
-# ============= ACO Components Implementation =============
+# ================ ACO Components Implementation ================
 @dataclass
 class SolutionTracker:
     """
@@ -197,19 +195,9 @@ class PheromoneMatrix:
         assert sigma >= 1, "Number of elitists sigma must be at least 1."
 
 
-    def _clamp(self, phe: float) -> float:
-        """Clamp pheromone value within [tau_min, tau_max]."""
-        return min(self.tau_max, max(self.tau_min, phe))
-
-
-    def getter(self, prev: ActionNode, curr: ActionNode) -> float:
+    def get(self, prev: ActionNode, curr: ActionNode) -> float:
         """Get pheromone level on transition from prev action to curr action."""
         return self.tau[prev[1]][curr[0]]
-
-
-    def setter(self, prev: ActionNode, curr: ActionNode, phe: float) -> None:
-        """Set pheromone level on transition from prev action to curr action."""
-        self.tau[prev[1]][curr[0]] = self._clamp(phe)
 
 
     def update(
@@ -253,20 +241,24 @@ class PheromoneMatrix:
         )[:self.sigma]
 
 
-        # //// Build pheromone delta matrix
-        delta: List[List[float]] = [
-            [0.0 for _ in range(self.size)]
-            for _ in range(self.size)
+        # //// Update pheromone matrix
+        # Evaporation and clamp to tau_min
+        self.tau = [
+            [max(self.tau_min, self.rho * val) for val in row]
+            for row in self.tau
         ]
+
+        increased_edges: Set[Tuple[int, int]] = set()
 
         # Add ranked solution contributions: (sigma - rank) * (1 / L_r)
         for rank, (cost, partial) in enumerate(ranked_partials):
-            weight = (self.sigma - rank) / cost
+            elitist_weight = (self.sigma - rank) / cost
 
             # Loop through edges
             for (i, j) in extract_edges(partial):
+                increased_edges.add((i, j))
                 if 0 <= i < self.size and 0 <= j < self.size:
-                    delta[i][j] += weight
+                    self.tau[i][j] += elitist_weight
 
         # Add best-so-far solution contribution: sigma * (1 / L_best)
         if opt is not None and opt.max_cost > 0:
@@ -277,15 +269,14 @@ class PheromoneMatrix:
 
             # Loop through edges
             for (i, j) in extract_edges(best_partial):
+                increased_edges.add((i, j))
                 if 0 <= i < self.size and 0 <= j < self.size:
-                    delta[i][j] += best_weight
+                    self.tau[i][j] += best_weight
 
+        # Clamp increased edges to tau_max
+        for (i, j) in increased_edges:
+            self.tau[i][j] = min(self.tau_max, self.tau[i][j])
 
-        # //// Apply evaporation and add delta to pheromone matrix
-        for i in range(self.size):
-            for j in range(self.size):
-                new_phe = self.rho * self.tau[i][j] + delta[i][j]
-                self.tau[i][j] = self._clamp(new_phe)
 
 
 class DesirabilityMatrix:
@@ -305,7 +296,7 @@ class DesirabilityMatrix:
         - sum(q) = current load after reaching node i
     
     The matrix is initialized only once on distance matrix D and remain static
-    during ACO runs. Higher values indicate more desirable edges to traverse.
+    during ACO iterations. Higher values indicate more desirable edges to traverse.
     """
 
     def __init__(
@@ -392,7 +383,7 @@ class NearestExpansionCache:
     def __init__(
             self,
             problem: ShareARideProblem,
-            num_nearest: int = 3
+            n_nearest: int = 3
         ) -> None:
         """
         Initialize nearest expansion cache for each node.
@@ -431,13 +422,13 @@ class NearestExpansionCache:
             # //// Get possible expansions and keep nearest num_nearest
             t_acts = partial.possible_expand(0)
             t_acts.sort(key=lambda item: weighted(item[0], item[2]))
-            t_acts = t_acts[:num_nearest]
+            t_acts = t_acts[:n_nearest]
 
             # Store in cache
             self.nearest_actions.append(t_acts)
 
 
-    def query(self, partial: PartialSolution, num_queried: int) -> List[Action]:
+    def query(self, partial: PartialSolution, n_queried: int) -> List[Action]:
         """
         Get best cached expansions (non-depot) for the partial, filtered and prioritized like
         enumerate_actions_greedily: balanced first, then by inc cost.
@@ -485,7 +476,7 @@ class NearestExpansionCache:
         # Combine and return top num_queried actions
         all_actions = [action for _, action in prioritized + secondary]
 
-        return all_actions[:num_queried]
+        return all_actions[:n_queried]
 
 
 class Ant:
@@ -631,7 +622,7 @@ class Ant:
             curr_node: ActionNode = self._get_action_node(action)
 
             # Get tau and eta values
-            tau_val = tau.getter(prev_node, curr_node)
+            tau_val = tau.get(prev_node, curr_node)
             eta_val = eta.get(prev_node, curr_node, self.partial, action)
 
             # Clamp to avoid log(0)
@@ -769,7 +760,7 @@ class AntPopulation:
 
     def __init__(
             self,
-            initial_swarm: PartialSolutionSwarm,
+            swarm: PartialSolutionSwarm,
 
             # Cache, Pheromone and desirability matrices (initialized earlier)
             cache: NearestExpansionCache,
@@ -785,12 +776,12 @@ class AntPopulation:
             width: int,
 
             # Run parameters
-            iterations: int,
+            depth: int,
             time_limit: float,
             seed: Optional[int],
             verbose: bool
         ) -> None:
-        self.swarm = initial_swarm.copy()
+        self.swarm = swarm.copy()
         self.completed = [par.is_completed() for par in self.swarm.partial_lists]
 
         self.cache = cache
@@ -798,7 +789,7 @@ class AntPopulation:
         self.eta = eta
         self.lfunc = lfunc
 
-        self.iterations = iterations
+        self.depth = depth
         self.time_limit = time_limit
         self.seed = seed
         self.verbose = verbose
@@ -822,7 +813,7 @@ class AntPopulation:
 
         # Miscellaneous utilities
         self.num_ants = len(self.ants)
-        self.max_actions = initial_swarm.problem.num_actions
+        self.max_actions = swarm.problem.num_actions
         self.start_time = time.time()
         self.end_time = self.start_time + self.time_limit
         self.tle = lambda: time.time() > self.end_time
@@ -846,7 +837,6 @@ class AntPopulation:
                     f"[Warning] Ant {idx + 1} cannot expand, "
                     "further diagnosis needed."
                 )
-                ant.partial.stdin_print()
                 raise RuntimeError("Ant expansion failure.")
 
         return is_expanded
@@ -879,10 +869,10 @@ class AntPopulation:
         ]
 
         # Loop
-        for ite in range(self.iterations):
+        for ite in range(self.depth):
             if self.tle():
                 if self.verbose:
-                    print("[ACO] Time limit reached, skipping iteration.")
+                    print("[ACO] Time limit reached, skipping this iteration.")
                 return self.swarm
 
             # Logging
@@ -912,7 +902,7 @@ class AntPopulation:
             run_opt = self.swarm.opt()
             global_opt = self.lfunc.opt()
             print(
-                f"[ACO] Finished all iterations.\n"
+                f"[ACO] Finished all depth.\n"
                 f"Complete solutions found: {num_sol}/{self.num_ants}.\n"
                 f"Run best cost: {run_opt.max_cost if run_opt else 'N/A'}, "
                 f"Opt cost: {global_opt.max_cost if global_opt else 'N/A'}."
@@ -923,7 +913,7 @@ class AntPopulation:
 
 class SwarmTracker:
     """
-    Tracks and records the best partial for each initial partial across ACO runs.
+    Tracks and records the best partial for each initial partial across ACO iterations.
     We assume all fed swarms are generated from the AntPopulation from a single
     initial swarm, hence partials are compared accordingly to its index
     (which mean we take the Pareto-optimal swarm)
@@ -931,7 +921,7 @@ class SwarmTracker:
     """
     def __init__(
             self,
-            initial_swarm: PartialSolutionSwarm,
+            swarm: PartialSolutionSwarm,
             value_function: ValueFunction,
             finalize_policy: FinalizePolicy,
             seed: Optional[int] = None,
@@ -942,9 +932,9 @@ class SwarmTracker:
 
         # Tracking fields
         self.frontier_swarm: List[PartialSolution] = [
-            partial.copy() for partial in initial_swarm.partial_lists
+            partial.copy() for partial in swarm.partial_lists
         ]
-        self.num_partials = initial_swarm.num_partials
+        self.num_partials = swarm.num_partials
 
         # Fitness fields (value_function now returns float fitness values)
         self.frontier_fitness: List[float] = [
@@ -981,7 +971,7 @@ class SwarmTracker:
         return self.frontier_fitness
 
 
-    def finalize(self, cutoff: Optional[int], time_limit: Optional[float]) -> List[Solution]:
+    def finalize(self, cutoff: Optional[int]) -> List[Solution]:
         """
         Finalize the elitists into complete solutions.
         Only finalizes up to `cutoff` partials to save time. Partials are sorted
@@ -995,13 +985,7 @@ class SwarmTracker:
         Returns:
             List of finalized solutions sorted by max_cost.
         """
-        if time_limit is None:
-            time_limit = float("inf")
-        start_time = time.time()
-        end_time = start_time + time_limit
-
-
-        # Sort partials by fitness values (lower is better)
+        # //// Select partials
         sorted_partials = sorted(
             zip(self.frontier_swarm, self.frontier_fitness),
             key=lambda x: x[1]
@@ -1009,13 +993,9 @@ class SwarmTracker:
         chosen_partials = sorted_partials[:cutoff] if cutoff else sorted_partials
 
 
-        # Finalize each chosen partial until time limit is reached
+        # //// Finalizing
         finalized: List[Solution] = []
         for idx, (par, _fitness) in enumerate(chosen_partials):
-            # Check time before starting a new finalization (never interrupt mid-finalize)
-            if time.time() >= end_time:
-                break
-
             sol = self.finalize_policy(
                 par, seed=self.seed + 20 * idx if self.seed else None
             )
@@ -1023,7 +1003,7 @@ class SwarmTracker:
                 finalized.append(sol)
 
 
-        # Sort finalized solutions by cost
+        # /// Update and return
         finalized.sort(key=lambda s: s.max_cost)
         finalized = finalized[:cutoff] if cutoff else finalized
 
@@ -1039,7 +1019,6 @@ class SwarmTracker:
             self,
             k: int,
             cutoff: Optional[int] = None,
-            time_limit: Optional[float] = None
         ) -> List[Solution]:
         """
         Return the top-k finalized solutions based on max_cost.
@@ -1054,7 +1033,7 @@ class SwarmTracker:
             cutoff = k
 
         if not self.is_finalized:
-            self.finalize(cutoff, time_limit)
+            self.finalize(cutoff)
 
         return self.finals[:k]
 
@@ -1062,7 +1041,6 @@ class SwarmTracker:
     def opt(
             self,
             cutoff: Optional[int] = None,
-            time_limit: Optional[float] = None
         ) -> Solution:
         """
         Return the best solution among the finalized solutions.
@@ -1073,7 +1051,7 @@ class SwarmTracker:
             time_limit: Remaining time for finalization.
         """
         if not self.is_finalized:
-            self.finalize(cutoff, time_limit)
+            self.finalize(cutoff)
 
         assert self.finals, "No finalized solutions available."
 
@@ -1082,16 +1060,15 @@ class SwarmTracker:
 
 
 
-# ============= ACO Logic Implementation =============
+# ================ ACO Logic Implementation ================
 def _run_aco(
     problem: ShareARideProblem,
     swarm: PartialSolutionSwarm,
 
     # Run parameters
-    runs: int,
-    iterations: Optional[int],
-    width: int,
-    cutoff: Optional[int],
+    n_cutoff: Optional[int],
+    iterations: int,
+    depth: Optional[int],
 
     # Hyperparameters
     # / Ants
@@ -1109,6 +1086,9 @@ def _run_aco(
     sigma: int,
     rho: float,
 
+    # / Width
+    width: int,
+
     # Policies
     value_function: ValueFunction,
     finalize_policy: FinalizePolicy,
@@ -1119,19 +1099,19 @@ def _run_aco(
     verbose: bool,
 ) -> Tuple[SwarmTracker, Dict[str, Any]]:
     """
-    Run the ACO algorithm with the specified parameters for ``iterations`` times
+    Run the ACO algorithm with the specified parameters for ``depth`` times
     or until ``time_limit`` is reached.
     
     This is the inner function that performs the core ACO logic for one run.
     It initializes all ACO components internally and uses the AntPopulation
     class to manage the ant colony. Uses SwarmTracker to track best partials
-    across iterations and finalize them into complete solutions.
+    across depth and finalize them into complete solutions.
     
     Args:
         - problem: ShareARideProblem instance.
         - swarm: Initial PartialSolutionSwarm (each partial becomes an ant).
-        - iterations: Number of iterations to run.
-        - width: Maximum actions to consider per expansion.
+        - iterations: Number of ACO iterations to run.
+        - depth: Number of depth/actions to run.
         - q_prob: Exploitation probability (0 = explore, 1 = exploit).
         - alpha: Pheromone influence exponent.
         - beta: Desirability influence exponent.
@@ -1153,9 +1133,8 @@ def _run_aco(
         - info: Dictionary with run statistics.
     """
     start = time.time()
-    end = start + time_limit
-    if iterations is None:
-        iterations = problem.num_actions
+    if depth is None:
+        depth = problem.num_actions
 
     # Run an initial greedy solver to estimate initial cost for pheromone initialization
     if verbose:
@@ -1170,7 +1149,7 @@ def _run_aco(
     # Initialize caches for nearest expansion
     if verbose:
         print("[ACO] [Init] Initializing nearest expansion cache...")
-    cache = NearestExpansionCache(problem, num_nearest=5)
+    cache = NearestExpansionCache(problem, n_nearest=5)
 
     # Initialize pheromone and desirability matrices
     if verbose:
@@ -1184,27 +1163,28 @@ def _run_aco(
     lfunc = SolutionTracker()
     lfunc.update(init_sol)
     tracker = SwarmTracker(
-        initial_swarm=swarm,
+        swarm=swarm,
         value_function=value_function,
         finalize_policy=finalize_policy,
     )
 
 
-    # Main ACO runs
-    runs_completed = runs
-    for run in range(runs):
+    # Main ACO iterations
+    iterations_completed = 0
+    status = "done"
+    for run in range(iterations):
         if time.time() - start >= 0.75 * time_limit:
-            runs_completed = run
+            status = "overtime"
             if verbose:
-                print(f"[ACO] Time limit approaching, stopping at run {run + 1}/{runs}.")
+                print(f"[ACO] Time limit approaching, stopping at run {run}/{iterations}.")
             break
 
         if verbose:
-            print(f"[ACO] [Run {run + 1}/{runs}] Starting the population run...")
+            print(f"[ACO] [Run {run + 1}/{iterations}] Starting the population run...")
 
         # Initialize a new population with all components
         population = AntPopulation(
-            initial_swarm=swarm,
+            swarm=swarm,
             cache=cache,
             tau=tau,
             eta=eta,
@@ -1214,7 +1194,7 @@ def _run_aco(
             omega=omega,
             q_prob=q_prob,
             width=width,
-            iterations=iterations,
+            depth=depth,
             time_limit=time_limit,
             seed=hash(seed + 10 * run) if seed else None,
             verbose=verbose,
@@ -1222,36 +1202,39 @@ def _run_aco(
 
         # Run the ACO process and get updated swarm
         if verbose:
-            print(f"[ACO] [Run {run + 1}/{runs}] Running the ant population")
+            print(f"[ACO] [Run {run + 1}/{iterations}] Running the ant population")
         result_swarm = population.run()
 
         # Update the trackers with the new swarm
         if verbose:
-            print(f"[ACO] [Run {run + 1}/{runs}] Updating swarm tracker")
+            print(f"[ACO] [Run {run + 1}/{iterations}] Updating swarm tracker")
         tracker.update(result_swarm)
         lfunc.update(result_swarm)
 
+        iterations_completed = run + 1
+
     # Finalize the best partials into complete solutions
     if verbose:
-        print(f"[ACO] Finalizing top {cutoff} partial into solutions...")
-    tracker.finalize(cutoff, max(0, end - time.time()))
+        print(f"[ACO] Finalizing top {n_cutoff} partial into solutions...")
+    tracker.finalize(n_cutoff)
 
     # Summary info
     elapsed = time.time() - start
-    best_sol = tracker.opt(cutoff=cutoff, time_limit=max(0, end - time.time()))
+    best_sol = tracker.opt(cutoff=n_cutoff)
     best_cost = best_sol.max_cost if best_sol else float("inf")
     stats: Dict[str, Any] = {
-        "runs_completed": runs_completed,
-        "time": elapsed,
+        "iterations": iterations_completed,
         "best_cost": best_cost,
         "elitists_count": tracker.num_partials,
+        "time": elapsed,
+        "status": status,
     }
 
     # Logging
     if verbose:
         print(
             f"[ACO] The run finished. "
-            f"Runs_completed={stats['runs_completed']}, "
+            f"Iterations={stats['iterations']}, "
             f"Best_cost={stats['best_cost']:.3f}, "
             f"Time={stats['time']:.3f}s."
         )
@@ -1261,18 +1244,17 @@ def _run_aco(
 
 
 
-# ============= ACO API Functions =============
+# ================ ACO API Functions ================
 def aco_enumerator(
     problem: ShareARideProblem,
-    initial_swarm: Optional[PartialSolutionSwarm] = None,
+    swarm: Optional[PartialSolutionSwarm] = None,
 
     # Run parameters
+    n_partials: int = 50,
+    n_cutoff: int = 20,
     n_return: int = 5,
-    cutoff: int = 20,
-    num_ants: int = 10,
-    runs: int = 10,
-    iterations: Optional[int] = None,
-    width: int = 8,
+    iterations: int = 10,
+    depth: Optional[int] = None,
 
     # Tuning hyperparameters
     q_prob: float = 0.75,
@@ -1285,6 +1267,7 @@ def aco_enumerator(
     kappa: float = 2.0,
     sigma: int = 10,
     rho: float = 0.55,
+    width: int = 8,
 
     # Policies
     value_function: ValueFunction = _default_value_function,
@@ -1299,18 +1282,20 @@ def aco_enumerator(
     Run ACO to enumerate the best k complete solutions.
     
     This function executes ACO with a SwarmTracker that tracks the best
-    variation of each partial across all iterations. At the end, it finalizes
-    the top `cutoff` partials and returns the best `n_return` solutions.
+    variation of each partial across all depth. At the end, it finalizes
+    the top `n_cutoff` partials and returns the best `n_return` solutions.
     
     Args:
         - problem: ShareARideProblem instance.
-        - initial_swarm: Initial PartialSolutionSwarm (optional, created if None).
+        - swarm: Initial PartialSolutionSwarm (optional, created if None).
+
+        - n_partials: Number of ants (must match swarm size if provided).
         - n_return: Number of best solutions to return.
-        - cutoff: Maximum partials to finalize (time-saving cutoff). Should be
+        - n_cutoff: Maximum partials to finalize (time-saving cutoff). Should be
                 >= n_return to avoid missing potentially better solutions.
-        - iterations: Number of iterations to run.
-        - num_ants: Number of ants (must match swarm size if provided).
-        - width: Maximum actions to consider per expansion.
+        - iterations: Number of ACO iterations to run.
+        - depth: Number of depth to run.
+        
         - q_prob: Exploitation probability (0 = explore, 1 = exploit).
         - alpha: Pheromone influence exponent.
         - beta: Desirability influence exponent.
@@ -1320,8 +1305,11 @@ def aco_enumerator(
         - kappa: Parcel influence exponent for desirability.
         - sigma: Number of elitists for pheromone update.
         - rho: Evaporation rate for pheromone update.
+        - width: Maximum actions to consider per expansion.
+
         - value_function: Function to evaluate potential of partial solutions.
         - finalize_policy: Function to complete partial solutions.
+
         - seed: Random seed for reproducibility.
         - time_limit: Total time limit in seconds.
         - verbose: If True, print detailed logs.
@@ -1331,25 +1319,27 @@ def aco_enumerator(
         - info: Dictionary with run statistics.
     """
     # Create initial swarm if not provided
-    if initial_swarm is None:
+    if swarm is None:
         initial_partials = [
-            PartialSolution(problem=problem, routes=[]) for _ in range(num_ants)
+            PartialSolution(problem=problem, routes=[]) for _ in range(n_partials)
         ]
-        initial_swarm = PartialSolutionSwarm(solutions=initial_partials)
+        swarm = PartialSolutionSwarm(solutions=initial_partials)
     else:
         # Assert swarm size matches num_ants for transparency
-        assert initial_swarm.num_partials == num_ants, (
-            f"Swarm size ({initial_swarm.num_partials}) must match num_ants ({num_ants})"
+        assert swarm.num_partials == n_partials, (
+            f"Swarm size ({swarm.num_partials}) must match num_ants ({n_partials})"
         )
 
 
     # //// Run ACO
     tracker, run_info = _run_aco(
         problem=problem,
-        swarm=initial_swarm,
-        runs=runs,
+        swarm=swarm,
+
+        n_cutoff=n_cutoff,
         iterations=iterations,
-        width=width,
+        depth=depth,
+
         q_prob=q_prob,
         alpha=alpha,
         beta=beta,
@@ -1360,9 +1350,11 @@ def aco_enumerator(
         kappa=kappa,
         sigma=sigma,
         rho=rho,
+        width=width,
+
         value_function=value_function,
         finalize_policy=finalize_policy,
-        cutoff=cutoff,
+
         seed=seed,
         time_limit=time_limit,
         verbose=verbose,
@@ -1371,17 +1363,17 @@ def aco_enumerator(
     # Get top n_return solutions
     top_solutions = tracker.top(
         k=n_return,
-        cutoff=cutoff,
-        time_limit=5.0
+        cutoff=n_cutoff,
     )
 
     # Build info from run_info
     stats: Dict[str, Any] = {
-        "runs_completed": run_info["runs_completed"],
-        "time": run_info["time"],
+        "iterations": run_info["iterations"],
+        "time": run_info['time'],
         "best_cost": run_info["best_cost"],
         "solutions_found": len(top_solutions),
         "elitists_count": run_info["elitists_count"],
+        "status": run_info['status'],
     }
 
     # Logging
@@ -1403,27 +1395,26 @@ def aco_enumerator(
 
 def aco_solver(
     problem: ShareARideProblem,
-    initial_swarm: Optional[PartialSolutionSwarm] = None,
+    swarm: Optional[PartialSolutionSwarm] = None,
 
     # Run parameters
-    cutoff: int = 10,
-    num_ants: int = 20,
-    runs: int = 10,
-    iterations: Optional[int] = None,
-    width: int = 5,
+    n_partials: int = 20,
+    n_cutoff: int = 10,
+    iterations: int = 10,
+    depth: Optional[int] = None,
 
     # Hyperparameters
     q_prob: float = 0.75,
     alpha: float = 1.2,
     beta: float = 1.4,
     omega: float = 4,
-
     phi: float = 0.5,
     chi: float = 1.5,
     gamma: float = 0.4,
     kappa: float = 2.0,
     sigma: int = 10,
     rho: float = 0.55,
+    width: int = 5,
 
     # Policies
     value_function: ValueFunction = _default_value_function,
@@ -1438,16 +1429,18 @@ def aco_solver(
     Run ACO solver and return the best complete solution.
     
     This function executes the ACO algorithm using SwarmTracker to track
-    the best partials across iterations and returns the optimal solution.
+    the best partials across depth and returns the optimal solution.
     
     Args:
         - problem: ShareARideProblem instance.
-        - initial_swarm: Initial PartialSolutionSwarm (optional, created if None).
-        - iterations: Number of iterations to run.
-        - num_ants: Number of ants (must match swarm size if provided).
-        - cutoff: Maximum partials to finalize (time-saving cutoff). Should be
+        - swarm: Initial PartialSolutionSwarm (optional, created if None).
+
+        - n_partials: Number of ants (must match swarm size if provided).
+        - n_cutoff: Maximum partials to finalize (time-saving cutoff). Should be
                 > 1 to avoid missing potentially better solutions.
-        - width: Maximum actions to consider per expansion.
+        - iterations: Number of ACO iterations to run.
+        - depth: Number of depth to run.
+        
         - q_prob: Exploitation probability (0 = explore, 1 = exploit).
         - alpha: Pheromone influence exponent.
         - beta: Desirability influence exponent.
@@ -1457,8 +1450,11 @@ def aco_solver(
         - kappa: Parcel influence exponent for desirability.
         - sigma: Number of elitists for pheromone update.
         - rho: Evaporation rate for pheromone update.
+        - width: Maximum actions to consider per expansion.
+
         - value_function: Function to evaluate potential of partial solutions.
         - finalize_policy: Function to complete partial solutions.
+
         - seed: Random seed for reproducibility.
         - time_limit: Total time limit in seconds.
         - verbose: If True, print detailed logs.
@@ -1468,25 +1464,27 @@ def aco_solver(
         - info: Dictionary with run statistics.
     """
     # Create initial swarm if not provided
-    if initial_swarm is None:
+    if swarm is None:
         initial_partials = [
-            PartialSolution(problem=problem, routes=[]) for _ in range(num_ants)
+            PartialSolution(problem=problem, routes=[]) for _ in range(n_partials)
         ]
-        initial_swarm = PartialSolutionSwarm(solutions=initial_partials)
+        swarm = PartialSolutionSwarm(solutions=initial_partials)
     else:
         # Assert swarm size matches num_ants for transparency
-        assert initial_swarm.num_partials == num_ants, (
-            f"Swarm size ({initial_swarm.num_partials}) must match num_ants ({num_ants})"
+        assert swarm.num_partials == n_partials, (
+            f"Swarm size ({swarm.num_partials}) must match num_ants ({n_partials})"
         )
 
 
     # //// Run ACO
     tracker, run_info = _run_aco(
         problem=problem,
-        swarm=initial_swarm,
-        runs=runs,
+        swarm=swarm,
+
+        n_cutoff=n_cutoff,
         iterations=iterations,
-        width=width,
+        depth=depth,
+
         q_prob=q_prob,
         alpha=alpha,
         beta=beta,
@@ -1497,9 +1495,11 @@ def aco_solver(
         kappa=kappa,
         sigma=sigma,
         rho=rho,
+        width=width,
+
         value_function=value_function,
         finalize_policy=finalize_policy,
-        cutoff=cutoff,
+
         seed=seed,
         time_limit=time_limit,
         verbose=verbose,
@@ -1510,10 +1510,11 @@ def aco_solver(
 
     # Build info from run_info
     stats: Dict[str, Any] = {
-        "runs_completed": run_info["runs_completed"],
-        "time": run_info["time"],
+        "iterations": run_info["iterations"],
+        "time": run_info['time'],
         "best_cost": run_info["best_cost"],
         "elitists_count": run_info["elitists_count"],
+        "status": run_info['status']
     }
 
     # Logging
@@ -1533,74 +1534,15 @@ def aco_solver(
 
 
 
-# ============= Playground =============
+# ================ Playground ================
 if __name__ == "__main__":
     from share_a_ride.solvers.algo.utils import test_problem
 
-    # def objective(trial: optuna.Trial) -> float:
-    #     """
-    #     Objective function for Optuna hyperparameter tuning.
-    #     Runs ACO with suggested hyperparameters and returns average cost
-    #     over multiple runs.
-    #     """
-    #     # ACO hyperparameters tuning
-    #     q_prob = trial.suggest_float("q_prob", 0.75, 0.9, step=0.05)
-    #     alpha = trial.suggest_float("alpha", 1.0, 1.4, step=0.2)
-    #     beta = trial.suggest_float("beta", 1.0, 2.0, step=0.2)
-    #     phi = trial.suggest_float("phi", 0.3, 3.0, log=True)
-    #     chi = trial.suggest_float("chi", 0.3, 3.0, log=True)
-    #     gamma = trial.suggest_float("gamma", 0.05, 0.5, step=0.05)
-    #     kappa = trial.suggest_float("kappa", 1.0, 3.0, log=True)
-    #     sigma = trial.suggest_int("sigma", 4, 10, step=2)
-    #     rho = trial.suggest_float("rho", 0.4, 0.85, step=0.15)
-
-    #     costs = []
-    #     for i in range(3):
-    #         sol, _info = aco_solver(
-    #             problem=main_prob,
-
-    #             q_prob=q_prob,
-    #             alpha=alpha,
-    #             beta=beta,
-    #             phi=phi,
-    #             chi=chi,
-    #             gamma=gamma,
-    #             kappa=kappa,
-    #             sigma=sigma,
-    #             rho=rho,
-
-    #             cutoff=5,
-    #             num_ants=100,
-    #             width=8,
-    #             runs=10,
-    #             time_limit=30.0,
-
-    #             seed=56 + 100 * i,
-    #             verbose=False,
-    #         )
-    #         if sol is not None:
-    #             costs.append(sol.max_cost)
-
-    #     return sum(costs) / len(costs) if costs else float("inf")
-
-
-    # study = optuna.create_study(direction="minimize")
-    # study.optimize(objective, n_trials=100)
-
-    # print("Best trial:")
-    # best = study.best_trial
-    # print(f"  Value: {best.value}")
-    # print("  Params: ")
-    # for key, value in best.params.items():
-    #     print(f"    {key}: {value}")
-
-
-    # Run ACO solver
     _, _ = aco_solver(
         problem=test_problem,
-        cutoff=10,
-        runs=10,
-        num_ants=100,
+        n_cutoff=10,
+        iterations=10,
+        n_partials=100,
         width=8,
         q_prob=0.75,
         alpha=1.25,
@@ -1616,16 +1558,3 @@ if __name__ == "__main__":
         seed=120,
         verbose=True,
     )
-
-
-    # cProfile.runctx(
-    #     "_run()",
-    #     globals=globals(),
-    #     locals=locals(),
-    #     filename="aco_profile.prof"
-    # )
-
-
-    # if solution is not None:
-    #     print(f"\nFinal solution max_cost: {solution.max_cost}")
-    #     print(f"Route costs: {solution.route_costs}")

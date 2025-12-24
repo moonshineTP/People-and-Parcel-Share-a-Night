@@ -6,7 +6,7 @@ from share_a_ride.data.summarizer import summarize_dataset
 
 from share_a_ride.core.utils import generate_instance_coords
 
-from share_a_ride.solvers.algo.algo import AlgoSolver
+from share_a_ride.solvers.algo.Algo import AlgoSolver
 from share_a_ride.solvers.algo.exhaust import exhaust_solver
 from share_a_ride.solvers.algo.bnb import bnb_enumerator
 from share_a_ride.solvers.algo.greedy import greedy_solver, iterative_greedy_solver

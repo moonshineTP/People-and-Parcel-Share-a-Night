@@ -20,7 +20,7 @@ class TreeSegment:
         add_neutral: Union[int, float] = 0,
     ):
 
-        self.n_elements = len(data)
+        self.num_elements = len(data)
         self.op = op
         self.identity = identity
 
@@ -29,19 +29,19 @@ class TreeSegment:
         self.sum_like = sum_like
 
         # Find the number of leaves of the complete binary tree
-        self.n_leaves = 1
-        while self.n_leaves < self.n_elements:
-            self.n_leaves *= 2
+        self.num_leaves = 1
+        while self.num_leaves < self.num_elements:
+            self.num_leaves *= 2
 
         # Initialize the data and lazy arrays
-        self.data = [self.identity] * (2 * self.n_leaves)
+        self.data = [self.identity] * (2 * self.num_leaves)
         # Lazy stores pending additive increments to elements; neutral is 0, not `identity`.
-        self.lazy = [add_neutral] * (2 * self.n_leaves)
+        self.lazy = [add_neutral] * (2 * self.num_leaves)
 
         # Build the tree
-        for i in range(self.n_elements):
-            self.data[self.n_leaves + i] = data[i]
-        for i in range(self.n_leaves - 1, 0, -1):
+        for i in range(self.num_elements):
+            self.data[self.num_leaves + i] = data[i]
+        for i in range(self.num_leaves - 1, 0, -1):
             self.data[i] = self.op(self.data[2 * i], self.data[2 * i + 1])
 
 
@@ -54,7 +54,7 @@ class TreeSegment:
         else:
             # Min/Max aggregator: aggregate shifts uniformly by val
             self.data[x] += val
-        if x < self.n_leaves:
+        if x < self.num_leaves:
             self.lazy[x] += val
 
 
@@ -109,7 +109,7 @@ class TreeSegment:
         """
         Update the range [l, r) by adding val.
         """
-        self._update(l, r, val, 1, 0, self.n_leaves)
+        self._update(l, r, val, 1, 0, self.num_leaves)
 
 
     # Query the aggregate value over interval [l, r)
@@ -117,7 +117,7 @@ class TreeSegment:
         """
         Query the aggregate value over interval [l, r).
         """
-        return self._query(l, r, 1, 0, self.n_leaves)
+        return self._query(l, r, 1, 0, self.num_leaves)
 
 
 
@@ -180,7 +180,7 @@ class MinMaxPfsumArray:
         """
         assert data
         self.block_arr = []
-        self.n_data = 0                      # total number of elements
+        self.num_data = 0                      # total number of elements
         self.block_prefix: List[int] = []       # prefix element count (len = #blocks)
 
         self.build(data)
@@ -192,12 +192,12 @@ class MinMaxPfsumArray:
         """
         self.block_arr.clear()
 
-        self.n_data: int = len(data)
-        self.block_size = max(0, int(math.sqrt(self.n_data))) + 2
+        self.num_data: int = len(data)
+        self.block_size = max(0, int(math.sqrt(self.num_data))) + 2
 
-        for i in range(0, self.n_data, self.block_size):    # note the step size
+        for i in range(0, self.num_data, self.block_size):    # note the step size
             self.block_arr.append(self.Block(data[i:i + self.block_size]))
-        self.n_block = len(self.block_arr)
+        self.num_block = len(self.block_arr)
 
         self._rebuild_indexing()
 
@@ -213,7 +213,7 @@ class MinMaxPfsumArray:
             self.block_prefix.append(cumid)
             cumid += b.size
 
-        self.n_data = cumid
+        self.num_data = cumid
 
 
     def _find_block(self, idx: int) -> Tuple[int, int]:
@@ -222,9 +222,9 @@ class MinMaxPfsumArray:
         Returns (block_index, inner_index).
         """
         assert self.block_arr, "No blocks present"
-        assert 0 <= idx < self.n_data, "Index out of bounds"
-        if idx > self.n_data:
-            idx = self.n_data
+        assert 0 <= idx < self.num_data, "Index out of bounds"
+        if idx > self.num_data:
+            idx = self.num_data
 
         # Retrieve bid as largest prefix <= idx
         # bid is the block index
@@ -242,7 +242,7 @@ class MinMaxPfsumArray:
         Return None.
         """
         # Support append at end without relying on _find_block assertion
-        if idx == self.n_data:
+        if idx == self.num_data:
             if not self.block_arr:
                 self.block_arr.append(self.Block([val]))
             else:
@@ -254,7 +254,7 @@ class MinMaxPfsumArray:
                     last.insert(last.size, val)
 
             # Update data structure
-            self.n_data += 1
+            self.num_data += 1
             self._rebuild_indexing()
             return
 
@@ -272,7 +272,7 @@ class MinMaxPfsumArray:
             self.block_arr[bid:bid + 1] = [left, right]
 
         # Update data structure
-        self.n_data += 1
+        self.num_data += 1
         self._rebuild_indexing()
 
 
@@ -307,7 +307,7 @@ class MinMaxPfsumArray:
                         self.block_arr[bid - 1:bid + 1] = [self.Block(merged)]
 
         # Update data structure
-        self.n_data -= 1
+        self.num_data -= 1
         self._rebuild_indexing()
 
 
@@ -400,7 +400,7 @@ class MinMaxPfsumArray:
         Retrieve the value at global index idx.
         Raises IndexError if idx is out of bounds.
         """
-        if idx < 0 or idx >= self.n_data:
+        if idx < 0 or idx >= self.num_data:
             raise IndexError("Index out of bounds")
 
         bid, iid = self._find_block(idx)
@@ -413,7 +413,7 @@ class MinMaxPfsumArray:
         Retrieve a contiguous data segment for half-open interval [l, r).
         Raises IndexError if the range is invalid or out of bounds.
         """
-        if l < 0 or r < 0 or l > r or r > self.n_data:
+        if l < 0 or r < 0 or l > r or r > self.num_data:
             raise IndexError("Invalid segment range")
 
         result: List[int] = []
@@ -440,13 +440,13 @@ class MinMaxPfsumArray:
         """
         Retrieve the entire data array
         """
-        return self.get_data_segment(0, self.n_data)
+        return self.get_data_segment(0, self.num_data)
 
 
 if __name__ == "__main__":
-    data = [3, -2, 5, -1, 4, -3, 2]
-    segment_manager = MinMaxPfsumArray(data)
-    print("Initial segment array:", data)
+    datalist = [3, -2, 5, -1, 4, -3, 2]
+    segment_manager = MinMaxPfsumArray(datalist)
+    print("Initial segment array:", datalist)
     print("Min prefix sum [2, 5):", segment_manager.query_min_prefix(2, 5))
     print("Max prefix sum [0, 7):", segment_manager.query_max_prefix(0, 7))
 

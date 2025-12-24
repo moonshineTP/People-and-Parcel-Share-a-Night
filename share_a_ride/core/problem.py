@@ -197,7 +197,7 @@ class ShareARideProblem:
         pair_id = 1
         for i in range(1, self.N + 1):
             pickup, drop = self.pserve(i)
-            lines.append(f"{pair_id} {pickup} P {drop}")
+            lines.append(f"{pair_id} {pickup + 1} P {drop + 1}")
             pair_id += 1
         for j in range(1, self.M + 1):
             pickup = self.lpick(j) + 1
