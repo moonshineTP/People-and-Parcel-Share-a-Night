@@ -2,6 +2,7 @@
 Main application shell for Share-a-Ride problem manager.
 Provides top-level navigation between main views.
 """
+
 from __future__ import annotations
 
 import tkinter as tk
@@ -9,6 +10,7 @@ from tkinter import ttk, messagebox
 
 from share_a_ride.app.dashboard import ShareARideDashboard
 from share_a_ride.app.visualizer import ShareARideSolutionVisualizer
+
 
 class ShareARideApp:
     """Main application shell with top-level navigation."""
@@ -23,14 +25,13 @@ class ShareARideApp:
         self._build_views()
         self.show_view("dashboard")
 
-
     def _build_header(self) -> None:
         # Build the application header with title and navigation buttons.
         header = ttk.Frame(self.root)
         header.pack(fill=tk.X)
 
-        title = ttk.Label(header, text="Share-a-Ride Problem Manager",
-            font=("Segoe UI", 30, "bold")
+        title = ttk.Label(
+            header, text="Share-a-Ride Problem Manager", font=("Segoe UI", 30, "bold")
         )
         title.pack(side=tk.LEFT, padx=16, pady=12)
 
@@ -42,9 +43,7 @@ class ShareARideApp:
             "Visualizer": lambda: self.show_view("visualizer"),
         }
         for label, action in buttons.items():
-            ttk.Button(nav, text=label, command=action) \
-                .pack(side=tk.LEFT, padx=4)
-
+            ttk.Button(nav, text=label, command=action).pack(side=tk.LEFT, padx=4)
 
     def _build_views(self) -> None:
         """
@@ -61,10 +60,9 @@ class ShareARideApp:
         visualizer = ShareARideSolutionVisualizer(container)
         self.views["visualizer"] = visualizer.frame
 
-
     def _make_placeholder(
-            self, parent: tk.Widget, title: str, subtitle: str = ""
-        ) -> ttk.Frame:
+        self, parent: tk.Widget, title: str, subtitle: str = ""
+    ) -> ttk.Frame:
         """
         Create a simple placeholder frame with a title and optional subtitle.
         """
@@ -82,7 +80,6 @@ class ShareARideApp:
 
         return frame
 
-
     def show_view(self, key: str) -> None:
         """
         Show the specified view by key, hiding others.
@@ -98,13 +95,11 @@ class ShareARideApp:
             return
         view.pack(fill=tk.BOTH, expand=True)
 
-
     def run(self) -> None:
         """
         Launch the main application loop.
         """
         self.root.mainloop()
-
 
 
 if __name__ == "__main__":
