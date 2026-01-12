@@ -51,7 +51,7 @@ class AlgoTag(Enum):
     - ITERATIVE: Solvers that iteratively improve the solution (using `iterations`).
     - NEARBASED: Solvers that constrain expansion in nearest neighbors (using `width`)
     - POPULATION: Solvers that maintain a population (using `swarm` instead of `partial`).
-    - PRUNE: Solvers that prune the search space to focus on promising areas (using `imcumbent`).
+    - PRUNE: Solvers that prune the search space to focus on promising areas (using `incumbent`).
     """
     DEFENSIVE = "defensive"
     EXPANSIVE = "expansive"
@@ -75,7 +75,7 @@ class SolverTags(Enum):
     BNB = [AlgoTag.PRUNE]
     EXHAUST = [AlgoTag.PRUNE]
     GREEDY = [AlgoTag.ITERATIVE, AlgoTag.EXPANSIVE]
-    HGS = [AlgoTag.POPULATION, AlgoTag.ITERATIVE]
+    HGS = [AlgoTag.POPULATION]
     MCTS = [AlgoTag.EXPANSIVE, AlgoTag.DEFENSIVE, AlgoTag.NEARBASED]
 
 
@@ -119,8 +119,10 @@ class SolverParams(Enum):
 
     # //// Define hyperparameter presets for each solver ////
     GREEDY = {
-        "scaling": {"iterations": 10000, "time_limit": 30.0},
+        "scaling": {"iterations": 10000, "time_limit": 60.0},
         "hyperparameters": {
+            "num_actions": 7,
+            "t_actions": 0.01,
             "destroy_proba": 0.53,
             "destroy_steps": 13,
             "destroy_t": 1.3,
@@ -130,9 +132,9 @@ class SolverParams(Enum):
         },
     }
     BEAM = {
-        "scaling": {"time_limit": 30.0},
+        "scaling": {"time_limit": 60.0},
         "hyperparameters": {
-            "n_partials": 20,
+            "n_partials": 80,
             "r_intra": 0.55,
             "r_inter": 0.75,
             "f_intra": 0.05,
@@ -140,64 +142,63 @@ class SolverParams(Enum):
         },
     }
     ASTAR = {
-        "scaling": {"time_limit": 30.0},
+        "scaling": {"time_limit": 60.0},
         "hyperparameters": {
-            "width": 2,
-            "eps": 0.27,
-            "cutoff_depth": 3,
-            "cutoff_size": 1000,
-            "cutoff_ratio": 0.39,
+            "width": 4,
+            "eps": 0.285,
+            "cutoff_depth": 6,
+            "cutoff_size": 1200,
+            "cutoff_ratio": 0.285,
         },
     }
     MCTS = {
-        "scaling": {"time_limit": 30.0},
+        "scaling": {"time_limit": 60.0},
         "hyperparameters": {
-            "width": 3,
-            "uct_c": 0.416,
-            "cutoff_depth": 14,
-            "cutoff_depth_inc": 3,
-            "cutoff_iter": 13334,
-            "reward_pow": 2.4,
+            "width": 2,
+            "uct_c": 0.24,
+            "cutoff_depth": 8,
+            "cutoff_depth_inc": 1,
+            "cutoff_iter": 400,
+            "reward_pow": 1.69,
         },
     }
     ACO = {
-        "scaling": {"iterations": 10, "time_limit": 30.0},
+        "scaling": {"iterations": 10, "time_limit": 60.0},
         "hyperparameters": {
             "n_partials": 40,
             "n_cutoff": 10,
             "width": 4,
-            "q_prob": 0.75,
-            "alpha": 1.2,
-            "beta": 1.4,
-            "omega": 4,
-            "phi": 0.5,
-            "chi": 1.5,
-            "gamma": 0.4,
-            "kappa": 2.0,
-            "sigma": 10,
-            "rho": 0.55,
+            "q_prob": 0.72,
+            "alpha": 1.36,
+            "beta": 1.38,
+            "omega": 3,
+            "phi": 0.43,
+            "chi": 1.77,
+            "gamma": 0.40,
+            "kappa": 2.34,
+            "sigma": 12,
+            "rho": 0.62,
         },
     }
     ALNS = {
-        "scaling": {"time_limit": 30.0},
+        "scaling": {"time_limit": 60.0},
         "hyperparameters": {
-            "scores": [10, 4, 1, 0],
             "decay": 0.8,
         },
     }
     HGS = {
-        "scaling": {"iterations": 20, "time_limit": 30.0},
+        "scaling": {"time_limit": 60.0},
         "hyperparameters": {
-            "n_partials": 50,
+            "n_partials": 40,
         },
     }
     BNB = {
-        "scaling": {"time_limit": 30.0},
+        "scaling": {"time_limit": 60.0},
         "hyperparameters": {
         },
     }
     EXHAUST = {
-        "scaling": {"time_limit": 30.0},
+        "scaling": {"time_limit": 60.0},
         "hyperparameters": {
         },
     }
@@ -257,11 +258,11 @@ class SolverParams(Enum):
     # ================ Interval scaling ================
     @staticmethod
     def interval(
-            val: Union[int, float], c: float = 1.5
+            val: Union[int, float], c: float = 2
         ) -> Union[Tuple[int, int], Tuple[float, float]]:
         """
         Compute hyperparameters interval for tuning. Scale the base hyperparameter
-        defined above by from 1/c to c, while keeping integer parameters as integers.
+        defined above by from 1 / c to c, while keeping integer parameters as integers.
         """
         if isinstance(val, int):
             low = int(val / c)
@@ -288,7 +289,7 @@ class SolverParams(Enum):
             itvl = SolverParams.interval(val)
 
             # Clamp probabilities
-            if "prob" in key:
+            if "prob" in key or "decay" in key:
                 itvl = (max(0.0, itvl[0]), min(1.0, itvl[1]))
             ranges[key] = itvl
 

@@ -40,6 +40,7 @@ def attempt_dataset(
         note: str = "",
         seed: Optional[int] = None,
         verbose: bool = False,
+        incumbent: bool = False,
         **solver_kwargs
     ) -> Tuple[Dict[str, Optional[Solution]], Dict[str, float]]:
     """
@@ -84,7 +85,7 @@ def attempt_dataset(
         sol, gap = try_instance(
             dataset=dataset,
             inst_name=inst_name,
-            instance=instance,
+            problem=instance,
             solver_name=solver_name,
             solver_mode=solver_mode,
             note=note,
@@ -123,12 +124,13 @@ def attempt_dataset(
 def try_instance(
         dataset: Dataset,
         inst_name: str,
-        instance: ShareARideProblem,
+        problem: ShareARideProblem,
         solver_name: SolverName,
         solver_mode: SolverMode,
         note: str = "",
         seed: Optional[int] = None,
         verbose: bool = False,
+        incumbent: bool = False,
         **solver_kwargs
     ) -> Tuple[Optional[Solution], Optional[float]]:
     """
@@ -188,6 +190,8 @@ def try_instance(
         print(f"Attempting instance: {inst_name}")
         if best_cost:
             print(f"Best known cost: {best_cost}")
+        print("-------------------------------")
+        print()
 
 
     # //// Solve the instance
@@ -207,12 +211,22 @@ def try_instance(
 
         # Run the solver
         solver = Solver(solver_name, solver_mode)
-        sol, info = solver.run(
-            problem=instance,
-            verbose=verbose,
-            seed=seed,
-            **solver_kwargs
-        )
+
+        if incumbent:
+            sol, info = solver.run(
+                problem=problem,
+                verbose=verbose,
+                seed=seed,
+                incumbent=best_cost,
+                **solver_kwargs
+            )
+        else:
+            sol, info = solver.run(
+                problem=problem,
+                verbose=verbose,
+                seed=seed,
+                **solver_kwargs
+            )
 
         # Extract results
         status = info.get("status", 'error')
@@ -242,11 +256,20 @@ def try_instance(
                 cost, info_json, note
             ])
 
+        if verbose:
+            print("-------------------------------")
+            for _ in range(4):
+                print()
+
         return sol, gap_percentage
 
     except Exception as e:
         if verbose:
             print(f"Error solving instance: {e}")
+            print("-------------------------------")
+            for _ in range(4):
+                print()
+
         return None, None
 
 
@@ -255,16 +278,38 @@ def try_instance(
 # ================ Playground ================
 if __name__ == "__main__":
     solvernames = [
-        SolverName.ACO, SolverName.ALNS, SolverName.ASTAR,
-        SolverName.BEAM, SolverName.GREEDY, SolverName.MCTS
+        # SolverName.BEAM,
+        # SolverName.GREEDY,
+        # SolverName.HGS,
+        SolverName.ACO,
+        # SolverName.ASTAR,
+        # SolverName.MCTS,
+        # SolverName.ALNS,
     ]
-    dts = Dataset.CMT
+    dts = Dataset.LI
+
+    # for solver in solvernames:
+    #     attempt_dataset(
+    #         dataset=dts,
+    #         solver_name=solver,
+    #         solver_mode=SolverMode.INTENSIVE,
+    #         note="Testing executor",
+    #         verbose=True,
+    #         time_limit=600.0
+    #     )
+
+    instancenames = ['Li_32']
+    instances = parse_dataset(dts)
     for solver in solvernames:
-        attempt_dataset(
-            dataset=dts,
-            solver_name=solver,
-            solver_mode=SolverMode.HEAVY,
-            note="First full test run",
-            seed=42,
-            verbose=True,
-        )
+        for name in instancenames:
+            try_instance(
+                dataset=dts,
+                inst_name=name,
+                problem=instances[name],
+                solver_name=solver,
+                solver_mode=SolverMode.INTENSIVE,
+                note="",
+                verbose=True,
+                time_limit=1000,
+            )
+

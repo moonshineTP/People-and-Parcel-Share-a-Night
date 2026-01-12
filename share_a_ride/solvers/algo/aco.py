@@ -14,7 +14,7 @@ from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.core.solution import PartialSolution, PartialSolutionSwarm, Solution
 from share_a_ride.solvers.algo.greedy import greedy_solver, iterative_greedy_solver
 from share_a_ride.solvers.algo.utils import enumerate_actions_greedily, apply_general_action, Action
-from share_a_ride.solvers.operator.swap import intra_swap_operator
+from share_a_ride.solvers.operator.relocate import relocate_operator
 from share_a_ride.solvers.utils.weighter import weighted, action_weight
 from share_a_ride.solvers.utils.sampler import sample_from_weight
 
@@ -33,13 +33,9 @@ FinalizePolicy = Callable[Concatenate[PartialSolution, Params], Optional[Solutio
 # ================ ACO Policies Implementation ================
 def _default_value_function(
         partial: PartialSolution,
-        perturbed_samples: int = 8,     # perturb
+        perturbed_samples: int = 6,     # perturb
         seed: Optional[int] = None,     # pylint: disable=unused-argument
     ) -> float:
-    """
-    Default value function for tracking potential partial solutions.
-    This needs to be lightweight because it's evaluated frequently.
-    """
     _, stats = _, stats = iterative_greedy_solver(
         partial.problem, partial, iterations=perturbed_samples, time_limit=0.1, seed=seed
     )
@@ -49,14 +45,13 @@ def _default_value_function(
 
 def _default_finalize_policy(
         partial: PartialSolution,
-        iterations: int = 1000,
         seed: Optional[int] = None,
+        aggressive: bool = False,
     ) -> Optional[Solution]:
-
     sol, _info = iterative_greedy_solver(
         partial.problem,
         partial,
-        iterations=iterations,
+        iterations=3000,
         time_limit=3.0,
         seed=seed,
         verbose=False
@@ -65,14 +60,16 @@ def _default_finalize_policy(
     if not sol:
         return None
 
-    raw_sol = PartialSolution.from_solution(sol)
-    refined_sol, _modified, _cnt = intra_swap_operator(
-        partial=raw_sol,
-        seed=seed,
-        verbose=False
-    )
+    if aggressive:
+        raw_sol = PartialSolution.from_solution(sol)
+        refined_sol, _modified, _cnt = relocate_operator(
+            partial=raw_sol,
+            seed=seed,
+            verbose=False
+        )
+        sol = refined_sol.to_solution()
 
-    return refined_sol.to_solution()
+    return sol
 
 
 
@@ -287,8 +284,8 @@ class DesirabilityMatrix:
     exponential remaining load ratio.
 
     The formula is:
-        eta_ij = saving_ij^phi * (1/d_ij)^chi * (2 - is_ppick))
-                * (1 + gamma*(Q / max(Q)) / Q)^kappa
+        eta_ij = saving_ij^phi * (1/d_ij)^chi * (2 - is_ppick)
+                * ( 1 + gamma * ((Q - new_cap) / Q))^kappa
     with:
         - saving_ij = max(0, D[i][0] + D[0][j] - D[i][j])
         - is_ppick = 1 if node j is a passenger pickup, else 0
@@ -495,8 +492,6 @@ class Ant:
 
         Uses NearestExpansionCache to prioritize cached actions before
         falling back to enumerate_actions_greedily for remaining width.
-
-        Unit: (d^(phi-chi))^alpha*d^(-1)^beta = d^(alpha*(phi-chi) - beta)
         """
         partial: PartialSolution
         cache: "NearestExpansionCache"
@@ -612,7 +607,7 @@ class Ant:
             Compute log of transition probability component for edge (from_node, to_node).
             Uses log-space to avoid numerical underflow.
             
-            log(p) = alpha * log(tau) + beta * log(eta)
+            log(p) = alpha * log(tau) + beta * log(eta) + omega * log(fit)
             """
             # Extract from_node and to_node
             route_idx = action[0]
@@ -938,7 +933,7 @@ class SwarmTracker:
 
         # Fitness fields (value_function now returns float fitness values)
         self.frontier_fitness: List[float] = [
-            value_function(partial)
+            value_function(partial.copy())
             for partial in self.frontier_swarm
         ]
 
@@ -960,7 +955,7 @@ class SwarmTracker:
 
         for idx, partial in enumerate(source.partial_lists):
             fitness = self.value_function(
-                partial, seed=self.seed + 10 * idx if self.seed else None
+                partial.copy(), seed=self.seed + 10 * idx if self.seed else None
             )
 
             # Compare to the current frontier partial (lower fitness is better)
@@ -1139,11 +1134,33 @@ def _run_aco(
     # Run an initial greedy solver to estimate initial cost for pheromone initialization
     if verbose:
         print("[ACO] [Init] Estimating costs from initial greedy solver...")
-    init_sol, _info = greedy_solver(problem, None, False)
-    assert init_sol, "[ACO] [Init] Initial greedy solver failed to find a solution."
+    init_sol, _info = iterative_greedy_solver(
+        problem=problem,
+        iterations=1000,
+        time_limit=2.5,
+        seed=10*seed if seed else None,
+        verbose=False,
+    )
+
+    # Relocate operator refinements
+    if verbose:
+        print(f"[MCTS] Applying relocate operator to initial solution...")
+    init_partial = PartialSolution.from_solution(init_sol)
+    refined_partial, _, _ = relocate_operator(
+        init_partial,
+        mode='first',
+        seed=None if seed is None else 4 * seed + 123
+    )
+    init_sol = refined_partial.to_solution(); assert init_sol
     init_cost = init_sol.max_cost
     if verbose:
-        print(f"[ACO] [Init] Greedy solution cost: {init_cost:.3f}")
+        print(
+            f"[MCTS] After relocate, final solution cost: {init_cost}"
+        )
+    if verbose:
+        print(f"[ACO] [Init] Initial solution cost: {init_cost:.3f}")
+    assert init_sol, "[ACO] [Init] Initial solver failed to find a solution."
+    
 
 
     # Initialize caches for nearest expansion
@@ -1208,6 +1225,8 @@ def _run_aco(
         # Update the trackers with the new swarm
         if verbose:
             print(f"[ACO] [Run {run + 1}/{iterations}] Updating swarm tracker")
+            print()
+
         tracker.update(result_swarm)
         lfunc.update(result_swarm)
 
@@ -1216,15 +1235,23 @@ def _run_aco(
     # Finalize the best partials into complete solutions
     if verbose:
         print(f"[ACO] Finalizing top {n_cutoff} partial into solutions...")
+        print()
     tracker.finalize(n_cutoff)
+
+    # Inject the best solution found by ants (if better)
+    if lfunc.best_solution:
+        tracker.finals.append(lfunc.best_solution)
+        tracker.finals.sort(key=lambda s: s.max_cost)
+        if n_cutoff and len(tracker.finals) > n_cutoff:
+             tracker.finals = tracker.finals[:n_cutoff]
 
     # Summary info
     elapsed = time.time() - start
     best_sol = tracker.opt(cutoff=n_cutoff)
-    best_cost = best_sol.max_cost if best_sol else float("inf")
+    init_cost = best_sol.max_cost if best_sol else float("inf")
     stats: Dict[str, Any] = {
         "iterations": iterations_completed,
-        "best_cost": best_cost,
+        "best_cost": init_cost,
         "elitists_count": tracker.num_partials,
         "time": elapsed,
         "status": status,
@@ -1251,23 +1278,23 @@ def aco_enumerator(
 
     # Run parameters
     n_partials: int = 50,
-    n_cutoff: int = 20,
+    n_cutoff: int = 10,
     n_return: int = 5,
     iterations: int = 10,
     depth: Optional[int] = None,
 
     # Tuning hyperparameters
-    q_prob: float = 0.75,
-    alpha: float = 1.2,
-    beta: float = 1.4,
-    omega: float = 4,
-    phi: float = 0.5,
-    chi: float = 1.5,
-    gamma: float = 0.4,
-    kappa: float = 2.0,
-    sigma: int = 10,
-    rho: float = 0.55,
-    width: int = 8,
+    q_prob: float = 0.71,
+    alpha: float = 1.36,
+    beta: float = 1.38,
+    omega: float = 3,
+    phi: float = 0.43,
+    chi: float = 1.77,
+    gamma: float = 0.40,
+    kappa: float = 2.34,
+    sigma: int = 12,
+    rho: float = 0.62,
+    width: int = 4,
 
     # Policies
     value_function: ValueFunction = _default_value_function,
@@ -1398,23 +1425,23 @@ def aco_solver(
     swarm: Optional[PartialSolutionSwarm] = None,
 
     # Run parameters
-    n_partials: int = 20,
+    n_partials: int = 50,
     n_cutoff: int = 10,
-    iterations: int = 10,
+    iterations: int = 40,
     depth: Optional[int] = None,
 
     # Hyperparameters
-    q_prob: float = 0.75,
-    alpha: float = 1.2,
-    beta: float = 1.4,
-    omega: float = 4,
-    phi: float = 0.5,
-    chi: float = 1.5,
-    gamma: float = 0.4,
-    kappa: float = 2.0,
-    sigma: int = 10,
-    rho: float = 0.55,
-    width: int = 5,
+    q_prob: float = 0.72,
+    alpha: float = 1.36,
+    beta: float = 1.38,
+    omega: float = 3,
+    phi: float = 0.43,
+    chi: float = 1.77,
+    gamma: float = 0.40,
+    kappa: float = 2.34,
+    sigma: int = 12,
+    rho: float = 0.62,
+    width: int = 4,
 
     # Policies
     value_function: ValueFunction = _default_value_function,
@@ -1540,20 +1567,6 @@ if __name__ == "__main__":
 
     _, _ = aco_solver(
         problem=test_problem,
-        n_cutoff=10,
-        iterations=10,
-        n_partials=100,
-        width=8,
-        q_prob=0.75,
-        alpha=1.25,
-        beta=1.5,
-        omega=4,
-        phi=0.4,
-        chi=1.2,
-        gamma=0.4,
-        kappa=2.0,
-        sigma=6,
-        rho=0.5,
         time_limit=60.0,
         seed=120,
         verbose=True,

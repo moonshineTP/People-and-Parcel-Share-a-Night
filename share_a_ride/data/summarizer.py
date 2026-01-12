@@ -24,6 +24,7 @@ from typing import Dict, Any, List, Optional
 
 from share_a_ride.data.router import path_router
 from share_a_ride.data.classes import SCOREBOARD_COLUMNS, Dataset
+from share_a_ride.data.parser import parse_dataset
 
 
 
@@ -44,13 +45,11 @@ def summarize_dataset(dataset: Dataset, verbose: bool = False) -> Dict[str, Any]
     """
     # Get paths
     dataset_name = dataset.value.name
-    dataset_path = path_router(dataset_name, "readall")
     attempts_file = path_router(dataset_name, "record")
     scoreboard_file = path_router(dataset_name, "summarize")
 
     # Get all instance names from the dataset folder
-    instance_files = [f for f in os.listdir(dataset_path) if f.endswith('.sarp')]
-    instances = [os.path.splitext(f)[0] for f in instance_files]
+    instances = parse_dataset(dataset)
     n_instances = len(instances)
 
     if verbose:
@@ -69,10 +68,19 @@ def summarize_dataset(dataset: Dataset, verbose: bool = False) -> Dict[str, Any]
                 # Normalize instance name by removing extension if present
                 if inst.endswith('.sarp'):
                     inst = os.path.splitext(inst)[0]
-                
+
                 if inst not in attempts_by_instance:
                     attempts_by_instance[inst] = []
                 attempts_by_instance[inst].append(row)
+    
+    if verbose:
+        print(f"Total instances with attempts: {len(attempts_by_instance)}/{n_instances}\n")
+        print(
+            f"Total attempts recorded: "
+            f"{sum(len(atts) for atts in attempts_by_instance.values())}\n"
+        )
+        print(f"{'='*40}\n")
+
 
 
     # //// Read scoreboard file
@@ -157,7 +165,8 @@ def summarize_dataset(dataset: Dataset, verbose: bool = False) -> Dict[str, Any]
             if summary:     # Only print if there is a summary
                 print(
                     f"  - {inst}: {summary['successful_attempts']}/{summary['num_attempts']}" \
-                    f" successful, best cost: {summary['best_cost']}, solver: {summary['best_solver']}"
+                    f" successful, best cost: {summary['best_cost']}, " 
+                    f"solver: {summary['best_solver']}"
                 )
         print(f"{'='*60}\n")
 
@@ -199,15 +208,15 @@ def summarize_per_instance(
 
     # //// Calculate summary statistics
     num_attempts = len(instance_attempts)
-    successful_attempts = sum(1 for att in instance_attempts if att['status'] == 'done')
+    successful_attempts = sum(1 for att in instance_attempts if att['status'] != 'error')
 
     # //// Iterating to find best attempt
     best_attempt = None
     best_cost = 10**18
     for attempt in instance_attempts:
-        if attempt['status'] == 'done' and attempt['cost']:
+        if attempt['status'] != 'error' and attempt['cost']:
             try:
-                cost = float(attempt['cost'])
+                cost = int(attempt['cost'])
                 if cost < best_cost:
                     best_cost = cost
                     best_attempt = attempt
@@ -229,20 +238,10 @@ def summarize_per_instance(
             'best_solver_args'          : None,
             'best_solver_hyperparams'   : None,
             'best_time_taken'           : None,
-            'cost_gap'                  : None,
-            'pct_gap'                   : None,
             'note'                      : None
         }
 
     else:                       # There is a best attempt
-        # Calculate gap over previous best
-        cost_gap = None
-        pct_gap = None
-        if previous_best_cost is not None:
-            cost_gap = previous_best_cost - best_cost
-            pct_gap = round((cost_gap / previous_best_cost) * 100, 2)
-        improved = cost_gap and cost_gap > 1e-6
-
         # Build args dict
         args_dict = {}
         if best_attempt['seed']:
@@ -262,9 +261,6 @@ def summarize_per_instance(
             'best_solver_args'          : str(args_dict),
             'best_solver_hyperparams'   : best_attempt['hyperparams'],
             'best_time_taken'           : best_attempt['elapsed_time'],
-            'cost_gap'                  : cost_gap,
-            'pct_gap'                   : pct_gap,
-            'note'                      : 'improved' if improved else None
         }
 
 
@@ -274,12 +270,7 @@ def summarize_per_instance(
         print(  f"Instance summary for {inst_name}:")
         print(  f"  Attempts: {num_attempts} ({successful_attempts} successful)")
         print(  f"  Best cost: {summary['best_cost']}")
-        if summary['cost_gap']:
-            print(
-                f"  Improvement found:\n" \
-                f"    - Cost decreased: {summary['cost_gap']}\n" \
-                f"    - Gap: {summary['pct_gap']} %\n"
-            )
+        print(  f"  Best solver: {summary['best_solver']}")
         print()
 
 
@@ -290,4 +281,4 @@ def summarize_per_instance(
 
 # ================= Playground ==================
 if __name__ == "__main__":
-    summarize_dataset(Dataset.CMT, verbose=True)
+    summarize_dataset(Dataset.LI, verbose=True)

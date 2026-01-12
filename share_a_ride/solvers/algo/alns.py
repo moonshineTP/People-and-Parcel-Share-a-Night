@@ -19,10 +19,10 @@ except ImportError:
     from alns.stop import MaxRuntime
 
 from share_a_ride.core.problem import ShareARideProblem
-from share_a_ride.core.solution import PartialSolution, Solution
+from share_a_ride.core.solution import PartialSolution, Solution, PartialSolutionSwarm
 from share_a_ride.solvers.algo.greedy import iterative_greedy_solver
-from share_a_ride.solvers.algo.astar import astar_solver
-from share_a_ride.solvers.algo.mcts import mcts_solver
+from share_a_ride.solvers.algo.beam import beam_solver
+from share_a_ride.solvers.algo.greedy import iterative_greedy_solver
 from share_a_ride.solvers.operator.destroy import destroy_operator
 
 
@@ -116,9 +116,12 @@ def _repair_1(
     working = state.copy()
     partial = working.partial
 
-    repaired_sol, _info = astar_solver(
+    repaired_sol, _info = beam_solver(
         partial.problem,
-        partial,
+        PartialSolutionSwarm([partial]),
+        r_intra=0.95,
+        f_intra=0.1,
+        r_inter=0.99,
         seed=int(rng.integers(0, 1000000))
     )
     assert repaired_sol
@@ -134,9 +137,11 @@ def _repair_2(
     working = state.copy()
     partial = working.partial
 
-    repaired_sol, _info = mcts_solver(
+    repaired_sol, _info = iterative_greedy_solver(
         partial.problem,
         partial,
+        iterations=3000,
+        time_limit=3.0,
         seed=int(rng.integers(0, 1000000))
     )
     assert repaired_sol
@@ -173,7 +178,7 @@ def alns_solver(        # pylint: disable=W0102
 
         sol, solver_stats = iterative_greedy_solver(
             problem,
-            iterations=1000,
+            iterations=3000,
             time_limit=3.0,
             seed=seed,
         )
@@ -202,7 +207,7 @@ def alns_solver(        # pylint: disable=W0102
     # Configure alns components
     select = RouletteWheel(scores, decay=decay, num_destroy=3, num_repair=2)
     accept = HillClimbing()
-    stop = MaxRuntime(time_limit * 0.95)  # Slightly less to allow wrap-up
+    stop = MaxRuntime(min(time_limit * 0.9, time_limit - 10))
 
 
     # ///////// Run ALNS ////////
@@ -257,7 +262,7 @@ if __name__ == "__main__":
 
     solution, info = alns_solver(
         test_problem,
-        time_limit=600.0,
+        time_limit=60,
         seed=42,
         verbose=True,
     )

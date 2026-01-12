@@ -1,5 +1,9 @@
 """
 Monte Carlo Tree Search solver for Share-a-Ride.
+Implements MCTS with customizable value, selection, simulation, and defense policies.
+
+There is a note: the main score used in MCTS is value (unnormalized) and reward (normalized [0, 1]).
+Value map cost to a higher-better scalar, while reward is value normalized for UCT calculations.
 """
 import heapq
 import math
@@ -16,6 +20,7 @@ from share_a_ride.solvers.algo.greedy import greedy_solver, iterative_greedy_sol
 from share_a_ride.solvers.algo.utils import (
     Action, balanced_scorer, enumerate_actions_greedily, apply_general_action
 )
+from share_a_ride.solvers.operator.relocate import relocate_operator
 from share_a_ride.solvers.utils.weighter import softmax_weighter, action_weight
 from share_a_ride.solvers.utils.sampler import sample_from_weight
 
@@ -45,7 +50,7 @@ DefensePolicy = Callable[
 # ================ Component functions ================
 def _default_vfunc(
         partial: PartialSolution,
-        sample_size=8,
+        sample_size=6,
         w_std=0.15,
         seed: Optional[int] = None
     ) -> float:
@@ -69,28 +74,7 @@ def _default_selpolicy(
     if not actions:
         return None
 
-    # Reweight actions to prioritize balanced actions (first part of the list)
-    # The list is assumed to be sorted: [prioritized..., secondary...]
-    # We detect the boundary where incremental cost drops (start of secondary)
-    prioritized_max_weight = 0.0
-    found_secondary = False
-    adjusted_weights: List[float] = []
-
-    for idx, action in enumerate(actions):
-        weight = action_weight(action)
-
-        # Detect transition from prioritized to secondary
-        # This heuristic assumes enumerate_actions_greedily structure
-        if idx > 0 and actions[idx - 1][3] > action[3] and not found_secondary:
-            found_secondary = True
-            prioritized_max_weight = weight
-
-        if found_secondary:
-            weight += prioritized_max_weight
-
-        adjusted_weights.append(weight)
-
-    weights = softmax_weighter(adjusted_weights, t=t)
+    weights = softmax_weighter([action_weight(a) for a in actions], t=t)
     chosen_idx = sample_from_weight(rng, weights)
 
     return actions[chosen_idx]
@@ -105,9 +89,10 @@ def _default_simpolicy(
         partial.problem,
         partial=partial,
     )
-    seed= 107*seed + 108 if seed is not None else None
+    assert sim_solution is not None, "Greedy solver failed in simulation policy."
+    seed= 107 * seed + 108 if seed is not None else None
 
-    return partial if sim_solution is None else PartialSolution.from_solution(sim_solution)
+    return PartialSolution.from_solution(sim_solution)
 
 
 def _default_defpolicy(
@@ -116,15 +101,15 @@ def _default_defpolicy(
         seed: Optional[int] = None      # pylint: disable=unused-argument
     ) -> Optional[Solution]:
     """Default defense policy: beam search solver."""
-    beam_solution, _ = iterative_greedy_solver(
+    def_sol, _ = iterative_greedy_solver(
         partial.problem,
         partial=partial,
-        iterations=1000,
+        iterations=2000,
         time_limit=20.0,
         verbose=verbose,
     )
 
-    return beam_solution
+    return def_sol
 
 
 
@@ -146,6 +131,7 @@ class RewardFunction:
     min_value: float = float("inf")
     max_value: float = float("-inf")
 
+
     # Update statistics with new observed value
     def update(self, value: float) -> None:
         """Update the normalization statistics with a new observed ``value``."""
@@ -154,6 +140,7 @@ class RewardFunction:
         self.visits += 1
         self.min_value = min(self.min_value, value)
         self.max_value = max(self.max_value, value)
+
 
     # Map value to [0, 1] reward
     def reward_from_value(self, value: float, reward_pow: float = 1.0) -> float:
@@ -197,9 +184,11 @@ class MCTSNode:
     total_reward: float = 0.0  # Total accumulated reward from simulations
     untried_actions: List[Action] = field(default_factory=list)  # Actions yet to be tried
 
+
     # Initialize untried actions after node creation
     def __post_init__(self) -> None:
         self.untried_actions = enumerate_actions_greedily(self.partial, self.width)
+
 
     # Terminal check
     @property
@@ -208,6 +197,7 @@ class MCTSNode:
         Check if the node represents a complete solution.
         """
         return self.partial.is_completed()
+
 
     # Average reward calculation
     @property
@@ -220,6 +210,7 @@ class MCTSNode:
             return 0.0
         return self.total_reward / self.visits
 
+
     # Average cost calculation
     @property
     def average_cost(self) -> float:
@@ -231,6 +222,7 @@ class MCTSNode:
             return 0.0
         return self.total_cost / self.visits
 
+
     # UCT score calculation
     def uct_score(self, uct_c: float) -> float:
         """
@@ -238,7 +230,7 @@ class MCTSNode:
         UCT = normalized_reward + uct_c * sqrt(ln(parent_visits) / visits)
         """
         if self.visits == 0:
-            return float("inf")
+            return float("inf")     # Explore all unvisited nodes first
 
         exploit_term = self.average_reward
 
@@ -248,6 +240,7 @@ class MCTSNode:
         )
 
         return exploit_term + explore_term
+
 
     # Update from backpropagation
     def update(self, cost: int, reward: float) -> None:
@@ -392,6 +385,7 @@ def _run_mcts(
     value_function: ValueFunction,
     selection_policy: SelectionPolicy,
     simulation_policy: SimulationPolicy,
+    defense_policy: DefensePolicy,
 
     # Meta-parameters
     seed: Optional[int],
@@ -406,6 +400,7 @@ def _run_mcts(
     Return the MCTS tree root, best leaf partial, best solution found, and info dict.
     """
     start = time.time()
+    end = start + time_limit
     reward_function = RewardFunction()
 
     if seed is not None:
@@ -428,18 +423,14 @@ def _run_mcts(
     cutoff_cnt = 0
     status = "done"
     while True:
-        iterations += 1
         # Break conditions
-        if iterations >= iterations:
-            if verbose:
-                print(f"[MCTS] Reached max iterations: {iterations}")
-            break
-        if time.time() - start >= time_limit:
+        if time.time() >= end:
             status = "overtime"
             if verbose:
                 print(f"[MCTS] Reached time limit: {time_limit:.2f}s")
             break
 
+        iterations += 1
 
         # ================ Selection ================
         path = _select(root, uct_c)
@@ -454,7 +445,10 @@ def _run_mcts(
                 root = MCTSNode(leaf.partial, width=width)
                 reward_function = RewardFunction()
                 if verbose:
-                    print(f"[MCTS] Cutoff at abs_depth {abs_depth}, new root set.")
+                    print(
+                        f"[MCTS] Cutoff at iter {iterations}, " 
+                        f"abs_depth {abs_depth}, new root set."
+                    )
 
                 continue  # Restart iteration with new root
 
@@ -463,7 +457,10 @@ def _run_mcts(
             root = MCTSNode(leaf.partial, width=width)
             reward_function = RewardFunction()
             if verbose:
-                print(f"[MCTS] Cutoff at iteration {iterations}, new root set.")
+                print(
+                    f"[MCTS] Cutoff at iteration {iterations}, "
+                    f"depth {abs_depth}, new root set."
+                )
 
             continue  # Restart iteration with new root
 
@@ -485,6 +482,9 @@ def _run_mcts(
             working.partial.copy(), seed=12*seed if seed is not None else None
         )
         if rollout_result is None or not rollout_result.is_completed(): # Failed rollout
+            if verbose:
+                print(f"[MCTS] Rollout failed or incomplete at iteration {iterations}.")
+
             reward_function.update(float('-inf') )
             continue
 
@@ -518,12 +518,12 @@ def _run_mcts(
                 elapsed = time.time() - start
                 print(
                     f"[MCTS] [Iteration {iterations}] "
-                    f"best_rollout_cost: {best_solution_cost:.3f}, "
-                    f"value_range: {reward_function.min_value:.3f} "
+                    f"Cost: {best_solution_cost:.3f}, "
+                    f"Value range: {reward_function.min_value:.3f} "
                     f"- {reward_function.max_value:.3f}, "
-                    f"abs_depth={abs_depth}, "
-                    f"max_abs_depth={max_abs_depth}, "
-                    f"time={elapsed:.2f}s.",
+                    f"Depth: {abs_depth}, "
+                    f"Max depth: {max_abs_depth}, "
+                    f"Time: {elapsed:.2f}s.",
                 )
 
 
@@ -538,7 +538,8 @@ def _run_mcts(
     # Verbose output
     if verbose:
         print(
-            f"[MCTS] Iterations count={iterations}, Max absolute depth reached: {max_abs_depth}, "
+            f"[MCTS] Iterations count: {iterations}, "
+            f"Max absolute depth reached: {max_abs_depth}, "
             f"Time={stats['time']:.3f}s."
         )
         print(
@@ -548,6 +549,23 @@ def _run_mcts(
 
     if best_leaf is None:
         best_leaf = root.partial
+
+    # Defensive policy integration
+    if best_leaf is not None and best_leaf.is_pending():
+        if verbose:
+            print(f"[MCTS] Applying defense policy on best leaf...")
+        def_sol = defense_policy(
+            best_leaf, verbose=verbose, seed=24 * seed if seed is not None else None
+        )
+        if def_sol is not None:
+            cost = def_sol.max_cost
+            if best_solution is None or cost < best_solution_cost:
+                if verbose:
+                    print(f"[MCTS] Defense policy improved solution: {best_solution_cost:.3f} -> {cost:.3f}")
+                best_solution = def_sol
+                best_solution_cost = cost
+                stats["best_rollout_cost"] = best_solution_cost
+
 
     return root, best_leaf, best_solution, stats
 
@@ -561,20 +579,19 @@ def mcts_enumerator(
 
     # Numerical parameters
     n_return: int = 5,
-    iterations: int = 10000,
 
     # Numerical parameters
     width: Optional[int] = 3,
-    uct_c: float = 0.416,
-    cutoff_depth: int = 14,
-    cutoff_depth_inc: int = 3,
-    cutoff_iter: int = 13334,
-    reward_pow: float = 2.4,
-
+    uct_c: float = 0.58,
+    cutoff_depth: int = 9,
+    cutoff_depth_inc: int = 4,
+    cutoff_iter: int = 11300,
+    reward_pow: float = 1.69,
     # Function and policy parameters
     value_function: ValueFunction = _default_vfunc,
     selection_policy: SelectionPolicy = _default_selpolicy,
     simulation_policy: SimulationPolicy = _default_simpolicy,
+    defense_policy: DefensePolicy = _default_defpolicy,
 
     # Meta-parameters
     seed: Optional[int] = None,
@@ -595,6 +612,7 @@ def mcts_enumerator(
         value_function=value_function,
         selection_policy=selection_policy,
         simulation_policy=simulation_policy,
+        defense_policy=defense_policy,
         time_limit=time_limit,
         seed=seed,
         verbose=verbose,
@@ -618,11 +636,11 @@ def mcts_solver(
     partial: Optional[PartialSolution] = None,
 
     width: Optional[int] = 3,
-    uct_c: float = 0.416,
-    cutoff_depth: int = 14,
-    cutoff_depth_inc: int = 3,
-    cutoff_iter: int = 13334,
-    reward_pow: float = 2.4,
+    uct_c: float = 0.58,
+    cutoff_depth: int = 9,
+    cutoff_depth_inc: int = 4,
+    cutoff_iter: int = 11300,
+    reward_pow: float = 1.69,
     value_function: ValueFunction = _default_vfunc,
     selection_policy: SelectionPolicy = _default_selpolicy,
     simulation_policy: SimulationPolicy = _default_simpolicy,
@@ -650,6 +668,7 @@ def mcts_solver(
         value_function=value_function,
         selection_policy=selection_policy,
         simulation_policy=simulation_policy,
+        defense_policy=defense_policy,
         width=width,
         uct_c=uct_c,
         cutoff_depth=cutoff_depth,
@@ -660,14 +679,23 @@ def mcts_solver(
         time_limit=time_limit,
         verbose=verbose,
     )
+    assert sol
 
-    # Defensive policy: run the policy on the best leaf if no solution found
-    if sol is None:
-        alternate_sol = defense_policy(
-            best_leaf, verbose=verbose, seed= 24 * seed if seed is not None else None
+    # Relocate operator refinements
+    if verbose:
+        print(f"[MCTS] Applying relocate operator to final solution...")
+    best_partial = PartialSolution.from_solution(sol)
+    refined_partial, _, _ = relocate_operator(
+        best_partial,
+        mode='first',
+        seed=None if seed is None else 4 * seed + 123
+    )
+    sol = refined_partial.to_solution();  assert sol
+    best_cost = sol.max_cost
+    if verbose:
+        print(
+            f"[MCTS] After relocate, final solution cost: {best_cost}"
         )
-
-        sol = alternate_sol
 
     # Info population
     info["used_best_rollout"] = True
@@ -683,6 +711,8 @@ def mcts_solver(
                 f"after {info['iterations']} iterations "
                 f"in {info['time']:.2f}s."
             )
+            print("------------------------------")
+            print()
         else:
             print()
             print(
@@ -690,6 +720,7 @@ def mcts_solver(
                 f"{info['iterations']} iterations "
                 f"in {info['time']:.2f}s."
             )
+            print("------------------------------")
             print()
 
     return sol, info
@@ -703,12 +734,11 @@ if __name__ == "__main__":
 
     final_sol, final_info = mcts_solver(
         problem=test_problem,
-        width=3,
-        uct_c=0.35,
-        cutoff_iter=12000,
-        cutoff_depth=14,
-        cutoff_depth_inc=3,
-        reward_pow=1.6,
+        width=2,
+        cutoff_iter=10000,
+        cutoff_depth=10,
+        cutoff_depth_inc=2,
+        reward_pow=2.0,
         time_limit=60.0,
         seed=123,
         verbose=True,

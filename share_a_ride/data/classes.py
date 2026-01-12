@@ -76,7 +76,7 @@ class Dataset(Enum):
     HUST = DatasetInfo("Hust", Purpose.SANITY)
     EXACT = DatasetInfo("Exact", Purpose.SANITY)
     LI = DatasetInfo("Li", Purpose.BENCHMARK)
-    SOLOMON = DatasetInfo("Solomon", Purpose.BENCHMARK)
+    SOLOMON = DatasetInfo("Solomon", Purpose.TEST)
     PYVRP = DatasetInfo("Pyvrp", Purpose.BENCHMARK)
     GOLDEN = DatasetInfo("Golden", Purpose.BENCHMARK)
     CVRPLIB = DatasetInfo("Cvrplib", Purpose.TRAIN)

@@ -7,6 +7,7 @@ from typing import Any, List, Optional, Tuple, Dict, Callable, Concatenate, Para
 from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.core.solution import PartialSolution, Solution, PartialSolutionSwarm
 from share_a_ride.solvers.operator.swap import intra_swap_operator, inter_swap_operator
+from share_a_ride.solvers.operator.relocate import relocate_operator
 from share_a_ride.solvers.algo.utils import (
     balanced_scorer, enumerate_actions_greedily, apply_general_action
 )
@@ -46,7 +47,7 @@ def _default_defense_policy(
 def beam_enumerator(
         problem: ShareARideProblem,
         swarm: Optional[PartialSolutionSwarm] = None,
-        n_partials: int = 10,
+        n_partials: int = 20,
         n_return: int = 10,
         r_intra: float = 0.55,
         r_inter: float = 0.75,
@@ -255,13 +256,16 @@ def beam_enumerator(
                 print(
                     f"[BeamSearch] Depth {depth}. Max_cost range: "
                     f"{min(max_costs)} - {max(max_costs)}. "
-                    f"Avg max_cost: {sum(max_costs) / len(max_costs):.1f}"
+                    f"Average max cost: {sum(max_costs) / len(max_costs):.2f}. "
+                    f"Time elapsed: {time.time() - start:.2f}s."
                 )
 
 
     # Sort final beam and return best solution swarm.
     beam_sort(beam)
     beam = beam[:n_return]
+
+    # Info
     swarm = PartialSolutionSwarm(solutions=beam)
     search_info = {
         "iterations": iterations,
@@ -269,13 +273,13 @@ def beam_enumerator(
         "status": status,
     }
 
-    # Summary logging.
+    # Logging.
     if verbose:
         print()
         print(f"[BeamSearch] Completed. Final beam size {len(beam)}")
         print(f"[BeamSearch] Beam depth reached: {depth}")
-        print(f"[BeamSearch] Beam max_cost range: {swarm.min_cost} - {swarm.max_cost}")
-        print(f"[BeamSearch] Avg max_cost: {swarm.avg_cost}")
+        print(f"[BeamSearch] Beam cost range: {swarm.min_cost} - {swarm.max_cost}")
+        print(f"[BeamSearch] Average max cost: {swarm.avg_cost}")
         print(f"[BeamSearch] Time taken: {search_info['time']:.4f} seconds")
         print("------------------------------")
         print()
@@ -288,7 +292,8 @@ def beam_enumerator(
 def beam_solver(
         problem: ShareARideProblem,
         swarm: Optional[PartialSolutionSwarm] = None,
-        n_partials: int = 10,
+        n_partials: int = 20,
+        n_returns: int = 10,
         r_intra: float = 0.55,
         r_inter: float = 0.75,
         f_intra: float = 0.05,
@@ -321,6 +326,7 @@ def beam_solver(
         problem=problem,
         swarm=swarm,
         n_partials=n_partials,
+        n_return=n_returns,
         r_intra=r_intra,
         r_inter=r_inter,
         f_intra=f_intra,
@@ -330,6 +336,30 @@ def beam_solver(
         seed=seed,
         verbose=verbose
     )
+
+    # Apply defense policy to complete any pending partial solutions (e.g. if timed out).
+    # This ensures we have complete solutions before refinement.
+    for idx, partial in enumerate(solswarm.partial_lists):
+        if partial.is_pending():
+            completed_sol = defense_policy(
+                partial,
+                seed=seed,
+                verbose=False
+            )
+            if completed_sol is not None:
+                solswarm.partial_lists[idx] = PartialSolution.from_solution(completed_sol)
+
+    # Apply relocate operator to final beam for refinement.
+    for idx, partial in enumerate(solswarm.partial_lists):
+        refined_partial, _, _ = relocate_operator(
+            partial,
+            steps=None,
+            mode='first',
+            uplift=1,
+            seed=seed,
+            verbose=False
+        )
+        solswarm.partial_lists[idx] = refined_partial
 
     best_sol: Optional[Solution] = solswarm.opt()
     if best_sol is None:
@@ -344,6 +374,17 @@ def beam_solver(
             seed=seed,
             verbose=verbose
         )
+    
+    if verbose:
+        print()
+        if best_sol is not None:
+            print(
+                f"[BeamSolver] Best solution found with max_cost: {best_sol.max_cost}."
+            )
+        else:
+            print("[BeamSolver] No valid solution could be constructed.")
+        print("------------------------------")
+        print()
 
     return best_sol, msg
 

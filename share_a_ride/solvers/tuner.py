@@ -77,6 +77,7 @@ def tune_solver(
                 solution, _ = solver.run(
                     problem,
                     seed=(209 * pid + 31 * sid + 107),
+                    verbose=False,
                     **params
                 )
 
@@ -111,9 +112,9 @@ if __name__ == "__main__":
 
     tune_solver(
         problems=relay_problems,
-        solver_name=SolverName.ACO,
-        solver_mode=SolverMode.HEAVY,
+        solver_name=SolverName.BEAM,
+        solver_mode=SolverMode.STANDARD,
         n_trials=20,
         n_repeats=3,
-        study_name="mcts_tuning",
+        study_name="alns_tuning",
     )

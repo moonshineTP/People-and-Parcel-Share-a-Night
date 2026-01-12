@@ -1,12 +1,19 @@
-
 import sys
 import math
 import random
 import time
+import bisect
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union, Sequence
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, Sequence, Iterator, Set
 
-
+Request = Tuple[int, int, str]
+ActionNode = Tuple[int, int]
+ValueFunction = Callable
+FinalizePolicy = Callable
+Action = Tuple[int, str, int, int]
+RelocateRequest = Tuple[int, int, int, int, str]
+CostChange = Tuple[int, int, int]
+RelocateAction = Tuple[RelocateRequest, CostChange]
 
 
 class ShareARideProblem:
@@ -92,14 +99,11 @@ def route_cost_from_sequence(
  
     prev, total_cost = 0, 0
     for node in seq[1:]:
-        if verbose:
-            print(D[prev][node], end=" ")
-
         total_cost += D[prev][node]
         prev = node
 
-    if verbose:
-        print()
+
+       
 
     return total_cost
  
@@ -210,18 +214,19 @@ class Solution:
 
 
     def stdin_print(self, verbose: bool = False):
-         
         print(self.problem.K)
         for route, cost in zip(self.routes, self.route_costs):
             print(len(route))
             print(" ".join(map(str, route)))
-            if verbose:
-                print(f"// Route cost: {cost}")
-                print("------------------------------")
-                print()
+           
+           
 
-        if verbose:
-            print(f"//// Max route cost: {self.max_cost} ////")
+               
+               
+               
+
+
+           
 
 
 class PartialSolution:
@@ -386,12 +391,12 @@ class PartialSolution:
 
          
         if not len(self.routes) == len(self.states) == len(self.route_costs) == K:
-            if verbose:
-                print("Invalid: Mismatch in number of routes, states, or costs.")
+
+               
             return False
         if len(self.node_assignment) != len(prob.D):
-            if verbose:
-                print("Invalid: Mismatch in node assignment length.")
+
+               
             return False
 
          
@@ -414,13 +419,13 @@ class PartialSolution:
 
              
             if not route or route[0] != 0:
-                if verbose:
-                    print(f"Invalid: Route {t_idx} does not start with depot 0.")
+
+                   
                 return False
             is_ended = route_len > 1 and route[-1] == 0
             if state["ended"] != is_ended:
-                if verbose:
-                    print(f"Invalid: Ended state mismatch for taxi {t_idx}.")
+
+                   
                 return False
 
              
@@ -435,19 +440,14 @@ class PartialSolution:
             for idx, node in enumerate(route[1:], start=1):
                  
                 if not 0 <= node < prob.num_nodes:
-                    if verbose:
-                        print(f"Invalid: Node {node} out of range in route {t_idx}.")
+
+                       
                     return False
 
                  
                 if node != 0:
                     assigned = node_assignment_check[node]
                     if assigned not in (-1, t_idx):
-                        if verbose:
-                            print(
-                                f"Invalid: Node {node} assigned to an unintended route "
-                                f"{assigned} instead of {t_idx}."
-                            )
                         return False
 
                      
@@ -469,12 +469,6 @@ class PartialSolution:
                         next_node = route[idx+1]
                         drop_node = prob.pserve(pid)[1]
                         if next_node != drop_node:
-                            if verbose:
-                                print(
-                                    f"Invalid: Passenger {pid} pickup at node {node} "
-                                    f"not followed by drop at node {drop_node} "
-                                    f"in route {t_idx}."
-                                )
                             return False
 
                      
@@ -491,21 +485,11 @@ class PartialSolution:
 
                      
                     if lid in parcel_onboard:
-                        if verbose:
-                            print(
-                                f"Invalid: Parcel {lid} picked up multiple times "
-                                f"in route {t_idx}."
-                            )
                         return False
 
                      
                     load += prob.q[lid - 1]
                     if load > prob.Q[t_idx]:
-                        if verbose:
-                            print(
-                                f"Invalid: Taxi {t_idx} load {load} exceeds capacity "
-                                f"{prob.Q[t_idx]} after picking parcel {lid} in index {idx}."
-                            )
                         return False
 
                      
@@ -520,21 +504,11 @@ class PartialSolution:
 
                      
                     if lid not in parcel_onboard:
-                        if verbose:
-                            print(
-                                f"Invalid: Parcel {lid} dropped without being picked up "
-                                f"in route {t_idx}."
-                            )
                         return False
 
                      
                     load -= prob.q[lid - 1]
                     if load < 0:
-                        if verbose:
-                            print(
-                                f"Invalid: Taxi {t_idx} has negative load "
-                                f"after dropping parcel {lid}."
-                            )
                         return False
 
                      
@@ -544,49 +518,20 @@ class PartialSolution:
 
                 else:    
                     if idx != route_len - 1:
-                        if verbose:
-                            print(
-                                f"Invalid: Depot node in the middle of route {t_idx}."
-                            )
                         return False
                     if load != 0 or parcel_onboard:
-                        if verbose:
-                            print(
-                                f"Invalid: Taxi {t_idx} has load remaining "
-                                f"upon returning to depot."
-                            )
                         return False
                     if not is_ended:
-                        if verbose:
-                            print(
-                                f"Invalid: Taxi {t_idx} route does not end properly "
-                                f"after returning to depot."
-                            )
                         return False
 
                     total_actions += 1
 
              
             if state["parcels"] != parcel_onboard:
-                if verbose:
-                    print(
-                        f"Invalid: Parcel onboard state mismatch for taxi {t_idx}. "
-                        f"Expected {parcel_onboard}, got {state['parcels']}."
-                    )
                 return False
             if state["load"] != load:
-                if verbose:
-                    print(
-                        f"Invalid: Load state mismatch for taxi {t_idx}. "
-                        f"Expected {state['load']}, got {load}."
-                    )
                 return False
             if self.route_costs[t_idx] != cumulated_cost:
-                if verbose:
-                    print(
-                        f"Invalid: Cost state mismatch for taxi {t_idx}. "
-                        f"Expected {self.route_costs[t_idx]}, got {cumulated_cost}."
-                    )
                 return False
 
              
@@ -597,33 +542,28 @@ class PartialSolution:
          
          
         if expected_pass_serve != self.remaining_pass_serve:
-            if verbose:
-                print("Invalid: Remaining passenger serve set mismatch.")
+
+               
             return False
         if expected_parc_pick != self.remaining_parc_pick:
-            if verbose:
-                print("Invalid: Remaining parcel pick set mismatch.")
+
+               
             return False
         if expected_parc_drop != self.remaining_parc_drop:
-            if verbose:
-                print("Invalid: Remaining parcel drop set mismatch.")
+
+               
             return False
         if node_assignment_check != self.node_assignment:
-            if verbose:
-                print("Invalid: Node assignment mismatch.")
+
+               
             return False
 
          
         if self.max_cost != max_cost_check:
-            if verbose:
-                print("Invalid: Max cost mismatch.")
+
+               
             return False
         if self.num_actions != total_actions:
-            if verbose:
-                print(
-                    "Invalid: Total actions mismatch: "
-                    f"expected {self.num_actions}, got {total_actions}."
-                )
             return False
 
         return True
@@ -651,21 +591,15 @@ class PartialSolution:
             problem=self.problem,
             routes=[route.copy() for route in self.routes] if self.routes else None
         )
+           
+           
+
+               
+               
+               
 
 
-    def stdin_print(self, verbose: bool = False):
-         
-        print(self.problem.K)
-        for route, cost in zip(self.routes, self.route_costs):
-            print(len(route))
-            print(" ".join(map(str, route)))
-            if verbose:
-                print(f"// Route cost: {cost}")
-                print("------------------------------")
-                print()
-
-        if verbose:
-            print(f"//// Max route cost: {self.max_cost} ////")
+           
 
 
      
@@ -950,19 +884,11 @@ class PartialSolution:
         self.num_actions -= 1
 
 
-    def is_completed(self, verbose=False) -> bool:
-         
+    def is_completed(self, verbose=False) -> bool:  
         if self.num_actions != self.problem.num_actions:
-            if verbose:
-                print(
-                    f"Not completed: current partial actions {self.num_actions} "
-                    f"does not suffice total actions {self.problem.num_actions}."
-                )
             return False
 
-        if not all(state["ended"] for state in self.states):
-            if verbose:
-                print("Not completed: at least one route has not ended at depot.")
+        if not all(state["ended"] for state in self.states):  
             return False
 
         return True
@@ -971,11 +897,11 @@ class PartialSolution:
     def to_solution(self) -> Optional[Solution]:
          
         if not self.is_completed(verbose=True):
-            print("Warning: Solution is not complete, cannot convert.")
+           
             return None
 
         if not self.is_valid(verbose=True):
-            print("Warning: Solution is not valid, cannot convert.")
+           
             return None
 
         solution = Solution(
@@ -1068,9 +994,7 @@ def weighted(kind: str, inc: Union[int, float], pweight: float = 0.7) -> float:
     return inc + 1
 
 
-Action = Tuple[int, str, int, int]
 def action_weight(action: Action, pweight: float = 0.7) -> float:
-     
     return weighted(action[1], action[3], pweight)
 
 
@@ -1090,10 +1014,6 @@ def softmax_weighter(incs: Sequence[Union[int, float]], t: float) -> List[float]
 
     return weights
 
- 
-
-
-Action = Tuple[int, str, int, int]
 
 
 
@@ -1268,7 +1188,7 @@ def enumerate_actions_greedily(
     if not final_actions:
          
         if partial.num_actions < problem.num_expansions:
-            print("[Warning] No feasible actions found before closing depth")
+           
             raise RuntimeError("Premature routes not covering all nodes.")
 
          
@@ -1328,8 +1248,8 @@ def repair_one_route(
          
         actions = partial.possible_expand(route_idx)
         if not actions:
-            if verbose:
-                print(f"[Repair] Route {route_idx} has no feasible actions, return to depot.")
+
+               
             partial.apply_return(route_idx)
             added_actions += 1
             break
@@ -1344,11 +1264,11 @@ def repair_one_route(
         partial.apply_extend(route_idx, kind, node_idx, inc)
         added_actions += 1
 
-        if verbose:
-            print(f"[Repair] Route {route_idx} select action {actions[selected_idx]}")
 
-    if verbose:
-        print(f"[Repair] Route {route_idx} finished building, added {added_actions} actions.")
+           
+
+
+       
 
     return partial, added_actions
 
@@ -1397,29 +1317,8 @@ def repair_operator(
         total_added_actions += added_actions
         modified[r_idx] = True
 
-        if verbose:
-            print(f"[Repair]: Repairing route {r_idx} with up to {steps} steps.")
-
-
-     
-    if verbose:
-        print()
-        print("[Repair] Operator completed.")
-        print(f"Total routes repaired: {repair_count};")
-        print(f"Total actions added: {total_added_actions}.")
-        print("------------------------------")
-        print()
-
-    partial.stdin_print()
 
     return partial, modified, total_added_actions
-
- 
-
- 
- 
- 
-from typing import List, Tuple, Optional, Union
 
  
  
@@ -1461,8 +1360,8 @@ def destroy_one_route(
         actions_removed += 1
 
      
-    if verbose:
-        print(f"[Destroy] Route {route_idx}: removed {actions_removed} actions.")
+
+       
 
     return res_route, actions_removed
 
@@ -1532,17 +1431,7 @@ def destroy_operator(
             routes[idx] = reduced_route
             flags[idx] = True
             actions_removed += num_removed
-
-     
-    if verbose:
-        print()
-        print("[Destroy] Operation complete.")
-        print(
-            f"[Destroy] Destroyed {len(selected_ids)} routes, "
-            f"removed {actions_removed} nodes total."
-        )
-        print("------------------------------")
-        print()
+       
 
      
     new_partial = PartialSolution(problem=sol.problem, routes=routes)
@@ -1573,8 +1462,8 @@ def greedy_solver(
 
         actions = enumerate_actions_greedily(partial, 1)
         if not actions:
-            if verbose:
-                print("[Greedy] [Error] The partial has no feasible actions available.")
+
+               
 
             return None, {
                 "iterations": iterations,
@@ -1587,13 +1476,6 @@ def greedy_solver(
         action = actions[0]
         apply_general_action(partial, action)
 
-        if verbose:
-            taxi, kind, idx, _inc = action
-            print(
-                f"[Greedy] [Depth {partial.num_actions}] "
-                f"Taxi {taxi} extended route with action {kind} on passenger/parcel {idx}"
-            )
-
      
     sol = partial.to_solution()
     stats = {
@@ -1604,13 +1486,13 @@ def greedy_solver(
     }
 
      
-    if verbose:
-        print()
-        print("[Greedy] Completed.")
-        print(f"[Greedy] Solution max cost: {sol.max_cost if sol else 'N/A'}")
-        print(f"[Greedy] Time taken: {stats['time']:.4f} seconds")
-        print("------------------------------")
-        print()
+
+       
+       
+       
+       
+       
+       
 
     return sol, stats
 
@@ -1649,8 +1531,8 @@ def iterative_greedy_solver(
         return None, {"time": time.time() - start, "status": "error"}
     best_cost = best_sol.max_cost
 
-    if verbose:
-        print(f"[Iterative Greedy] [Iter 0] initial best cost: {best_cost}")
+
+       
 
 
      
@@ -1720,8 +1602,8 @@ def iterative_greedy_solver(
             improvements += 1
 
              
-            if verbose:
-                print(f"[Iterative Greedy] [Iter {it}] improved best to {best_cost}")
+
+               
 
      
     elapsed = time.time() - start
@@ -1735,143 +1617,10 @@ def iterative_greedy_solver(
         "time": elapsed,
         "status": status,
     }
-
-     
-    if verbose:
-        print()
-        print(f"[Iterative Greedy] Finished after {iterations_done} iterations.")
-        print(
-            f"[Iterative Greedy] Best solution max cost: "
-            f"{best_sol.max_cost if best_sol else 'N/A'}."
-        )
-        print(f"[Iterative Greedy] Time taken: {elapsed:.4f} seconds.")
-        print("------------------------------")
-        print()
+       
+       
 
     return best_sol, stats
-
-
- 
- 
- 
-import heapq
-from typing import List, Optional, Tuple, Dict
-
- 
-
- 
- 
-from typing import Callable, Union, Sequence, List, Tuple
- 
-import bisect
-
-
-class TreeSegment:
-     
-    def __init__(
-        self,
-        data: Sequence[Union[int, float]],
-        op: Callable[[Union[int, float], Union[int, float]], Union[int, float]],
-        identity: Union[int, float],
-        sum_like: bool = True,
-        add_neutral: Union[int, float] = 0,
-    ):
-
-        self.num_elements = len(data)
-        self.op = op
-        self.identity = identity
-
-         
-         
-        self.sum_like = sum_like
-
-         
-        self.num_leaves = 1
-        while self.num_leaves < self.num_elements:
-            self.num_leaves *= 2
-
-         
-        self.data = [self.identity] * (2 * self.num_leaves)
-         
-        self.lazy = [add_neutral] * (2 * self.num_leaves)
-
-         
-        for i in range(self.num_elements):
-            self.data[self.num_leaves + i] = data[i]
-        for i in range(self.num_leaves - 1, 0, -1):
-            self.data[i] = self.op(self.data[2 * i], self.data[2 * i + 1])
-
-
-     
-     
-    def _apply(self, x: int, val: Union[int, float], length: int):
-        if self.sum_like:
-             
-            self.data[x] += val * length
-        else:
-             
-            self.data[x] += val
-        if x < self.num_leaves:
-            self.lazy[x] += val
-
-
-     
-    def _push(self, x: int, length: int):
-        if self.lazy[x] != 0:
-            self._apply(2 * x, self.lazy[x], length // 2)
-            self._apply(2 * x + 1, self.lazy[x], length // 2)
-            self.lazy[x] = 0
-
-
-     
-    def _update(self, l: int, r: int, val: Union[int, float], x: int, lx: int, rx: int):
-         
-        if lx >= r or rx <= l:
-            return
-
-         
-        if lx >= l and rx <= r:
-            self._apply(x, val, rx - lx)
-            return
-        self._push(x, rx - lx)
-
-         
-        m = (lx + rx) // 2
-        self._update(l, r, val, 2 * x, lx, m)
-        self._update(l, r, val, 2 * x + 1, m, rx)
-        self.data[x] = self.op(self.data[2 * x], self.data[2 * x + 1])
-
-
-     
-    def _query(self, l: int, r: int, x: int, lx: int, rx: int) -> Union[int, float]:
-         
-        if lx >= r or rx <= l:
-            return self.identity
-
-         
-        if lx >= l and rx <= r:
-            return self.data[x]
-
-         
-        self._push(x, rx - lx)
-        m = (lx + rx) // 2
-        left = self._query(l, r, 2 * x, lx, m)
-        right = self._query(l, r, 2 * x + 1, m, rx)
-        return self.op(left, right)
-
-
-     
-     
-    def update(self, l: int, r: int, val: Union[int, float]):
-         
-        self._update(l, r, val, 1, 0, self.num_leaves)
-
-
-     
-    def query(self, l: int, r: int) -> Union[int, float]:
-         
-        return self._query(l, r, 1, 0, self.num_leaves)
-
 
 
 class MinMaxPfsumArray:
@@ -2140,24 +1889,570 @@ class MinMaxPfsumArray:
         return self.get_data_segment(0, self.num_data)
 
 
-Request = Tuple[int, int, str]
+
+def cost_decrement_relocate(
+        partial: PartialSolution,
+        rfidx: int,
+        rtidx: int,
+        pfidx: int,
+        qfidx: int,
+        ptidx: int,
+        qtidx: int
+    ) -> CostChange:
+    """
+    Compute the decrement in max_cost of relocating a full request (pickup and drop)
+    from one route to another at specified insertion indices, as Cost_before - Cost_after.
+    This assumes the pickup/drop indices are correct with some defensive assertions.
+
+    Parameters:
+    - partial: PartialSolution object representing the current solution.
+    - from_route_idx: Index of the route from which the request is relocated.
+    - to_route_idx: Index of the route to which the request is relocated.
+    - pfidx: Index of the pickup node in the from_route.
+    - qfidx: Index of the drop node in the from_route.
+    - ptidx: Index in the to_route where the pickup node will be inserted.
+    - qtidx: Index in the to_route where the drop node will be inserted.
+
+    Returns: A tuple containing:
+    - from_route_next_cost: Cost of the from_route after relocation.
+    - to_route_next_cost: Cost of the to_route after relocation.
+    - cost_decrement: Decrement in max_cost due to the relocation.
+    """
+    D = partial.problem.D       # pylint: disable=invalid-name
+    cur_cost = partial.max_cost
+
+    routef = partial.routes[rfidx]
+    routet = partial.routes[rtidx]
+    rfcost = partial.route_costs[rfidx]
+    rtcost = partial.route_costs[rtidx]
+    pf = routef[pfidx]
+    qf = routef[qfidx]
+
+    # Basic bound assertions
 
 
 
-ActionNode = Tuple[int, int]
-ValueFunction = Callable
-FinalizePolicy = Callable
+
+    # //// Cost change for from_route: remove both pickup and drop
+    pprev = routef[pfidx - 1]
+    pnext = routef[pfidx + 1]
+    qprev = routef[qfidx - 1]
+    qnext = routef[qfidx + 1]
+    cost_delta_f = 0
+
+    if pfidx + 1 == qfidx:      # Adjacent
+        cost_delta_f -= D[pprev][pf] + D[pf][qf] + D[qf][qnext]
+        cost_delta_f += D[pprev][qnext]
+    else:                       # Non-adjacent
+        cost_delta_f -= D[pprev][pf] + D[pf][pnext] + D[qprev][qf] + D[qf][qnext]
+        cost_delta_f += D[pprev][pnext] + D[qprev][qnext]
+
+    rfcost_after = rfcost + cost_delta_f
+
+
+    # ---------- Cost change for to_route: insert pickup then drop ----------
+    # Stitch neighbors for insertion (short, consistent names)
+    pprev_to = routet[ptidx - 1]
+    pnext_to = routet[ptidx]
+    qprev_to = routet[qtidx - 2]    # -2 because shift after pickup insertion
+    qnext_to = routet[qtidx - 1]    # -1 because shift after pickup insertion
+    cost_delta_t = 0
+
+    if qtidx == ptidx + 1:  # Adjacent insertion
+        cost_delta_t -= D[pprev_to][qnext_to]
+        cost_delta_t += D[pprev_to][pf] + D[pf][qf] + D[qf][qnext_to]
+    else:  # Non-adjacent insertion
+        cost_delta_t -= D[pprev_to][pnext_to] + D[qprev_to][qnext_to]
+        cost_delta_t += D[pprev_to][pf] + D[pf][pnext_to] + D[qprev_to][qf] + D[qf][qnext_to]
+
+    rtcost_after = rtcost + cost_delta_t
+
+
+    # //// Compute the next max cost
+    remain_costs = [
+        partial.route_costs[i]
+        for i in range(partial.problem.K) if i != rfidx and i != rtidx
+    ]
+    next_cost = max(rfcost_after, rtcost_after, *remain_costs)
+
+    return rfcost_after, rtcost_after, cur_cost - next_cost
+
+
+
+
+def relocate_from_to(
+        partial: PartialSolution,   # Partial solution object
+        route_from_idx: int,        # Donor route id
+        route_to_idx: int,          # Receiver route id
+        steps: int,                 # Number of steps to consider
+        mode: str,                  # Mode of operation
+        uplift: int = 1,            # Minimum improvement required
+        seed: Optional[int] = None, # Seed for reproducibility
+        verbose: bool = False       # Verbose output flag
+    ) -> Tuple[PartialSolution, List[bool], int]:
+    """
+    Attempt to relocate requests from one predefined vehicle route to another that
+    improves the solution as a helper to the main relocate_operator.
+
+    Parameters:
+    - partial: PartialSolution object representing the current solution.
+    - from_route_idx: Index of the route from which to relocate requests.
+    - to_route_idx: Index of the route to which to relocate requests.
+    - steps: Number of steps to consider
+    - mode: Mode of operation
+    - uplift: Integer controlling the extent of improvement required.
+    - seed: Random seed for stochastic modes.
+    - verbose: If True, print detailed logs.
+    """
+    # RNG for stochastic behavior (if used later)
+    rng = random.Random(seed)
+
+    # Instance object data
+    prob = partial.problem
+    current_par = partial.copy()
+
+    # Route data
+    route_from = current_par.routes[route_from_idx]
+    route_to = current_par.routes[route_to_idx]
+    n_from = len(route_from)
+    n_to = len(route_to)
+
+    # Early exit if donor route too short
+    if n_from < 5:
+        return partial, [False] * prob.K, 0    # No requests to relocate
+
+
+    # //// Build data structures
+    def build_ds(route: List[int], n: int):
+        load_deltas = [0] * n
+        for i, node in enumerate(route):
+            if prob.is_lpick(node):
+                jid = prob.rev_lpick(node)
+                dq = prob.q[jid - 1]
+            elif prob.is_ldrop(node):
+                jid = prob.rev_ldrop(node)
+                dq = -prob.q[jid - 1]
+            else:
+                dq = 0
+
+            load_deltas[i] = dq
+
+        load_delta_manager = MinMaxPfsumArray(load_deltas)
+
+        return load_delta_manager
+
+    # Build load delta managers
+    load_delta_from_manager = build_ds(route_from, n_from)
+    load_delta_to_manager = build_ds(route_to, n_to)
+
+    # Capacity of routes
+    cap_from = prob.Q[route_from_idx]
+    cap_to = prob.Q[route_to_idx]
+
+
+    # //// Checker helpers
+    def check_consecutive(req: RelocateRequest) -> bool:
+        """
+        Ensure that pickup and drop indices are consecutive for 'serveP' requests.
+        """
+        pfidx, qfidx, ptidx, qtidx, kind = req
+
+        if kind == "serveL":
+            return True
+
+
+        return qtidx == ptidx + 1
+
+
+    def check_load(req: RelocateRequest) -> bool:
+        """
+        Ensure load stays within [0,cap] after relocating a full request
+        (pfidx, qfidx) to (ptidx, qtidx) for both routes.
+        """
+        pfidx, qfidx, ptidx, qtidx, kind = req
+        if kind == "serveP":
+            return True
+
+        # Compute load delta
+        pf = route_from[pfidx]
+        if prob.is_lpick(pf):
+            jid = prob.rev_lpick(pf)
+            load_delta = prob.q[jid - 1]
+        else:
+            load_delta = 0
+
+        # Check segment loads on from_route
+        load_min_fr = load_delta_from_manager.query_min_prefix(pfidx, qfidx)
+        load_max_fr = load_delta_from_manager.query_max_prefix(pfidx, qfidx)
+        if load_min_fr - load_delta < 0:
+            return False
+        if load_max_fr - load_delta > cap_from:
+            return False
+
+        # Check segment loads on to_route
+        load_min_to = load_delta_to_manager.query_min_prefix(ptidx - 1, qtidx - 1)
+        load_max_to = load_delta_to_manager.query_max_prefix(ptidx - 1, qtidx - 1)
+        if load_min_to + load_delta < 0:
+            return False
+        if load_max_to + load_delta > cap_to:
+            return False
+
+        return True
+
+
+    def check_relocate(req: RelocateRequest) -> Optional[CostChange]:
+        """
+        Check feasibility of relocating the request defined by (pfidx, qfidx)
+        from route_from to route_to at insertion indices (ptidx, qtidx).
+        
+        Returns a tuple of:
+            - feasibility (bool)
+            - after_cost_a (int): cost of from_route after relocation
+            - after_cost_b (int): cost of to_route after relocation
+            - dec (int): total cost decrement if relocation is performed
+        """
+        # Check consecutiveness and load feasibility
+        if not check_consecutive(req):
+            return None
+        if not check_load(req):
+            return None
+
+        # Compute cost change
+        cost_change = cost_decrement_relocate(
+            current_par, route_from_idx, route_to_idx,
+            req[0], req[1], req[2], req[3],
+        )
+        return cost_change
+
+
+    def find_candidates() -> Iterator[Tuple[RelocateRequest, CostChange]]:
+        """
+        Find candidate relocation requests according to the specified mode.
+        
+        Yields tuples of the form (Request, CostChange).
+        """
+        # Build position map for route_from to locate corresponding drops
+        pos_from = {node: i for i, node in enumerate(route_from)}
+
+        # Enumerate all pickup positions in route_from
+        delete_pairs = []
+        for pfidx, pickup_node in enumerate(route_from[1:], start=1):
+            if prob.is_ppick(pickup_node):
+                qfidx = pfidx + 1
+                delete_pairs.append((pfidx, qfidx, "serveP"))
+
+            elif prob.is_lpick(pickup_node):
+                jid = prob.rev_lpick(pickup_node)
+                drop_node = prob.ldrop(jid)
+                qfidx = pos_from.get(drop_node)
+
+                if qfidx is not None and qfidx > pfidx:
+                    delete_pairs.append((pfidx, qfidx, "serveL"))
+
+        # Enumerate feasible insertion (pickup, drop) index pairs in route_to
+        insert_pairs_pserve = [
+            (ptidx, ptidx + 1)
+            for ptidx in range(1, n_to)
+            if not prob.is_ppick(route_to[ptidx - 1])  # Cannot insert after a pickup
+        ]
+        insert_pairs_lserve = [
+            (ptidx, qtidx)
+            for ptidx in range(1, n_to)
+            if not prob.is_ppick(route_to[ptidx - 1])
+            for qtidx in range(ptidx + 1, n_to + 1)
+            if not prob.is_ppick(route_to[qtidx - 2])
+        ]
+
+        # Iterate over all delete pairs in route_from
+        for (pfidx, qfidx, kind) in delete_pairs:
+            insert_pairs = insert_pairs_pserve if kind == "serveP" else insert_pairs_lserve
+            for (ptidx, qtidx) in insert_pairs:
+                request = (pfidx, qfidx, ptidx, qtidx, kind)
+                costchange = check_relocate(request)
+
+                # If costchange is None, relocation is infeasible
+                if costchange is None:
+                    continue
+
+                # Check uplift requirement
+                after_cost_a, after_cost_b, dec = costchange
+                if dec < uplift:
+                    continue
+
+                if mode == 'first':
+                    yield (request, costchange)
+                    return
+                else:
+                    yield (request, costchange)
+
+
+    def select_candidate() -> Optional[Tuple[RelocateRequest, CostChange]]:
+        """
+        Select a candidate relocation based on the specified mode.
+        """
+        cand_list = list(find_candidates())
+        if not cand_list:
+            return None
+        if mode == 'stochastic':
+            return rng.choice(cand_list)
+        elif mode == 'best':
+            # Choose by maximum decrement (index 2 of CostChange)
+            return max(cand_list, key=lambda x: x[1][2])
+        else:
+            return cand_list[0]
+
+
+    # //// Update helpers
+    def update_partial_solution(action: RelocateAction):
+        """
+        Apply relocation to routes and update costs / max cost for the
+        current partial solution object.
+        """
+        nonlocal route_from, route_to, current_par
+
+        # Unpack action
+        (p_from, q_from, p_to, q_to, _), (new_cost_from, new_cost_to, dec) = action
+
+        # Extract nodes to move (pickup & drop) from route_from
+        pf = route_from[p_from]
+        qf = route_from[q_from]
+
+
+        # 1. Remove from route_from (remember to remove drop first)
+        del route_from[q_from]
+        del route_from[p_from]
+
+        # 2. Insert into route_to (remember to insert pickup first)
+        route_to.insert(p_to, pf)
+        route_to.insert(q_to, qf)
+
+        # 3. Update partial routes
+        current_par.routes[route_from_idx] = route_from
+        current_par.routes[route_to_idx] = route_to
+
+        # 4. Update partial costs
+        current_par.route_costs[route_from_idx] = new_cost_from
+        current_par.route_costs[route_to_idx] = new_cost_to
+        current_par.max_cost -= dec
+
+        # 5. Update node assignment
+        current_par.node_assignment[pf] = route_to_idx
+        current_par.node_assignment[qf] = route_to_idx
+
+
+    def update_precalc(action: RelocateAction):
+        """
+        Incrementally update passenger & load delta managers after a relocation
+        using MinMaxPfsumArray insert/delete operations (avoid full rebuild).
+
+        action: (p_from, q_from, p_to, q_to, new_cost_from, new_cost_to, dec)
+        Indices p_from,q_from,p_to,q_to refer to ORIGINAL pre-mutation routes.
+        Relocation sequence applied earlier in update_partial_solution:
+            1. Remove q_from, then p_from from donor route_from.
+            2. Insert pickup at p_to in route_to.
+            3. Insert drop at drop_insert_index = (q_to if q_to was final depot else q_to+1).
+        Here we commit those operations on the delta managers.
+        """
+        nonlocal load_delta_from_manager, load_delta_to_manager, route_from, route_to
+
+        # Unpack action
+        (pfidx, qfidx, ptidx, qtidx, _), _costchange = action
+        pf = route_from[pfidx]
+        qf = route_from[qfidx]
+
+        # Helper to map node -> load
+        def node_load_delta(nodeid: int) -> int:
+            if prob.is_lpick(nodeid):
+                jid = prob.rev_lpick(nodeid)
+                return prob.q[jid - 1]
+            elif prob.is_ldrop(nodeid):
+                jid = prob.rev_ldrop(nodeid)
+                return -prob.q[jid - 1]
+            else:
+                return 0
+
+
+        # 1. Donor route updates
+        load_delta_from_manager.delete(qfidx)
+        load_delta_from_manager.delete(pfidx)
+
+        # 2. Receiver route updates
+        load_delta_to_manager.insert(ptidx, node_load_delta(pf))
+        load_delta_to_manager.insert(qtidx, node_load_delta(qf))
+
+
+    def relocate_to_convergence() -> Tuple[List[bool], int]:
+        """
+        Perform relocation steps until no further improvement is possible
+        or the specified number of steps is reached.
+
+        Returns a tuple of:
+        - modified_routes: List of booleans indicating which routes were modified.
+        - reloc_done: Number of relocations performed.
+        """
+        nonlocal n_from, n_to, route_from, route_to
+
+        reloc_done = 0
+        modified_routes = [False] * prob.K
+        while reloc_done < steps:
+            cand = select_candidate()
+            if cand is None:
+                break
+
+            # Apply the selected relocation
+            update_precalc(cand)
+            update_partial_solution(cand)
+
+            # Update counters and flags
+            reloc_done += 1
+            modified_routes[route_from_idx] = True
+            modified_routes[route_to_idx] = True
+
+            # Update local route lengths
+            n_from -= 2
+            n_to += 2
+            if n_from < 5:
+                break
+
+        return modified_routes, reloc_done
+
+    # Execute relocation to convergence
+    modified_pair, reloc_done = relocate_to_convergence()
+
+    return current_par, modified_pair, reloc_done
+
+
+
+
+def relocate_operator(
+        partial: PartialSolution,           # Current partial solution
+        steps: Optional[int] = None,        # Number of steps to consider
+        mode: str = 'first',                # Mode of operation
+        uplift: int = 1,                    # Minimum improvement required
+        seed: Optional[int] = None,         # Random seed for stochastic mode
+        verbose: bool = False,              # Verbosity flag
+    ) -> Tuple[PartialSolution, List[bool], int]:
+    """
+    Attempt to relocate the request from a vehicle route to another that
+    improves the solution to different extents controlled by ``uplift``.
+    Perform up to ``steps`` relocations based on the specified ``mode``.
+    Use in post-processing or local search.
+
+    The procedure attempts to relocate requests from the highest-cost route
+    to the 1/3 lower-cost routes (traverse from the lowest to the highest) by
+    iterating over all insertion pairs of the receiver routes, in ascending 
+    order of their in-out contribution to the route cost.
+    If not successful, it moves to the next donor route.
+
+    Parameters:
+    - partial: PartialSolution object representing the current solution.
+    - steps: Number of relocation steps that the operation should perform.
+    - mode: Mode of operation, can be 'best', 'first', or 'stochastic'.
+    - uplift: Integer controlling the extent of improvement required.
+    - seed: Random seed for stochastic modes.
+    - verbose: If True, print detailed logs.
+
+    Returns: a tuple signature containing:
+    - A new PartialSolution object with the specified requests relocated.
+    - A list of booleans indicating which routes were modified.
+    - An integer count of the number of relocations performed.
+    """
+    k_vehicles = partial.problem.K
+    if k_vehicles < 2:
+        return partial.copy(), [False] * k_vehicles, 0
+
+    if steps == None:
+        steps = 10**9    # Effectively unlimited
+
+    # RNG for stochastic behavior
+    rng = random.Random(seed)
+
+    # Initialize tracking variables
+    current_par: PartialSolution = partial.copy()
+    modified_total: List[bool] = [False] * k_vehicles
+    total_moves = 0
+
+
+    # //// Main relocation loop
+    while total_moves < steps:
+        # Sort candidate donor and receiver routes ascending by current costs
+        taxi_cost: List[Tuple[int, int]] = list(enumerate(current_par.route_costs))
+        donor_index = max(taxi_cost, key=lambda x: x[1])[0]
+        receiver_indices = [
+            idx for idx, _ in sorted(taxi_cost, key=lambda x: x[1])
+        ]
+
+        # Break if the donor is too short
+        if len(current_par.routes[donor_index]) < 5:
+            break
+
+        # Iterate over receiver routes
+        improved = False
+        for r_idx in receiver_indices:
+            # Skip self-relocation
+            if r_idx == donor_index:
+                continue
+
+            # Skip too-short receivers (no place to insert between depots)
+            if len(current_par.routes[r_idx]) < 2:
+                continue
+
+
+            # Attempt relocation from donor to receiver
+            remain = steps - total_moves
+            new_partial, modified_pair, moves_made = relocate_from_to(
+                current_par,
+                route_from_idx=donor_index,
+                route_to_idx=r_idx,
+                steps=remain,
+                mode=mode,
+                uplift=uplift,
+                seed=rng.randint(10, 10**9),  # vary seed between attempts
+                verbose=verbose,
+            )
+
+
+            # Analyze results
+            if moves_made > 0:
+                current_par = new_partial
+                total_moves += moves_made
+                for i in range(k_vehicles):
+                    if modified_pair[i]:
+                        modified_total[i] = True
+                improved = True
+
+                # Verbose logging
+
+                   
+
+                break   # break receivers loop, re-sort donors/receivers
+
+        # Exit if no improvement found in this iteration (convergence)
+        if not improved:
+            break
+
+    # Logging
+
+       
+       
+       
+       
+       
+       
+       
+
+    return current_par, modified_total, total_moves
 
 
 
 
  
+# ================ ACO Policies Implementation ================
 def _default_value_function(
         partial: PartialSolution,
-        perturbed_samples: int = 8,     
-        seed: Optional[int] = None,      
+        perturbed_samples: int = 6,     # perturb
+        seed: Optional[int] = None,     # pylint: disable=unused-argument
     ) -> float:
-     
     _, stats = _, stats = iterative_greedy_solver(
         partial.problem, partial, iterations=perturbed_samples, time_limit=0.1, seed=seed
     )
@@ -2167,14 +2462,12 @@ def _default_value_function(
 
 def _default_finalize_policy(
         partial: PartialSolution,
-        iterations: int = 1000,
         seed: Optional[int] = None,
     ) -> Optional[Solution]:
-
     sol, _info = iterative_greedy_solver(
         partial.problem,
         partial,
-        iterations=iterations,
+        iterations=3000,
         time_limit=3.0,
         seed=seed,
         verbose=False
@@ -2182,15 +2475,22 @@ def _default_finalize_policy(
 
     if not sol:
         return None
-    return sol
+
+    raw_sol = PartialSolution.from_solution(sol)
+    refined_sol, _modified, _cnt = relocate_operator(
+        partial=raw_sol,
+        seed=seed,
+        verbose=False
+    )
+
+    return refined_sol.to_solution()
 
 
 
 
- 
+# ================ ACO Components Implementation ================
 @dataclass
 class SolutionTracker:
-     
     best_solution: Optional[Solution] = None
     best_cost: int = 10**18
     worst_cost: int = -1
@@ -2202,7 +2502,6 @@ class SolutionTracker:
             self,
             source: Union[Solution, PartialSolutionSwarm, List[Optional[Solution]]]
         ) -> None:
-         
         if isinstance(source, Solution):
             self._update_from_solution(source)
         elif isinstance(source, PartialSolutionSwarm):
@@ -2212,7 +2511,7 @@ class SolutionTracker:
 
 
     def _update_from_solution(self, solution: Solution) -> None:
-         
+        """Update metrics with a single solution."""
         cost = solution.max_cost
 
         self.count += 1
@@ -2225,7 +2524,7 @@ class SolutionTracker:
 
 
     def _update_from_swarm(self, swarm: PartialSolutionSwarm) -> None:
-         
+        """Update metrics with a swarm of partial solutions."""
         for partial in swarm.partial_lists:
             if not partial.is_completed():
                 continue
@@ -2238,7 +2537,7 @@ class SolutionTracker:
 
 
     def _update_from_list(self, solutions: List[Optional[Solution]]) -> None:
-         
+        """Update metrics with a list of solutions."""
         for sol in solutions:
             if sol is None:
                 continue
@@ -2247,7 +2546,7 @@ class SolutionTracker:
 
 
     def stats(self) -> Dict[str, float]:
-         
+        """Return statistics of the population."""
         avg_cost = self.total_cost / self.count if self.count > 0 else 0.0
         return {
             "best_cost": self.best_cost,
@@ -2258,12 +2557,11 @@ class SolutionTracker:
 
 
     def opt(self) -> Optional[Solution]:
-         
+        """Return the best solution found so far."""
         return self.best_solution
 
 
 class PheromoneMatrix:
-
     def __init__(
             self,
             problem: ShareARideProblem,
@@ -2271,7 +2569,6 @@ class PheromoneMatrix:
             rho: float,
             init_cost: int
         ) -> None:
-
         self.size = problem.num_nodes
         self.sigma = sigma
         self.rho = rho
@@ -2283,7 +2580,12 @@ class PheromoneMatrix:
             for _ in range(self.size)
         ]
 
+        assert 0.0 < self.rho < 1.0, "Evaporation rate rho must be in (0,1)."
+        assert sigma >= 1, "Number of elitists sigma must be at least 1."
+
+
     def get(self, prev: ActionNode, curr: ActionNode) -> float:
+        """Get pheromone level on transition from prev action to curr action."""
         return self.tau[prev[1]][curr[0]]
 
 
@@ -2293,8 +2595,9 @@ class PheromoneMatrix:
             opt: Optional[Solution],
         ) -> None:
 
-         
+        # //// Helper function to extract edges from a PartialSolution
         def extract_edges(partial: PartialSolution) -> List[Tuple[int, int]]:
+            """Extract all (prev_out, curr_in) edges from a partial solution's routes."""
             edges: List[Tuple[int, int]] = []
 
             for route_idx, _ in enumerate(partial.routes):
@@ -2305,15 +2608,15 @@ class PheromoneMatrix:
             return edges
 
 
-         
+        # //// Sort partials by max_cost (ascending) and take elitists
         ranked_partials = sorted(
             ((par.max_cost, par) for par in swarm.partial_lists),
             key=lambda x: x[0]
         )[:self.sigma]
 
 
-         
-         
+        # //// Update pheromone matrix
+        # Evaporation and clamp to tau_min
         self.tau = [
             [max(self.tau_min, self.rho * val) for val in row]
             for row in self.tau
@@ -2321,35 +2624,36 @@ class PheromoneMatrix:
 
         increased_edges: Set[Tuple[int, int]] = set()
 
-         
+        # Add ranked solution contributions: (sigma - rank) * (1 / L_r)
         for rank, (cost, partial) in enumerate(ranked_partials):
             elitist_weight = (self.sigma - rank) / cost
 
-             
+            # Loop through edges
             for (i, j) in extract_edges(partial):
                 increased_edges.add((i, j))
                 if 0 <= i < self.size and 0 <= j < self.size:
                     self.tau[i][j] += elitist_weight
 
-         
+        # Add best-so-far solution contribution: sigma * (1 / L_best)
         if opt is not None and opt.max_cost > 0:
             best_weight = self.sigma / opt.max_cost
 
-             
+            # Temporarily convert best solution to PartialSolution
             best_partial = PartialSolution.from_solution(opt)
 
-             
+            # Loop through edges
             for (i, j) in extract_edges(best_partial):
                 increased_edges.add((i, j))
                 if 0 <= i < self.size and 0 <= j < self.size:
                     self.tau[i][j] += best_weight
 
+        # Clamp increased edges to tau_max
         for (i, j) in increased_edges:
             self.tau[i][j] = min(self.tau_max, self.tau[i][j])
 
-class DesirabilityMatrix:
-     
 
+
+class DesirabilityMatrix:
     def __init__(
             self,
             problem: ShareARideProblem,
@@ -2358,7 +2662,6 @@ class DesirabilityMatrix:
             gamma: float,
             kappa: float
         ) -> None:
-         
         self.size = problem.num_nodes
         self.problem = problem
         self.phi = phi
@@ -2366,19 +2669,19 @@ class DesirabilityMatrix:
         self.gamma = gamma
         self.kappa = kappa
 
-         
+        # Initialize saving matrix
         self.saving_matrix: List[List[float]] = []
-        D = self.problem.D       
+        D = self.problem.D      # pylint: disable=C0103
         for i in range(self.size):
             row = []
 
             for j in range(self.size):
                 if i == j:
-                    row.append(0)    
+                    row.append(0)   # Dummy
                 else:
-                     
+                    # Clark-Wright savings: positive when combining saves distance
                     slack_ij = max(D[0][i] + D[j][0] - D[i][j], 0)
-                     
+                    # Add 1 to savings to ensure non-zero desirability even with no savings
                     saving_term = (1 + slack_ij) ** self.phi
 
                     row.append(saving_term)
@@ -2393,10 +2696,9 @@ class DesirabilityMatrix:
             partial: PartialSolution,
             action: Action
         ) -> float:
-         
-         
+        # Extract variables
         route_idx, kind, node, inc = action
-        Q = self.problem.Q[route_idx]         
+        Q = self.problem.Q[route_idx]        # pylint: disable=C0103
         state = partial.states[route_idx]
         new_cap = state["load"]
         if kind == "pickL":
@@ -2404,7 +2706,7 @@ class DesirabilityMatrix:
         if kind == "dropL":
             new_cap -= self.problem.q[node - 1]
 
-         
+        # Formulate terms
         distance_term = (1 + weighted(kind, inc)) ** self.chi
         saving_term = self.saving_matrix[prev[1]][curr[0]]
         people_term = 2 - int(kind == "pickP")
@@ -2414,25 +2716,22 @@ class DesirabilityMatrix:
 
 
 class NearestExpansionCache:
-     
-
     def __init__(
             self,
             problem: ShareARideProblem,
             n_nearest: int = 3
         ) -> None:
-         
         self.nearest_actions: List[List[Tuple[str, int, int]]] = []
 
 
-         
+        # //// Build a surrogate PartialSolution to query possible expansions
         for nodeid in range(problem.num_nodes):
-             
-             
+            # For depot (node 0), use [[0], ...] to avoid marking taxi as ended
+            # For other nodes, use [[0, node_idx], ...] to simulate being at that node
             if nodeid == 0:
                 routes = [[0] for _ in range(problem.K)]
             elif problem.is_ppick(nodeid):
-                 
+                # Decisions are never made at pickup nodes for passengers
                 self.nearest_actions.append([])
                 continue
             elif problem.is_pdrop(nodeid):
@@ -2453,22 +2752,21 @@ class NearestExpansionCache:
             partial = PartialSolution(problem, routes=routes)
 
 
-             
+            # //// Get possible expansions and keep nearest num_nearest
             t_acts = partial.possible_expand(0)
             t_acts.sort(key=lambda item: weighted(item[0], item[2]))
             t_acts = t_acts[:n_nearest]
 
-             
+            # Store in cache
             self.nearest_actions.append(t_acts)
 
 
     def query(self, partial: PartialSolution, n_queried: int) -> List[Action]:
-         
         if partial.num_actions < partial.problem.num_expansions:
-            return []    
+            return []   # No expansions when every request is served (only returns)
 
 
-         
+        # //// Collect expansion actions ////
         current_max = partial.max_cost
         prioritized: List[Tuple[float, Action]] = []
         secondary: List[Tuple[float, Action]] = []
@@ -2479,40 +2777,38 @@ class NearestExpansionCache:
             pos = state["pos"]
             cached: List[Tuple[str, int, int]] = self.nearest_actions[pos]
 
-             
+            # Filter and prioritize expansion actions
             for unassigned_action in cached:
-                 
+                # Extract action components for prioritization
                 kind, node_idx, inc = unassigned_action
 
-                 
+                # Check validity
                 if not partial.check_expand(route_idx, kind, node_idx):
                     continue
 
-                 
+                # Reassign taxi for the action
                 action: Action = (route_idx, kind, node_idx, inc)
                 weight = weighted(kind, inc)
 
-                 
+                # Prioritize like enumerate_actions_greedily
                 if partial.route_costs[route_idx] + inc <= current_max:
                     prioritized.append((weight, action))
                 else:
                     secondary.append((weight, action))
 
-         
+        # Sort by weight
         prioritized.sort(key=lambda x: x[0])
         secondary.sort(key=lambda x: x[0])
 
-         
+        # Combine and return top num_queried actions
         all_actions = [action for _, action in prioritized + secondary]
 
         return all_actions[:n_queried]
 
 
 class Ant:
-     
 
     class ProbaExpandSampler:
-         
         partial: PartialSolution
         cache: "NearestExpansionCache"
         alpha: float
@@ -2541,7 +2837,7 @@ class Ant:
 
 
         def _get_action_node(self, action: Action) -> ActionNode:
-             
+            """Get ActionNode for a given action."""
             _route_idx, kind, actid, _ = action
             prob = self.partial.problem
             if kind == "serveP":
@@ -2557,31 +2853,30 @@ class Ant:
 
 
         def _collect_actions(self) -> List[Tuple[float, Action]]:
-             
             partial = self.partial
             width = self.width
 
 
-             
+            # //// Ending case
             if partial.num_actions >= partial.problem.num_expansions:
                 actions = enumerate_actions_greedily(partial, width)
                 first_weight = action_weight(actions[0])
                 return [(first_weight / action_weight(action), action) for action in actions]
 
 
-             
-             
+            # //// Expansion case
+            # First try to get from cache
             actions = self.cache.query(partial, width)
 
-             
+            # If not enough, fill with greedy enumeration
             if len(actions) < width:
                 actions = enumerate_actions_greedily(partial, width)[:width]
 
-             
-             
-             
-             
-             
+            # Now we reweight actions based on priority
+            # Note that the first secondary action has incremental cost
+            # smaller than the last prioritized action
+            # Because of that, the trick is to raise the weight of secondary
+            # actions above the max weight of prioritized actions
             weight_actions: List[Tuple[float, Action]] = []
             found_secondary = False
             reweight_base = 0.0
@@ -2605,7 +2900,7 @@ class Ant:
 
                 weight_actions.append((weight, curr_action))
 
-             
+            # Finally, invert and normalize weights by first action's inc cost
             fitted_actions = [
                 (first_weight / weight, action) for weight, action in weight_actions
             ]
@@ -2620,19 +2915,18 @@ class Ant:
                 fit: float,
                 action: Action,
             ) -> float:
-             
-             
+            # Extract from_node and to_node
             route_idx = action[0]
             state = self.partial.states[route_idx]
             prev_out = state["pos"]
-            prev_node: ActionNode = (10**18, prev_out)    
+            prev_node: ActionNode = (10**18, prev_out)   # Dummy prev node, we only need phys_out
             curr_node: ActionNode = self._get_action_node(action)
 
-             
+            # Get tau and eta values
             tau_val = tau.get(prev_node, curr_node)
             eta_val = eta.get(prev_node, curr_node, self.partial, action)
 
-             
+            # Clamp to avoid log(0)
             tau_val = max(tau_val, 1e-300)
             eta_val = max(eta_val, 1e-300)
 
@@ -2651,33 +2945,31 @@ class Ant:
                 eta: DesirabilityMatrix,
                 rng: random.Random,
             ) -> Optional[Action]:
-             
-
-             
+            # Collect actions using cache-first strategy
             actions = self._collect_actions()
             if not actions:
                 return None
 
-             
+            # Compute log probabilities for each action
             log_probas: List[float] = []
             for weight, action in actions:
                 log_proba = self._compute_log_proba(tau, eta, weight, action)
                 log_probas.append(log_proba)
 
-             
-             
+            # Convert to probabilities using log-sum-exp trick for numerical stability
+            # p_i = exp(log_p_i - max_log_p) / sum(exp(log_p_j - max_log_p))
             max_log = max(log_probas)
             exp_shifted = [math.exp(lp - max_log) for lp in log_probas]
             total = sum(exp_shifted)
             probas = [e / total for e in exp_shifted]
 
-             
+            # Select action: exploit vs explore
             select_idx: int
             if rng.random() < self.q_prob:
-                 
+                # Exploitation: choose action with max probability
                 select_idx = probas.index(max(probas))
             else:
-                 
+                # Exploration: sample from distribution
                 select_idx = sample_from_weight(rng, probas)
 
             return actions[select_idx][1]
@@ -2697,7 +2989,7 @@ class Ant:
             rng: random.Random,
         ) -> None:
 
-         
+        """Initialize ant with parameters and partial solution."""
         self.problem = partial.problem
         self.partial = partial
         self.cache = cache
@@ -2710,7 +3002,7 @@ class Ant:
         self.width = width
         self.rng = rng
 
-         
+        # Initialize probabilistic expansion strategy
         self.sampler = Ant.ProbaExpandSampler(
             partial=self.partial,
             cache=cache,
@@ -2726,40 +3018,39 @@ class Ant:
         if self.partial.is_completed():
             return False
 
-         
+        # Sample action using cache-first strategy
         sampled_action = self.sampler.sample_action(
             self.tau, self.eta, self.rng
         )
         if not sampled_action:
             return False
 
-         
+        # Commit action
         apply_general_action(self.partial, sampled_action)
 
         return True
 
 
 class AntPopulation:
-     
 
     def __init__(
             self,
             swarm: PartialSolutionSwarm,
 
-             
+            # Cache, Pheromone and desirability matrices (initialized earlier)
             cache: NearestExpansionCache,
             tau: PheromoneMatrix,
             eta: DesirabilityMatrix,
             lfunc: SolutionTracker,
 
-             
+            # Ant params
             alpha: float,
             beta: float,
             omega: float,
             q_prob: float,
             width: int,
 
-             
+            # Run parameters
             depth: int,
             time_limit: float,
             seed: Optional[int],
@@ -2778,7 +3069,7 @@ class AntPopulation:
         self.seed = seed
         self.verbose = verbose
 
-         
+        # Initialize ants
         self.ants: List[Ant] = []
         for idx, partial in enumerate(self.swarm.partial_lists):
             ant = Ant(
@@ -2795,7 +3086,7 @@ class AntPopulation:
             )
             self.ants.append(ant)
 
-         
+        # Miscellaneous utilities
         self.num_ants = len(self.ants)
         self.max_actions = swarm.problem.num_actions
         self.start_time = time.time()
@@ -2823,9 +3114,8 @@ class AntPopulation:
 
 
     def update(self) -> None:
-         
         self.lfunc.update(
-            source=self.swarm,   
+            source=self.swarm,  # Update from the current swarm
         )
 
         self.tau.update(
@@ -2835,21 +3125,20 @@ class AntPopulation:
 
 
     def run(self) -> PartialSolutionSwarm:
-         
         anchors = [
             self.max_actions // 5,
             self.max_actions // 2,
             self.max_actions * 9 // 10
         ]
 
-         
+        # Loop
         for ite in range(self.depth):
             if self.tle():
                 if self.verbose:
                     print("[ACO] Time limit reached, skipping this iteration.")
                 return self.swarm
 
-             
+            # Logging
             if self.verbose:
                 if ite in anchors or ite % 100 == 0:
                     costs = [par.max_cost for par in self.swarm.partial_lists]
@@ -2861,7 +3150,7 @@ class AntPopulation:
                         f"Time_elapsed={time.time() - self.start_time:.2f}s."
                     )
 
-             
+            # Perform expansion and pheromone update
             if not self.expand():
                 if self.verbose:
                     print("[ACO] All ants have completed their solutions.")
@@ -2870,7 +3159,7 @@ class AntPopulation:
             self.update()
 
 
-         
+        # Final logging
         if self.verbose:
             num_sol = sum(1 for par in self.swarm.partial_lists if par.is_completed())
             run_opt = self.swarm.opt()
@@ -2882,11 +3171,10 @@ class AntPopulation:
                 f"Opt cost: {global_opt.max_cost if global_opt else 'N/A'}."
             )
 
-        return self.swarm    
+        return self.swarm   # A new swarm with updated partials
 
 
 class SwarmTracker:
-     
     def __init__(
             self,
             swarm: PartialSolutionSwarm,
@@ -2895,39 +3183,39 @@ class SwarmTracker:
             seed: Optional[int] = None,
         ) -> None:
 
-         
+        # Initialization fields
         self.seed = seed
 
-         
+        # Tracking fields
         self.frontier_swarm: List[PartialSolution] = [
             partial.copy() for partial in swarm.partial_lists
         ]
         self.num_partials = swarm.num_partials
 
-         
+        # Fitness fields (value_function now returns float fitness values)
         self.frontier_fitness: List[float] = [
-            value_function(partial)
+            value_function(partial.copy())
             for partial in self.frontier_swarm
         ]
 
-         
+        # Finalized solutions
         self.finals: List[Solution]
         self.is_finalized: bool = False
 
-         
+        # Policy fields
         self.value_function = value_function
         self.finalize_policy = finalize_policy
 
 
     def update(self, source: PartialSolutionSwarm) -> List[float]:
-         
- 
+        assert self.num_partials == source.num_partials
+
         for idx, partial in enumerate(source.partial_lists):
             fitness = self.value_function(
-                partial, seed=self.seed + 10 * idx if self.seed else None
+                partial.copy(), seed=self.seed + 10 * idx if self.seed else None
             )
 
-             
+            # Compare to the current frontier partial (lower fitness is better)
             if fitness < self.frontier_fitness[idx]:
                 self.frontier_swarm[idx] = partial.copy()
                 self.frontier_fitness[idx] = fitness
@@ -2936,8 +3224,7 @@ class SwarmTracker:
 
 
     def finalize(self, cutoff: Optional[int]) -> List[Solution]:
-         
-         
+        # //// Select partials
         sorted_partials = sorted(
             zip(self.frontier_swarm, self.frontier_fitness),
             key=lambda x: x[1]
@@ -2945,7 +3232,7 @@ class SwarmTracker:
         chosen_partials = sorted_partials[:cutoff] if cutoff else sorted_partials
 
 
-         
+        # //// Finalizing
         finalized: List[Solution] = []
         for idx, (par, _fitness) in enumerate(chosen_partials):
             sol = self.finalize_policy(
@@ -2955,15 +3242,15 @@ class SwarmTracker:
                 finalized.append(sol)
 
 
-         
+        # /// Update and return
         finalized.sort(key=lambda s: s.max_cost)
         finalized = finalized[:cutoff] if cutoff else finalized
 
-         
+        # Update final state
         self.is_finalized = True
         self.finals = finalized
 
-         
+        # Return finalized solutions
         return finalized
 
 
@@ -2972,7 +3259,7 @@ class SwarmTracker:
             k: int,
             cutoff: Optional[int] = None,
         ) -> List[Solution]:
-         
+
         if cutoff is None:
             cutoff = k
 
@@ -2986,82 +3273,88 @@ class SwarmTracker:
             self,
             cutoff: Optional[int] = None,
         ) -> Solution:
-         
         if not self.is_finalized:
             self.finalize(cutoff)
 
+
+        return self.finals[0]  # Already sorted by max_cost
+
+
+
  
-        return self.finals[0]   
-
-
-
-
- 
+# ================ ACO Logic Implementation ================
 def _run_aco(
     problem: ShareARideProblem,
     swarm: PartialSolutionSwarm,
 
-     
+    # Run parameters
     n_cutoff: Optional[int],
     iterations: int,
     depth: Optional[int],
 
-     
-     
+    # Hyperparameters
+    # / Ants
     q_prob: float,
     alpha: float,
     beta: float,
     omega: float,
 
-     
+    # / Desirability
     phi: float,
     chi: float,
     gamma: float,
     kappa: float,
-     
+    # / Pheromone
     sigma: int,
     rho: float,
 
-     
+    # / Width
     width: int,
 
-     
-    value_function: ValueFunction,
-    finalize_policy: FinalizePolicy,
+    # Policies
+    value_function: Callable,
+    finalize_policy: Callable,
 
-     
+    # Meta parameters
     seed: Optional[int],
     time_limit: float,
     verbose: bool,
 ) -> Tuple[SwarmTracker, Dict[str, Any]]:
-     
+
     start = time.time()
     if depth is None:
         depth = problem.num_actions
 
-     
-    if verbose:
-        print("[ACO] [Init] Estimating costs from initial greedy solver...")
-    init_sol, _info = greedy_solver(problem, None, False)
+    # Run an initial greedy solver to estimate initial cost for pheromone initialization
+
+       
+    init_sol, _info = iterative_greedy_solver(
+        problem=problem,
+        iterations=1000,
+        time_limit=2.5,
+        seed=10*seed if seed else None,
+        verbose=False,
+    )
+
     init_cost = init_sol.max_cost
-    if verbose:
-        print(f"[ACO] [Init] Greedy solution cost: {init_cost:.3f}")
+
+       
 
 
-     
-    if verbose:
-        print("[ACO] [Init] Initializing nearest expansion cache...")
+    # Initialize caches for nearest expansion
+
+       
     cache = NearestExpansionCache(problem, n_nearest=5)
 
-     
-    if verbose:
-        print("[ACO] [Init] Initializing matrices...")
+    # Initialize pheromone and desirability matrices
+
+       
     tau = PheromoneMatrix(problem, sigma=sigma, rho=rho, init_cost=init_cost)
     eta = DesirabilityMatrix(problem, phi, chi, gamma, kappa)
 
-     
-    if verbose:
-        print("[ACO] [Init] Initializing trackers...")
+    # Initialize solution tracker with the initial greedy solution
+
+       
     lfunc = SolutionTracker()
     lfunc.update(init_sol)
     tracker = SwarmTracker(
@@ -3071,21 +3364,17 @@ def _run_aco(
     )
 
 
-     
-    iterations_completed = iterations
+    # Main ACO iterations
+    iterations_completed = 0
     status = "done"
     for run in range(iterations):
         if time.time() - start >= 0.75 * time_limit:
-            iterations_completed = run
-            status = "overtime"
-            if verbose:
-                print(f"[ACO] Time limit approaching, stopping at run {run + 1}/{iterations}.")
             break
 
-        if verbose:
-            print(f"[ACO] [Run {run + 1}/{iterations}] Starting the population run...")
 
-         
+           
+
+        # Initialize a new population with all components
         population = AntPopulation(
             swarm=swarm,
             cache=cache,
@@ -3103,84 +3392,126 @@ def _run_aco(
             verbose=verbose,
         )
 
-         
-        if verbose:
-            print(f"[ACO] [Run {run + 1}/{iterations}] Running the ant population")
+        # Run the ACO process and get updated swarm
+
+           
         result_swarm = population.run()
 
-         
-        if verbose:
-            print(f"[ACO] [Run {run + 1}/{iterations}] Updating swarm tracker")
+        # Update the trackers with the new swarm
+
+           
+           
+
         tracker.update(result_swarm)
         lfunc.update(result_swarm)
 
-     
-    if verbose:
-        print(f"[ACO] Finalizing top {n_cutoff} partial into solutions...")
+        iterations_completed = run + 1
+
+    # Finalize the best partials into complete solutions
+
+       
+       
     tracker.finalize(n_cutoff)
 
-     
+    # Inject the best solution found by ants (if better)
+    if lfunc.best_solution:
+        tracker.finals.append(lfunc.best_solution)
+        tracker.finals.sort(key=lambda s: s.max_cost)
+        if n_cutoff and len(tracker.finals) > n_cutoff:
+             tracker.finals = tracker.finals[:n_cutoff]
+
+    # Summary info
     elapsed = time.time() - start
     best_sol = tracker.opt(cutoff=n_cutoff)
     best_cost = best_sol.max_cost if best_sol else float("inf")
     stats: Dict[str, Any] = {
-        "iterations_completed": iterations_completed,
+        "iterations": iterations_completed,
         "best_cost": best_cost,
         "elitists_count": tracker.num_partials,
         "time": elapsed,
         "status": status,
     }
 
-     
-    if verbose:
-        print(
-            f"[ACO] The run finished. "
-            f"iterations_completed={stats['iterations_completed']}, "
-            f"Best_cost={stats['best_cost']:.3f}, "
-            f"Time={stats['time']:.3f}s."
-        )
-
     return tracker, stats
 
 
 
 
- 
+# ================ ACO API Functions ================
 def aco_enumerator(
     problem: ShareARideProblem,
     swarm: Optional[PartialSolutionSwarm] = None,
 
-     
+    # Run parameters
     n_partials: int = 50,
-    n_cutoff: int = 20,
+    n_cutoff: int = 10,
     n_return: int = 5,
     iterations: int = 10,
     depth: Optional[int] = None,
 
-     
-    q_prob: float = 0.75,
-    alpha: float = 1.2,
-    beta: float = 1.4,
-    omega: float = 4,
-    phi: float = 0.5,
-    chi: float = 1.5,
-    gamma: float = 0.4,
-    kappa: float = 2.0,
-    sigma: int = 10,
-    rho: float = 0.55,
-    width: int = 8,
+    # Tuning hyperparameters
+    q_prob: float = 0.71,
+    alpha: float = 1.36,
+    beta: float = 1.38,
+    omega: float = 3,
+    phi: float = 0.43,
+    chi: float = 1.77,
+    gamma: float = 0.40,
+    kappa: float = 2.34,
+    sigma: int = 12,
+    rho: float = 0.62,
+    width: int = 4,
 
-     
-    value_function: ValueFunction = _default_value_function,
-    finalize_policy: FinalizePolicy = _default_finalize_policy,
+    # Policies
+    value_function: Callable = _default_value_function,
+    finalize_policy: Callable = _default_finalize_policy,
 
-     
+    # Meta parameters
     seed: Optional[int] = None,
     time_limit: float = 30.0,
     verbose: bool = False,
 ) -> Tuple[List[Solution], Dict[str, Any]]:
-     
-     
+    """
+    Run ACO to enumerate the best k complete solutions.
+    
+    This function executes ACO with a SwarmTracker that tracks the best
+    variation of each partial across all depth. At the end, it finalizes
+    the top `n_cutoff` partials and returns the best `n_return` solutions.
+    
+    Args:
+        - problem: ShareARideProblem instance.
+        - swarm: Initial PartialSolutionSwarm (optional, created if None).
+
+        - n_partials: Number of ants (must match swarm size if provided).
+        - n_return: Number of best solutions to return.
+        - n_cutoff: Maximum partials to finalize (time-saving cutoff). Should be
+                >= n_return to avoid missing potentially better solutions.
+        - iterations: Number of ACO iterations to run.
+        - depth: Number of depth to run.
+        
+        - q_prob: Exploitation probability (0 = explore, 1 = exploit).
+        - alpha: Pheromone influence exponent.
+        - beta: Desirability influence exponent.
+        - phi: Savings influence exponent for desirability.
+        - chi: Distance influence exponent for desirability.
+        - gamma: Parcel influence factor for desirability.
+        - kappa: Parcel influence exponent for desirability.
+        - sigma: Number of elitists for pheromone update.
+        - rho: Evaporation rate for pheromone update.
+        - width: Maximum actions to consider per expansion.
+
+        - value_function: Function to evaluate potential of partial solutions.
+        - finalize_policy: Function to complete partial solutions.
+
+        - seed: Random seed for reproducibility.
+        - time_limit: Total time limit in seconds.
+        - verbose: If True, print detailed logs.
+    
+    Returns:
+        - solutions: List of top n_return solutions from finalized partials.
+        - info: Dictionary with run statistics.
+    """
+    # Create initial swarm if not provided
     if swarm is None:
         initial_partials = [
             PartialSolution(problem=problem, routes=[]) for _ in range(n_partials)
@@ -3188,7 +3519,7 @@ def aco_enumerator(
         swarm = PartialSolutionSwarm(solutions=initial_partials)
 
 
-     
+    # //// Run ACO
     tracker, run_info = _run_aco(
         problem=problem,
         swarm=swarm,
@@ -3217,35 +3548,24 @@ def aco_enumerator(
         verbose=verbose,
     )
 
-     
+    # Get top n_return solutions
     top_solutions = tracker.top(
         k=n_return,
         cutoff=n_cutoff,
     )
 
-     
+    # Build info from run_info
     stats: Dict[str, Any] = {
-        "iterations_completed": run_info["iterations_completed"],
+        "iterations": run_info["iterations"],
         "time": run_info['time'],
         "best_cost": run_info["best_cost"],
         "solutions_found": len(top_solutions),
         "elitists_count": run_info["elitists_count"],
         "status": run_info['status'],
     }
-
-     
-    if verbose:
-        print()
-        print("[ACO] Enumeration complete.")
-        print(f"[ACO] Total solutions found: {stats['solutions_found']}.")
-        print(
-            f"[ACO] Solution costs range: "
-            f"{top_solutions[0].max_cost:.3f} "
-            f"- {top_solutions[-1].max_cost:.3f}."
-        )
-        print(f"[ACO] Total time: {stats['time']:.3f}s")
-        print("------------------------------")
-        print()
+       
+       
+       
 
     return top_solutions, stats
 
@@ -3254,36 +3574,73 @@ def aco_solver(
     problem: ShareARideProblem,
     swarm: Optional[PartialSolutionSwarm] = None,
 
-     
-    n_partials: int = 20,
+    # Run parameters
+    n_partials: int = 50,
     n_cutoff: int = 10,
-    iterations: int = 10,
+    iterations: int = 40,
     depth: Optional[int] = None,
 
-     
-    q_prob: float = 0.75,
-    alpha: float = 1.2,
-    beta: float = 1.4,
-    omega: float = 4,
-    phi: float = 0.5,
-    chi: float = 1.5,
-    gamma: float = 0.4,
-    kappa: float = 2.0,
-    sigma: int = 10,
-    rho: float = 0.55,
-    width: int = 5,
+    # Hyperparameters
+    q_prob: float = 0.72,
+    alpha: float = 1.36,
+    beta: float = 1.38,
+    omega: float = 3,
+    phi: float = 0.43,
+    chi: float = 1.77,
+    gamma: float = 0.40,
+    kappa: float = 2.34,
+    sigma: int = 12,
+    rho: float = 0.62,
+    width: int = 4,
 
-     
-    value_function: ValueFunction = _default_value_function,
-    finalize_policy: FinalizePolicy = _default_finalize_policy,
+    # Policies
+    value_function: Callable = _default_value_function,
+    finalize_policy: Callable = _default_finalize_policy,
 
-     
+    # Meta parameters
     seed: Optional[int] = None,
     time_limit: float = 30.0,
     verbose: bool = False,
 ) -> Tuple[Optional[Solution], Dict[str, Any]]:
-     
-     
+    """
+    Run ACO solver and return the best complete solution.
+    
+    This function executes the ACO algorithm using SwarmTracker to track
+    the best partials across depth and returns the optimal solution.
+    
+    Args:
+        - problem: ShareARideProblem instance.
+        - swarm: Initial PartialSolutionSwarm (optional, created if None).
+
+        - n_partials: Number of ants (must match swarm size if provided).
+        - n_cutoff: Maximum partials to finalize (time-saving cutoff). Should be
+                > 1 to avoid missing potentially better solutions.
+        - iterations: Number of ACO iterations to run.
+        - depth: Number of depth to run.
+        
+        - q_prob: Exploitation probability (0 = explore, 1 = exploit).
+        - alpha: Pheromone influence exponent.
+        - beta: Desirability influence exponent.
+        - phi: Savings influence exponent for desirability.
+        - chi: Distance influence exponent for desirability.
+        - gamma: Parcel influence factor for desirability.
+        - kappa: Parcel influence exponent for desirability.
+        - sigma: Number of elitists for pheromone update.
+        - rho: Evaporation rate for pheromone update.
+        - width: Maximum actions to consider per expansion.
+
+        - value_function: Function to evaluate potential of partial solutions.
+        - finalize_policy: Function to complete partial solutions.
+
+        - seed: Random seed for reproducibility.
+        - time_limit: Total time limit in seconds.
+        - verbose: If True, print detailed logs.
+    
+    Returns:
+        - solution: Best solution found from the tracker (or None if failed).
+        - info: Dictionary with run statistics.
+    """
+    # Create initial swarm if not provided
     if swarm is None:
         initial_partials = [
             PartialSolution(problem=problem, routes=[]) for _ in range(n_partials)
@@ -3291,7 +3648,7 @@ def aco_solver(
         swarm = PartialSolutionSwarm(solutions=initial_partials)
 
 
-     
+    # //// Run ACO
     tracker, run_info = _run_aco(
         problem=problem,
         swarm=swarm,
@@ -3320,29 +3677,20 @@ def aco_solver(
         verbose=verbose,
     )
 
-     
+    # Get optimal solution from tracker
     best_solution = tracker.opt()
 
-     
+    # Build info from run_info
     stats: Dict[str, Any] = {
-        "iterations_completed": run_info["iterations_completed"],
+        "iterations": run_info["iterations"],
         "time": run_info['time'],
         "best_cost": run_info["best_cost"],
         "elitists_count": run_info["elitists_count"],
         "status": run_info['status']
     }
-
-     
-    if verbose:
-        print()
-        print("[ACO] Solver complete.")
-        if best_solution is not None:
-            print(f"[ACO] Best solution cost: {best_solution.max_cost}")
-        else:
-            print("[ACO] No valid solution found.")
-        print(f"[ACO] Total time: {stats['time']:.3f}s")
-        print("------------------------------")
-        print()
+ 
+       
+       
 
     return best_solution, stats
 
@@ -3396,6 +3744,6 @@ def main(verbose: bool = False):
 
 
 if __name__ == "__main__":
-    main(verbose=True)
+    main(verbose=False)
 
  

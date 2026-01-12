@@ -1,1 +1,7 @@
-"""[\w\W]*?"""
+matplotlib 
+pandas
+gurobipy 
+ortools 
+optuna 
+pylint 
+basedpyright 

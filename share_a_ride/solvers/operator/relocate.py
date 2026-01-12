@@ -8,9 +8,9 @@ from typing import Iterator, List, Tuple, Optional
 from share_a_ride.core.solution import PartialSolution
 from share_a_ride.solvers.operator.utils import MinMaxPfsumArray
 
-Request = Tuple[int, int, int, int, str]
+RelocateRequest = Tuple[int, int, int, int, str]
 CostChange = Tuple[int, int, int]
-Action = Tuple[Request, CostChange]
+RelocateAction = Tuple[RelocateRequest, CostChange]
 
 
 
@@ -175,7 +175,7 @@ def relocate_from_to(
 
 
     # //// Checker helpers
-    def check_consecutive(req: Request) -> bool:
+    def check_consecutive(req: RelocateRequest) -> bool:
         """
         Ensure that pickup and drop indices are consecutive for 'serveP' requests.
         """
@@ -188,7 +188,7 @@ def relocate_from_to(
         return qtidx == ptidx + 1
 
 
-    def check_load(req: Request) -> bool:
+    def check_load(req: RelocateRequest) -> bool:
         """
         Ensure load stays within [0,cap] after relocating a full request
         (pfidx, qfidx) to (ptidx, qtidx) for both routes.
@@ -224,7 +224,7 @@ def relocate_from_to(
         return True
 
 
-    def check_relocate(req: Request) -> Optional[CostChange]:
+    def check_relocate(req: RelocateRequest) -> Optional[CostChange]:
         """
         Check feasibility of relocating the request defined by (pfidx, qfidx)
         from route_from to route_to at insertion indices (ptidx, qtidx).
@@ -249,7 +249,7 @@ def relocate_from_to(
         return cost_change
 
 
-    def find_candidates() -> Iterator[Tuple[Request, CostChange]]:
+    def find_candidates() -> Iterator[Tuple[RelocateRequest, CostChange]]:
         """
         Find candidate relocation requests according to the specified mode.
         
@@ -310,7 +310,7 @@ def relocate_from_to(
                     yield (request, costchange)
 
 
-    def select_candidate() -> Optional[Tuple[Request, CostChange]]:
+    def select_candidate() -> Optional[Tuple[RelocateRequest, CostChange]]:
         """
         Select a candidate relocation based on the specified mode.
         """
@@ -327,7 +327,7 @@ def relocate_from_to(
 
 
     # //// Update helpers
-    def update_partial_solution(action: Action):
+    def update_partial_solution(action: RelocateAction):
         """
         Apply relocation to routes and update costs / max cost for the
         current partial solution object.
@@ -364,7 +364,7 @@ def relocate_from_to(
         current_par.node_assignment[qf] = route_to_idx
 
 
-    def update_precalc(action: Action):
+    def update_precalc(action: RelocateAction):
         """
         Incrementally update passenger & load delta managers after a relocation
         using MinMaxPfsumArray insert/delete operations (avoid full rebuild).

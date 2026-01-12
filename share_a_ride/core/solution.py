@@ -234,7 +234,7 @@ class PartialSolution:
     - node_assignment: list mapping each node to its assigned route
         following -1 for unassigned, 0..K-1 for assigned to route, depot 0 is undefined
     - route_states: list of dicts holding per-route state
-        ({route, pos, cost, load, passenger, parcels, ended})
+        ({pos, parcels, load, actions, active, ended})
     - remaining_pass_serve: set of passenger ids not yet served
     - remaining_parc_pick: set of parcel ids not picked yet
     - remaining_parc_drop: set of parcel ids picked but not dropped yet
@@ -313,12 +313,12 @@ class PartialSolution:
         route_states = []
         num_actions = 0
 
-
         # //// Simulate over route
         for _, route in enumerate(self.routes):
             route_len = len(route)
             onboard_parcels = set()
             current_load = 0
+            route_actions = 0
 
             # Simulate over the route
             for idx, nodeid in enumerate(route[1:], start=1):
@@ -334,7 +334,7 @@ class PartialSolution:
                             "Invalid route: passenger pickup not followed by correct drop."
                         )
 
-                    num_actions += 1
+                    route_actions += 1
 
                     remaining_pass_serve.discard(pid)
 
@@ -346,7 +346,7 @@ class PartialSolution:
 
                     onboard_parcels.add(lid)
                     current_load += prob.q[lid - 1]
-                    num_actions += 1
+                    route_actions += 1
 
                     remaining_parc_pick.discard(lid)
                     remaining_parc_drop.add(lid)
@@ -361,7 +361,7 @@ class PartialSolution:
 
                     onboard_parcels.remove(lid)
                     current_load -= prob.q[lid - 1]
-                    num_actions += 1
+                    route_actions += 1
 
                     remaining_parc_drop.discard(lid)
 
@@ -370,20 +370,24 @@ class PartialSolution:
                         raise RuntimeError(
                             "Invalid route: node id out of range."
                         )
-                    num_actions += 1
+                    route_actions += 1
 
             # Finalize route state
             pos = route[-1]
-            ended = route_len > 1 and route[-1] == 0
+            active = route_len > 1
+            ended = active and route[-1] == 0
             state = {
                 "pos": pos,                     # current position (node id)
                 "parcels": onboard_parcels,     # current parcels onboard
                 "load": current_load,           # current parcel load
-                "actions": num_actions,         # number of actions taken
+                "actions": route_actions,       # number of actions taken (for this route)
+                "active": active,               # whether taxi has started
                 "ended": ended                  # whether taxi has returned to depot
             }
             route_states.append(state)
 
+            # Update global counter of actions
+            num_actions += route_actions
 
         # //// Return initialized components
         return (
@@ -440,21 +444,27 @@ class PartialSolution:
                 if verbose:
                     print(f"Invalid: Route {t_idx} does not start with depot 0.")
                 return False
+
+            is_active = route_len > 1
+            if state["active"] != is_active:
+                if verbose:
+                    print(f"Invalid: Active state mismatch for taxi {t_idx}.")
+                return False
+
             is_ended = route_len > 1 and route[-1] == 0
             if state["ended"] != is_ended:
                 if verbose:
                     print(f"Invalid: Ended state mismatch for taxi {t_idx}.")
                 return False
 
-            # Tracking containers
+
+            # //// Iterate over nodes in the route
             parcel_onboard: set[int] = set()
             route_len = len(route)
             load = 0
             prev = route[0]
             cumulated_cost = 0
 
-
-            # //// Iterate over nodes in the route
             for idx, node in enumerate(route[1:], start=1):
                 # Check node range
                 if not 0 <= node < prob.num_nodes:
@@ -671,7 +681,7 @@ class PartialSolution:
         if self.problem is not other.problem or self.num_actions != other.num_actions:
             return False
 
-        return sorted(tuple(r) for r in self.routes) == sorted(tuple(r) for r in other.routes)
+        return sorted(tuple(r[:3]) for r in self.routes) == sorted(tuple(r[:3]) for r in other.routes)
 
 
     def copy(self):
@@ -795,7 +805,7 @@ class PartialSolution:
         state = self.states[route_idx]
         prob = self.problem
 
-        # Taxi must not have ended
+        # Taxi must not ended
         if state["ended"]:
             return False
 
@@ -818,7 +828,7 @@ class PartialSolution:
         """Check if taxi t_idx can return to depot (node 0) in its current state."""
         state = self.states[route_idx]
 
-        return not (state["ended"] or state["parcels"])
+        return not state["ended"] and not state["parcels"]
 
 
     def apply_extend(self, route_idx: int, kind: str, actid: int, inc: int) -> None:
@@ -838,6 +848,9 @@ class PartialSolution:
         # Basic validations
         if state["ended"]:
             raise ValueError(f"Cannot apply action on ended route {route_idx}.")
+
+        # Mark taxi as active on first action
+        state["active"] = True
 
 
         # //// Apply action based on kind
@@ -969,6 +982,8 @@ class PartialSolution:
             state["pos"] = prev_node
             state["actions"] -= 1
             state["ended"] = False
+            if len(route) == 1:
+                state["active"] = False
 
             # Update containers
             self.remaining_pass_serve.add(pid)
@@ -993,6 +1008,8 @@ class PartialSolution:
         state["pos"] = prev_node
         state["actions"] -= 1
         state["ended"] = False
+        if len(route) == 1:
+            state["active"] = False
 
         # Update remaining pickups/drops and onboard loads
         if prob.is_lpick(last_node):

@@ -33,6 +33,16 @@ class ShareARideProblem:
         ):
         """
         Initialize a Share-a-Ride Problem instance.
+
+        Here we introduce the indexing conventions:
+        - 0 is the depot
+        - pid is 1-based index for passenger requests (1 to N)
+        - lid is 1-based index for parcel requests (1 to M)
+        - nodeid is 0-based index for nodes in distance matrix D (0 to 2N + 2M)
+          - passenger pickup nodes: 1 to N
+          - parcel pickup nodes: N+1 to N+M
+          - passenger dropoff nodes: N+M+1 to 2N+M
+          - parcel dropoff nodes: 2N+M+1 to 2N+2M
         """
 
         # //// Basic parameters

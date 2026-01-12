@@ -12,27 +12,56 @@ from share_a_ride.solvers.utils.weighter import weighted
 
 Action = Tuple[int, str, int, int]
 
-exhaustive_problem: ShareARideProblem = generate_instance_coords(
-    N = 3,
-    M = 2,
-    K = 2,
-    area = 100,
-    seed = 10,
-)
-
-bnb_problem : ShareARideProblem = generate_instance_coords(
-    N = 4,
-    M = 4,
-    K = 3,
-    area = 200,
-    seed = 15,
-)
+exact_problems: List[ShareARideProblem] = [
+    generate_instance_coords(
+        N = 3,
+        M = 2,
+        K = 2,
+        area = 100,
+        seed = 10,
+    ),
+    generate_instance_coords(
+        N = 4,
+        M = 3,
+        K = 3,
+        area = 100,
+        seed = 11,
+    ),
+    generate_instance_coords(
+        N = 6,
+        M = 4,
+        K = 2,
+        area = 100,
+        seed = 12,
+    ),
+    generate_instance_coords(
+        N = 6,
+        M = 4,
+        K = 3,
+        area = 100,
+        seed = 13,
+    ),
+    generate_instance_coords(
+        N = 8,
+        M = 5,
+        K = 2,
+        area = 100,
+        seed = 14,
+    ),
+    generate_instance_coords(
+        N = 8,
+        M = 5,
+        K = 3,
+        area = 100,
+        seed = 15,
+    ),
+]
 
 test_problem: ShareARideProblem = generate_instance_coords(
     N = 33,
     M = 17,
     K = 7,
-    area = 500,
+    area = 1000,
     seed = 20,
 )
 
@@ -41,21 +70,21 @@ relay_problems: List[ShareARideProblem] = [
         N=11,
         M=7,
         K=2,
-        area=100,
+        area=1000,
         seed=200
     ),
     generate_instance_coords(
         N=19,
         M=11,
         K=3,
-        area=200,
+        area=1000,
         seed=210
     ),
     generate_instance_coords(
         N=31,
         M=19,
         K=5,
-        area=500,
+        area=1000,
         seed=220
     ),
     generate_instance_coords(
@@ -69,16 +98,9 @@ relay_problems: List[ShareARideProblem] = [
         N=181,
         M=69,
         K=11,
-        area=2000,
+        area=1000,
         seed=240
     ),
-    generate_instance_coords(
-        N=319,
-        M=181,
-        K=19,
-        area=4000,
-        seed=250
-    )
 ]
 
 

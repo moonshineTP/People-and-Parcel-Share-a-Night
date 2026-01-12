@@ -5,6 +5,7 @@ There are two main formats:
 - .sarp files: detailed SARP format described in the data documentation.
 """
 import os
+import re
 from typing import Dict, Any
 
 from share_a_ride.core.problem import ShareARideProblem
@@ -265,7 +266,11 @@ def parse_dataset(dataset: Dataset) -> Dict[str, ShareARideProblem]:
     dataset_path = path_router(dataset.value.name, "readall")
     instances = {}
 
-    for filename in os.listdir(dataset_path):
+    filenames = os.listdir(dataset_path)
+    # Sort filenames in natural order (numerical order for numbers in string)
+    filenames.sort(key=lambda f: [int(c) if c.isdigit() else c for c in re.split(r'(\d+)', f)])
+
+    for filename in filenames:
         if filename.endswith(".sarp"):
             inst_name = os.path.splitext(filename)[0]
             file_path = dataset_path + filename

@@ -11,12 +11,18 @@ from share_a_ride.core.solution import PartialSolution, Solution
 from share_a_ride.solvers.algo.utils import apply_general_action, enumerate_actions_greedily
 from share_a_ride.solvers.operator.repair import repair_one_route
 from share_a_ride.solvers.operator.destroy import destroy_operator
+from share_a_ride.solvers.operator.relocate import relocate_operator
+from share_a_ride.solvers.utils.weighter import softmax_weighter
+from share_a_ride.solvers.utils.sampler import sample_from_weight
 
 
 
 def greedy_solver(
         problem: ShareARideProblem,
         partial: Optional[PartialSolution] = None,
+        num_actions: int = 5,
+        t_actions: float = 0.01,
+        seed: Optional[int] = None,
         verbose: bool = False
     ) -> Tuple[Optional[Solution], Dict[str, Any]]:
     """
@@ -35,6 +41,7 @@ def greedy_solver(
         + time: total time taken
     """
     start = time.time()
+    rng = random.Random(seed)
 
     # Initialize partial solution if not provided
     if partial is None:
@@ -47,8 +54,11 @@ def greedy_solver(
     while partial.is_pending():
         iterations += 1
 
-        actions = enumerate_actions_greedily(partial, 1)
-        if not actions:
+        actions = enumerate_actions_greedily(partial, num_actions)
+        expansions = [a for a in actions if a[1] != "return"]
+        if not expansions:
+            expansions = actions
+        if not expansions:
             if verbose:
                 print("[Greedy] [Error] The partial has no feasible actions available.")
 
@@ -59,8 +69,12 @@ def greedy_solver(
                 "status": "error",
             }
 
-        # Else, choose action with minimal added cost
-        action = actions[0]
+        # Else, choose action with minimal added cost (sampled via softmax)
+        incs = [a[3] for a in expansions]
+        weights = softmax_weighter(incs, t_actions)
+        act_idx = sample_from_weight(rng, weights)
+        action = expansions[act_idx]
+
         apply_general_action(partial, action)
 
         if verbose:
@@ -97,6 +111,8 @@ def iterative_greedy_solver(    # Actually quite like a large neighborhood searc
         problem: ShareARideProblem,
         partial: Optional[PartialSolution] = None,
         iterations: int = 10000,
+        num_actions: int = 5,
+        t_actions: float = 0.01,
         destroy_proba: float = 0.53,
         destroy_steps: int = 13,
         destroy_t: float = 1.3,
@@ -155,7 +171,14 @@ def iterative_greedy_solver(    # Actually quite like a large neighborhood searc
 
 
     # //// Greedy initialization ////
-    best_sol, greedy_info = greedy_solver(problem, partial=partial, verbose=verbose)
+    best_sol, greedy_info = greedy_solver(
+        problem=problem,
+        partial=partial,
+        num_actions=num_actions,
+        t_actions=t_actions,
+        seed=3 * seed if seed else None,
+        verbose=verbose
+    )
     if not best_sol:
         return None, {"time": time.time() - start, "status": "error"}
     best_cost = best_sol.max_cost
@@ -213,10 +236,11 @@ def iterative_greedy_solver(    # Actually quite like a large neighborhood searc
             actions += new_actions_count
 
 
-        # //// Greedy completion phase
+        # //// Greedy completion phase (no randomness)
         new_sol, new_info = greedy_solver(
             problem,
             partial=rebuilt_partial,
+            num_actions=1,
             verbose=False
         )
         all_cost += new_sol.max_cost if new_sol else 0

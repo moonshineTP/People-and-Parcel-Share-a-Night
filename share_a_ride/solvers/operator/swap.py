@@ -157,6 +157,9 @@ def intra_swap_one_route_operator(
             delta = 0
 
             if prob.is_ppick(node):
+                if cur_idx + 2 > n_nodes - 1:
+                    cur_idx += 1
+                    continue
                 length = 2
                 delta = 0
             elif prob.is_lpick(node):
