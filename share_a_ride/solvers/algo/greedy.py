@@ -20,7 +20,7 @@ from share_a_ride.solvers.utils.sampler import sample_from_weight
 def greedy_solver(
         problem: ShareARideProblem,
         partial: Optional[PartialSolution] = None,
-        num_actions: int = 5,
+        num_actions: int = 7,
         t_actions: float = 0.01,
         seed: Optional[int] = None,
         verbose: bool = False

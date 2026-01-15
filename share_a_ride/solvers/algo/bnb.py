@@ -9,7 +9,9 @@ This approach incorporates lower-bound pruning to efficiently navigate the solut
 while avoiding duplicate states and ensuring valid solutions.
 """
 import time
+import heapq
 from typing import List, Optional, Tuple, Dict, Any, Union, Iterator, Callable, Set
+from concurrent.futures import ThreadPoolExecutor
 
 from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.core.solution import PartialSolution, Solution
@@ -72,7 +74,7 @@ def mst_lowerbound(action_nodes: List[Tuple[int, int]], D: List[List[int]]) -> i
 def _assign_pairs_canonical(
         partial: PartialSolution,
         incumbent: int,
-        c: float = 0.8,
+        c: float = 0.9,
     ) -> Iterator[List[List[Union[int, Tuple[int, int]]]]]:
     """
     Assign pickup/delivery pairs into routes canonically with symmetry breaking.
@@ -250,7 +252,7 @@ def _assign_serve_regular(
         partial: PartialSolution,
         routeid: int,
         servelist: List[Union[int, Tuple[int, int]]],
-        tle: Callable[[], bool],
+        end_time: float,
         incumbent: int,
     ) -> Optional[List[int]]:
     """
@@ -286,6 +288,8 @@ def _assign_serve_regular(
     best_route = None
     best_cost = incumbent
 
+    def tle() -> bool:
+        return time.time() >= end_time
 
     def do_serve(
             route: List[int],
@@ -409,35 +413,42 @@ def _assign_serve_regular(
             actnodes_todo.add(actnode)
 
 
+    # //// Perform DFS and return best route found
     do_serve(initroute, initload, initcost)
-
     return best_route
 
 
 
 
-def _assign_route_sequential(
+def _process_single_assignment(
+        assignment: List[List[Union[int, Tuple[int, int]]]],
         partial: PartialSolution,
-        ordered_routes: List[Optional[List[int]]],
+        end_time: float,
+        worst_cost: int,
     ) -> Optional[Solution]:
     """
-    Given a taxi route assignment finalized as a list of ordered routes,
-    combine them into full solutions.
+    Process a single assignment. Returns solution or None.
     """
-    problem = partial.problem
+    if time.time() >= end_time:
+        return None
 
-    # If any route is None, skip
-    final_routes = []
-    for route in ordered_routes:
+    # Extract ordered routes for each taxi
+    routes: List[List[int]] = []
+    for routeid, servelist in enumerate(assignment):
+        route = _assign_serve_regular(
+            partial,
+            routeid,
+            servelist,
+            end_time,
+            worst_cost
+        )
         if route is None:
             return None
-        final_routes.append(route)
 
-    sol = Solution(problem, final_routes)
-    if sol.is_valid():
-        return sol
+        routes.append(route)
 
-    return None
+    return Solution(partial.problem, routes)
+
 
 
 
@@ -446,6 +457,7 @@ def bnb_enumerator(
         partial: Optional[PartialSolution] = None,
         n_return: int = 10,
         incumbent: Optional[int] = None,
+        threads: int = 5,
         time_limit: float = 30.0,
         seed: Optional[int] = None,
         verbose: bool = False
@@ -457,7 +469,7 @@ def bnb_enumerator(
     - First, use ordered DFS to assign pickup/delivery pairs to taxis. This order
     breaks symmetries and ensures canonical assignments only. This is aided by
     a greedy cost function to prune assignments that cannot improve upon the incumbent.
-    - For each taxi, use a dfs to search for the 
+    - For each taxi, use a dfs to search for the best route.
     - Combine taxi routes into full solutions using DFS to simulate Descartes product.
 
     Params:
@@ -487,75 +499,78 @@ def bnb_enumerator(
         return time.time() >= end
 
 
-    # //// Main enumeration loop ////
-    solutions: List[Solution] = []
-    solutions_count = 0
-    solutions_keep = 0
+    # Extract canonical assignments (materialize generator to avoid double-consumption)
+    if verbose:
+        print("[BnB] Extracting canonical assignments...")
+    assignments = list(_assign_pairs_canonical(partial, incumbent))
+    num_assignments = len(assignments)
+    if verbose:
+        print(f"[BnB] Extracted {num_assignments} canonical assignments.")
 
+
+    # //// Main enumeration loop ////
+    solutions_count = 0
     assignments_count = 0
+    solutions_keep = 0
     timeout = False
     worst_cost = incumbent
+    top_heap: List[Tuple[int, int, Solution]] = []
 
-    # Extract canonical assignments (materialize generator to avoid double-consumption)
-    assignments = list(_assign_pairs_canonical(partial, incumbent))
     if verbose:
-        print(f"[BnB] Extracted {len(assignments)} canonical assignments.")
-        print("[BnB] Starting enumeration of assignments...")
+        print(f"[BnB] Initiating parallel assignment processing with {threads} threads...")
 
-    # Build solutions for each assignment
-    for assignment in assignments:
-        if tle():
-            timeout = True
-            break
-
-        assignments_count += 1
-
-        # //// Extract ordered routes for each taxi
-        ordered_routes: List[Optional[List[int]]] = []
-        for routeid, servelist in enumerate(assignment):
-            route = _assign_serve_regular(
-                partial,
-                routeid,
-                servelist,
-                tle,
-                worst_cost
-            )
-            ordered_routes.append(route)
-
-        # //// Combine into full solutions
-        sol = _assign_route_sequential(partial, ordered_routes)
-        if sol is None:
-            continue
-
-        solutions_count += 1
+    with ThreadPoolExecutor(max_workers=threads) as executor:
+        futures = [
+            executor.submit(_process_single_assignment, assignment, partial, end, worst_cost)
+            for assignment in assignments
+        ]
         if verbose:
-            print(
-                f"[BnB] Assignment {assignments_count} yielded a valid solution "
-                f"with cost {sol.max_cost}."
-                f" Solutions found so far: {solutions_count}"
-            )
+            print(f"[BnB] Submitted {len(futures)} assignment tasks to thread pool.")
+
+        for future in futures:
+            if tle():
+                timeout = True
+                break
+
+            # Logging
+            assignments_count += 1
+            if verbose and assignments_count % 10 == 0:
+                print(
+                    f"[BnB] Processing {assignments_count}/{num_assignments} assignments. "
+                    f"Time elapsed: {time.time() - start:.2f} seconds."
+                )
+
+            sol = future.result()
+            if sol is None:
+                continue
+
+            solutions_count += 1
+            cost = sol.max_cost
+
+            # Logging
+            if verbose:
+                print(
+                    f"[BnB] Assignment {assignments_count} yielded a valid solution "
+                    f"with cost {cost}. "
+                    f"Solutions found so far: {solutions_count}"
+                )
+
+            # Use heap for O(log n) top-k maintenance
+            if solutions_keep < n_return:
+                heapq.heappush(top_heap, (-cost, assignments_count, sol))
+                solutions_keep += 1
+                if solutions_keep == n_return:
+                    worst_cost = -top_heap[0][0]  # max cost in heap
+            elif cost < worst_cost:
+                heapq.heapreplace(top_heap, (-cost, assignments_count, sol))
+                worst_cost = -top_heap[0][0]
 
 
-        # //// Insertion sort into solutions list
-        if solutions_keep < n_return:
-            insert_pos = 0
-            while insert_pos < solutions_keep and solutions[insert_pos].max_cost < sol.max_cost:
-                insert_pos += 1
+    # Extract solutions from heap, sorted by cost ascending
+    solutions = [item[2] for item in sorted(top_heap, key=lambda x: -x[0])]
 
-            solutions.insert(insert_pos, sol)
-            solutions_keep += 1
-            if solutions_keep == n_return:
-                worst_cost = solutions[-1].max_cost
-
-        elif sol.max_cost <= worst_cost:
-            # Better than worst, insert in sorted position and remove worst
-            insert_pos = 0
-            while insert_pos < solutions_keep and solutions[insert_pos].max_cost < sol.max_cost:
-                insert_pos += 1
-
-            solutions.insert(insert_pos, sol)
-            solutions.pop()
-            worst_cost = solutions[-1].max_cost
+    if verbose:
+        print(f"[BnB] Found {solutions_count} valid solutions.")
 
 
     # Final stats
@@ -590,6 +605,7 @@ def bnb_solver(
         problem: ShareARideProblem,
         partial: Optional[PartialSolution] = None,
         incumbent: Optional[int] = None,
+        threads: int = 8,
         time_limit: float = 30.0,
         seed: Optional[int] = None,
         verbose: bool = False
@@ -615,6 +631,7 @@ def bnb_solver(
         partial,
         1,
         incumbent,
+        threads,
         time_limit,
         verbose=verbose
     )
@@ -633,7 +650,7 @@ if __name__ == "__main__":
 
 
     # //// Example usage and testing
-    for probid, prob in enumerate(exact_problems):
+    for probid, prob in enumerate(exact_problems, start=1):
         incumbent_sol, _ = iterative_greedy_solver(
             prob,
             iterations=2000,
@@ -646,7 +663,9 @@ if __name__ == "__main__":
         solution, info = bnb_solver(
             problem=prob,
             incumbent = incumbent_sol.max_cost + 1 if incumbent_sol else None,
-            time_limit=60.0,
+            time_limit=1200.0,
             verbose=True
         )
         print(f"Problem {probid}: Best solution cost = {solution.max_cost if solution else 'N/A'}")
+        print("=========================================")
+        print()

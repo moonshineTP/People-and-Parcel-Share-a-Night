@@ -5,7 +5,7 @@ def list_pyvrp_instances():
     # Define the relative path to the Pyvrp directory
     # Based on workspace structure: share_a_ride/data/benchmark/Pyvrp
     base_dir = os.getcwd()
-    pyvrp_dir = os.path.join(base_dir, "share_a_ride", "data", "benchmark", "Li")
+    pyvrp_dir = os.path.join(base_dir, "share_a_ride", "data", "benchmark", "Pyvrp")
     
     if not os.path.exists(pyvrp_dir):
         print(f"Directory not found at: {pyvrp_dir}")

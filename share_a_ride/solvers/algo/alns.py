@@ -23,6 +23,7 @@ from share_a_ride.core.solution import PartialSolution, Solution, PartialSolutio
 from share_a_ride.solvers.algo.greedy import iterative_greedy_solver
 from share_a_ride.solvers.algo.beam import beam_solver
 from share_a_ride.solvers.algo.greedy import iterative_greedy_solver
+from share_a_ride.solvers.algo.astar import astar_solver
 from share_a_ride.solvers.operator.destroy import destroy_operator
 
 
@@ -141,7 +142,7 @@ def _repair_2(
         partial.problem,
         partial,
         iterations=3000,
-        time_limit=3.0,
+        time_limit=5.0,
         seed=int(rng.integers(0, 1000000))
     )
     assert repaired_sol
@@ -149,6 +150,27 @@ def _repair_2(
 
     return ALNSPartialSolution(repaired_partial)
 
+
+def _repair_3(
+        state,
+        rng: rnd.Generator,
+    ):
+    working = state.copy()
+    partial = working.partial
+
+    repaired_sol, _info = astar_solver(
+        partial.problem,
+        partial,
+        width=3,
+        cutoff_depth=6,
+        cutoff_size=300,
+        time_limit=5.0,
+        seed=int(rng.integers(0, 1000000))
+    )
+    assert repaired_sol
+    repaired_partial = PartialSolution.from_solution(repaired_sol)
+
+    return ALNSPartialSolution(repaired_partial)
 
 
 
@@ -203,9 +225,10 @@ def alns_solver(        # pylint: disable=W0102
     alns.add_destroy_operator(_destroy_3)   # type: ignore
     alns.add_repair_operator(_repair_1)   # type: ignore
     alns.add_repair_operator(_repair_2)   # type: ignore
+    alns.add_repair_operator(_repair_3)   # type: ignore
 
     # Configure alns components
-    select = RouletteWheel(scores, decay=decay, num_destroy=3, num_repair=2)
+    select = RouletteWheel(scores, decay=decay, num_destroy=3, num_repair=3)
     accept = HillClimbing()
     stop = MaxRuntime(min(time_limit * 0.9, time_limit - 10))
 
@@ -262,7 +285,7 @@ if __name__ == "__main__":
 
     solution, info = alns_solver(
         test_problem,
-        time_limit=60,
-        seed=42,
+        time_limit=960,
+        seed=84,
         verbose=True,
     )

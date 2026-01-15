@@ -7,6 +7,11 @@ import sys
 
 from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.solvers.algo.bnb import bnb_solver
+# from share_a_ride.solvers.algo.alns import alns_solver
+# from share_a_ride.solvers.algo.astar import astar_solver
+# from share_a_ride.solvers.algo.aco import aco_solver
+# from share_a_ride.solvers.algo.mcts import mcts_solver
+# from share_a_ride.solvers.algo.beam import beam_solver
 
 
 def read_instance() -> ShareARideProblem:
@@ -31,7 +36,14 @@ def main(verbose: bool = False):
     """
     problem: ShareARideProblem = read_instance()
 
-    solution, _ = bnb_solver(problem, incumbent=734, time_limit=290.0, verbose=verbose)
+    # solution, _ = alns_solver(
+    #     problem,
+    #     decay=0.7,
+    #     time_limit=120.0,
+    #     seed=42,
+    #     verbose=verbose
+    # )
+    solution, _ = bnb_solver(problem, incumbent=715, time_limit=10000, verbose=verbose)
 
     # n = problem.num_nodes
     # if n <= 100:

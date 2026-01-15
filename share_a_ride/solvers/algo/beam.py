@@ -322,7 +322,7 @@ def beam_solver(
     - r_intra / r_inter control when intra/inter operators start (ratio of depth)
     - f_intra / f_inter control operator repetition frequency as depth fractions
     """
-    solswarm, msg = beam_enumerator(
+    solswarm, stats = beam_enumerator(
         problem=problem,
         swarm=swarm,
         n_partials=n_partials,
@@ -350,6 +350,8 @@ def beam_solver(
                 solswarm.partial_lists[idx] = PartialSolution.from_solution(completed_sol)
 
     # Apply relocate operator to final beam for refinement.
+    if verbose:
+        print("[BeamSearch] Applying relocate operator to refine final beam solutions...")
     for idx, partial in enumerate(solswarm.partial_lists):
         refined_partial, _, _ = relocate_operator(
             partial,
@@ -360,12 +362,14 @@ def beam_solver(
             verbose=False
         )
         solswarm.partial_lists[idx] = refined_partial
+    if verbose:
+        print("[BeamSearch] Relocate applied. Selecting best solution...")
 
     best_sol: Optional[Solution] = solswarm.opt()
     if best_sol is None:
         if verbose:
-            print("[BeamSolver] No complete solution found in beam swarm.")
-            print("[BeamSolver] Attempting defense policy to complete best partial...")
+            print("[BeamSearch] No complete solution found in beam swarm.")
+            print("[BeamSearch] Attempting defense policy to complete best partial...")
 
         # Apply defense policy to complete best partial solution.
         best_partial = min(solswarm.partial_lists, key=lambda ps: ps.max_cost)
@@ -376,17 +380,18 @@ def beam_solver(
         )
     
     if verbose:
-        print()
         if best_sol is not None:
             print(
-                f"[BeamSolver] Best solution found with max_cost: {best_sol.max_cost}."
+                f"[BeamSearch] Best solution found with max_cost: {best_sol.max_cost}."
             )
+            print("------------------------------")
+            print()
         else:
-            print("[BeamSolver] No valid solution could be constructed.")
+            print("[BeamSearch] No valid solution could be constructed.")
         print("------------------------------")
         print()
 
-    return best_sol, msg
+    return best_sol, stats
 
 
 

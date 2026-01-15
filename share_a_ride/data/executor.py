@@ -288,28 +288,28 @@ if __name__ == "__main__":
     ]
     dts = Dataset.LI
 
-    # for solver in solvernames:
-    #     attempt_dataset(
-    #         dataset=dts,
-    #         solver_name=solver,
-    #         solver_mode=SolverMode.INTENSIVE,
-    #         note="Testing executor",
-    #         verbose=True,
-    #         time_limit=600.0
-    #     )
-
-    instancenames = ['Li_32']
-    instances = parse_dataset(dts)
     for solver in solvernames:
-        for name in instancenames:
-            try_instance(
-                dataset=dts,
-                inst_name=name,
-                problem=instances[name],
-                solver_name=solver,
-                solver_mode=SolverMode.INTENSIVE,
-                note="",
-                verbose=True,
-                time_limit=1000,
-            )
+        attempt_dataset(
+            dataset=dts,
+            solver_name=solver,
+            solver_mode=SolverMode.INTENSIVE,
+            note="Testing executor",
+            verbose=True,
+            time_limit=1000.0
+        )
+
+    # instancenames = ['X-n819-k171', 'X-n837-k142', 'X-n856-k95', 'X-n876-k59', 'X-n895-k37', 'X-n916-k207', 'X-n936-k151', 'X-n957-k87', 'X-n979-k58', 'X-n1001-k43']
+    # instances = parse_dataset(dts)
+    # for solver in solvernames:
+    #     for name in instancenames:
+    #         try_instance(
+    #             dataset=dts,
+    #             inst_name=name,
+    #             problem=instances[name],
+    #             solver_name=solver,
+    #             solver_mode=SolverMode.INTENSIVE,
+    #             note="",
+    #             verbose=True,
+    #             time_limit=400,
+    #         )
 

@@ -46,7 +46,6 @@ def _default_value_function(
 def _default_finalize_policy(
         partial: PartialSolution,
         seed: Optional[int] = None,
-        aggressive: bool = False,
     ) -> Optional[Solution]:
     sol, _info = iterative_greedy_solver(
         partial.problem,
@@ -60,14 +59,13 @@ def _default_finalize_policy(
     if not sol:
         return None
 
-    if aggressive:
-        raw_sol = PartialSolution.from_solution(sol)
-        refined_sol, _modified, _cnt = relocate_operator(
-            partial=raw_sol,
-            seed=seed,
-            verbose=False
-        )
-        sol = refined_sol.to_solution()
+    raw_sol = PartialSolution.from_solution(sol)
+    refined_sol, _modified, _cnt = relocate_operator(
+        partial=raw_sol,
+        seed=seed,
+        verbose=False
+    )
+    sol = refined_sol.to_solution()
 
     return sol
 
@@ -1131,7 +1129,8 @@ def _run_aco(
     if depth is None:
         depth = problem.num_actions
 
-    # Run an initial greedy solver to estimate initial cost for pheromone initialization
+
+    # //// Run an initial greedy solver to estimate initial cost for pheromone initialization
     if verbose:
         print("[ACO] [Init] Estimating costs from initial greedy solver...")
     init_sol, _info = iterative_greedy_solver(
@@ -1141,8 +1140,10 @@ def _run_aco(
         seed=10*seed if seed else None,
         verbose=False,
     )
+    assert init_sol
 
-    # Relocate operator refinements
+
+    # //// Relocate operator refinements
     if verbose:
         print(f"[MCTS] Applying relocate operator to initial solution...")
     init_partial = PartialSolution.from_solution(init_sol)
@@ -1162,19 +1163,20 @@ def _run_aco(
     assert init_sol, "[ACO] [Init] Initial solver failed to find a solution."
     
 
-
-    # Initialize caches for nearest expansion
+    # //// Initialize caches for nearest expansion
     if verbose:
         print("[ACO] [Init] Initializing nearest expansion cache...")
     cache = NearestExpansionCache(problem, n_nearest=5)
 
-    # Initialize pheromone and desirability matrices
+
+    # //// Initialize pheromone and desirability matrices
     if verbose:
         print("[ACO] [Init] Initializing matrices...")
     tau = PheromoneMatrix(problem, sigma=sigma, rho=rho, init_cost=init_cost)
     eta = DesirabilityMatrix(problem, phi, chi, gamma, kappa)
 
-    # Initialize solution tracker with the initial greedy solution
+
+    # //// Initialize solution tracker with the initial greedy solution
     if verbose:
         print("[ACO] [Init] Initializing trackers...")
     lfunc = SolutionTracker()
@@ -1186,7 +1188,7 @@ def _run_aco(
     )
 
 
-    # Main ACO iterations
+    # //// Main ACO iterations
     iterations_completed = 0
     status = "done"
     for run in range(iterations):
@@ -1231,6 +1233,9 @@ def _run_aco(
         lfunc.update(result_swarm)
 
         iterations_completed = run + 1
+
+
+    # //// Finalization
 
     # Finalize the best partials into complete solutions
     if verbose:

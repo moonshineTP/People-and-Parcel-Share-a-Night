@@ -134,7 +134,7 @@ class SolverParams(Enum):
     BEAM = {
         "scaling": {"time_limit": 60.0},
         "hyperparameters": {
-            "n_partials": 80,
+            "n_partials": 99,
             "r_intra": 0.55,
             "r_inter": 0.75,
             "f_intra": 0.05,
@@ -144,21 +144,21 @@ class SolverParams(Enum):
     ASTAR = {
         "scaling": {"time_limit": 60.0},
         "hyperparameters": {
-            "width": 4,
+            "width": 5,
             "eps": 0.285,
-            "cutoff_depth": 6,
-            "cutoff_size": 1200,
+            "cutoff_depth": 10,
+            "cutoff_size": 3000,
             "cutoff_ratio": 0.285,
         },
     }
     MCTS = {
         "scaling": {"time_limit": 60.0},
         "hyperparameters": {
-            "width": 2,
+            "width": 3,
             "uct_c": 0.24,
-            "cutoff_depth": 8,
-            "cutoff_depth_inc": 1,
-            "cutoff_iter": 400,
+            "cutoff_depth": 9,
+            "cutoff_depth_inc": 3,
+            "cutoff_iter": 900,
             "reward_pow": 1.69,
         },
     }
@@ -167,7 +167,7 @@ class SolverParams(Enum):
         "hyperparameters": {
             "n_partials": 40,
             "n_cutoff": 10,
-            "width": 4,
+            "width": 5,
             "q_prob": 0.72,
             "alpha": 1.36,
             "beta": 1.38,
