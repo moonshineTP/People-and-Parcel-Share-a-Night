@@ -4,14 +4,17 @@ Provides top-level navigation between main views using Streamlit.
 Run this file to start the app:
     streamlit run share_a_ride/app/app.py
 """
-import sys
-import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-
 import streamlit as st
 
-from share_a_ride.app.dashboard import ShareARideDashboard
-from share_a_ride.app.visualizer import ShareARideSolutionVisualizer
+try:
+    from share_a_ride.app.dashboard import ShareARideDashboard
+    from share_a_ride.app.visualizer import ShareARideSolutionVisualizer
+except ImportError:
+    import sys
+    import os
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+    from share_a_ride.app.dashboard import ShareARideDashboard
+    from share_a_ride.app.visualizer import ShareARideSolutionVisualizer
 
 
 class ShareARideApp:
