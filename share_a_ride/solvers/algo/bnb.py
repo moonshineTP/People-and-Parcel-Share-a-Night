@@ -74,7 +74,7 @@ def mst_lowerbound(action_nodes: List[Tuple[int, int]], D: List[List[int]]) -> i
 def _assign_pairs_canonical(
         partial: PartialSolution,
         incumbent: int,
-        c: float = 0.9,
+        c: float = 0.75,
     ) -> Iterator[List[List[Union[int, Tuple[int, int]]]]]:
     """
     Assign pickup/delivery pairs into routes canonically with symmetry breaking.

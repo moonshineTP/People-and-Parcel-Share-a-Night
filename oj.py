@@ -43,7 +43,7 @@ def main(verbose: bool = False):
     #     seed=42,
     #     verbose=verbose
     # )
-    solution, _ = bnb_solver(problem, incumbent=715, time_limit=10000, verbose=verbose)
+    solution, _ = bnb_solver(problem, incumbent=660, time_limit=20000, verbose=verbose)
 
     # n = problem.num_nodes
     # if n <= 100:

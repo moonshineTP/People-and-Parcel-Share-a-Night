@@ -1008,5 +1008,5 @@ def main(verbose=_B):
 	elif A<=500:B,C,D,E,F=7,1,1400,3,.3
 	elif A<=1000:B,C,D,E,F=6,0,600,2,.1
 	else:B,C,D,E,F=5,0,250,2,.05
-	H,I=mcts_solver(G,width=E,uct_c=F,cutoff_depth=B,cutoff_depth_inc=C,cutoff_iter=D,seed=42,time_limit=28e1,verbose=verbose);assert H;H.stdin_print()
+	H,I=mcts_solver(G,width=E,uct_c=F,cutoff_depth=B,cutoff_depth_inc=C,cutoff_iter=D,seed=42,time_limit=25e1,verbose=verbose);assert H;H.stdin_print()
 if __name__=='__main__':main(verbose=_B)

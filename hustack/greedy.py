@@ -1,52 +1,51 @@
-_Y='MCTSNode'
-_X='overtime'
-_W='serveL'
-_V='stochastic'
-_U='best'
-_T='done'
-_S='dropL'
-_R='pickL'
-_Q='-inf'
-_P='return'
+_U='serveL'
+_T='stochastic'
+_S='best'
+_R='iterations'
+_Q='dropL'
+_P='pickL'
 _O='status'
-_N='actions_done'
-_M='actions'
-_L='iterations'
-_K='time'
-_J=1.
-_I='pos'
-_H='first'
-_G='serveP'
-_F='load'
-_E='parcels'
+_N='time'
+_M='return'
+_L='actions_done'
+_K=1.
+_J='actions'
+_I='first'
+_H='serveP'
+_G='load'
+_F='parcels'
+_E='pos'
 _D='ended'
 _C=True
-_B=False
-_A=None
+_B=None
+_A=False
 import sys,math,random,time,bisect,heapq
-from dataclasses import dataclass,field
+from dataclasses import dataclass
 from typing import Any,Callable,Dict,List,Optional,Tuple,Union,Sequence,Iterator,Set
 Request=Tuple[int,int,str]
 SwapRequest=Tuple[int,int,str]
+ActionNode=Tuple[int,int]
+ValueFunction=Callable
+FinalizePolicy=Callable
 Action=Tuple[int,str,int,int]
 RelocateRequest=Tuple[int,int,int,int,str]
 CostChange=Tuple[int,int,int]
 RelocateAction=Tuple[RelocateRequest,CostChange]
 class ShareARideProblem:
-	def __init__(A,N,M,K,parcel_qty,vehicle_caps,dist,coords=_A,name=_A):A.N=N;A.M=M;A.K=K;A.q=list(parcel_qty);A.Q=list(vehicle_caps);A.D=[A[:]for A in dist];A.num_nodes=2*N+2*M+1;A.num_requests=N+M;A.num_actions=N+2*M+K;A.num_expansions=N+2*M;A.pserve=lambda pid:(pid,pid+N+M);A.lpick=lambda lid:N+lid;A.ldrop=lambda lid:2*N+M+lid;A.rev_ppick=lambda nodeid:nodeid;A.rev_pdrop=lambda nodeid:nodeid-(N+M);A.rev_lpick=lambda n:n-N;A.rev_ldrop=lambda n:n-(2*N+M);A.is_ppick=lambda nodeid:1<=nodeid<=N;A.is_pdrop=lambda nodeid:N+M+1<=nodeid<=2*N+M;A.is_lpick=lambda nodeid:N+1<=nodeid<=N+M;A.is_ldrop=lambda nodeid:2*N+M+1<=nodeid<=2*(N+M);A.coords=coords;A.name=name
+	def __init__(A,N,M,K,parcel_qty,vehicle_caps,dist,coords=_B,name=_B):A.N=N;A.M=M;A.K=K;A.q=list(parcel_qty);A.Q=list(vehicle_caps);A.D=[A[:]for A in dist];A.num_nodes=2*N+2*M+1;A.num_requests=N+M;A.num_actions=N+2*M+K;A.num_expansions=N+2*M;A.pserve=lambda pid:(pid,pid+N+M);A.lpick=lambda lid:N+lid;A.ldrop=lambda lid:2*N+M+lid;A.rev_ppick=lambda nodeid:nodeid;A.rev_pdrop=lambda nodeid:nodeid-(N+M);A.rev_lpick=lambda n:n-N;A.rev_ldrop=lambda n:n-(2*N+M);A.is_ppick=lambda nodeid:1<=nodeid<=N;A.is_pdrop=lambda nodeid:N+M+1<=nodeid<=2*N+M;A.is_lpick=lambda nodeid:N+1<=nodeid<=N+M;A.is_ldrop=lambda nodeid:2*N+M+1<=nodeid<=2*(N+M);A.coords=coords;A.name=name
 	def is_valid(A):
-		if len(A.q)!=A.M:return _B
-		if len(A.Q)!=A.K:return _B
-		if len(A.D)!=A.num_nodes:return _B
-		if not all(len(B)==A.num_nodes for B in A.D):return _B
+		if len(A.q)!=A.M:return _A
+		if len(A.Q)!=A.K:return _A
+		if len(A.D)!=A.num_nodes:return _A
+		if not all(len(B)==A.num_nodes for B in A.D):return _A
 		return _C
 	def copy(A):return ShareARideProblem(A.N,A.M,A.K,A.q[:],A.Q[:],[A[:]for A in A.D],A.coords,A.name)
-def route_cost_from_sequence(seq,D,verbose=_B):
+def route_cost_from_sequence(seq,D,verbose=_A):
 	A,B=0,0
 	for C in seq[1:]:B+=D[A][C];A=C
 	return B
 class Solution:
-	def __init__(A,problem,routes,route_costs=_A):
+	def __init__(A,problem,routes,route_costs=_B):
 		E=route_costs;C=routes;B=problem
 		if not C:raise ValueError('Routes list cannot be empty.')
 		if len(C)!=B.K:raise ValueError(f"Expected {B.K} routes, got {len(C)}.")
@@ -55,38 +54,38 @@ class Solution:
 		A.problem=B;A.routes=C;A.route_costs=D;A.num_actions=B.num_actions;A.max_cost=max(D)if D else 0
 	def is_valid(G):
 		A=G.problem;J=A.K
-		if len(G.routes)!=J:return _B
+		if len(G.routes)!=J:return _A
 		H=set()
 		for(K,D)in enumerate(G.routes):
-			if not(D[0]==0 and D[-1]==0):return _B
+			if not(D[0]==0 and D[-1]==0):return _A
 			L=len(D);E=0;F=set()
 			for(I,B)in enumerate(D[1:-1],start=1):
-				if B in H:return _B
+				if B in H:return _A
 				H.add(B)
 				if A.is_ppick(B):
 					M=A.rev_ppick(B);N=A.pserve(M)[1]
-					if I+1>=L or D[I+1]!=N:return _B
+					if I+1>=L or D[I+1]!=N:return _A
 				elif A.is_pdrop(B):0
 				elif A.is_lpick(B):
 					C=A.rev_lpick(B)
-					if C in F:return _B
+					if C in F:return _A
 					E+=A.q[C-1]
-					if E>A.Q[K]:return _B
+					if E>A.Q[K]:return _A
 					F.add(C)
 				elif A.is_ldrop(B):
 					C=A.rev_ldrop(B)
-					if C not in F:return _B
-					if E-A.q[C-1]<0:return _B
+					if C not in F:return _A
+					if E-A.q[C-1]<0:return _A
 					E-=A.q[C-1];F.remove(C)
-			if E!=0:return _B
-		if len(H)!=A.num_requests*2:return _B
+			if E!=0:return _A
+		if len(H)!=A.num_requests*2:return _A
 		return _C
-	def stdin_print(A,verbose=_B):
+	def stdin_print(A,verbose=_A):
 		print(A.problem.K)
 		for(B,C)in zip(A.routes,A.route_costs):print(len(B));print(' '.join(map(str,B)))
 class PartialSolution:
-	def __init__(A,problem,routes=_A):C=routes;B=problem;A.problem=B;A.routes=A._init_routes(C);A.route_costs=A._init_costs(C);A.min_cost=min(A.route_costs);A.max_cost=max(A.route_costs);A.avg_cost=sum(A.route_costs)/B.K;A.node_assignment=A._init_node_assignment();A.remaining_pass_serve,A.remaining_parc_pick,A.remaining_parc_drop,A.states,A.num_actions=A._init_states()
-	def _init_routes(D,routes=_A):
+	def __init__(A,problem,routes=_B):C=routes;B=problem;A.problem=B;A.routes=A._init_routes(C);A.route_costs=A._init_costs(C);A.min_cost=min(A.route_costs);A.max_cost=max(A.route_costs);A.avg_cost=sum(A.route_costs)/B.K;A.node_assignment=A._init_node_assignment();A.remaining_pass_serve,A.remaining_parc_pick,A.remaining_parc_drop,A.states,A.num_actions=A._init_states()
+	def _init_routes(D,routes=_B):
 		A=routes;B=D.problem.K
 		if not A:return[[0]for A in range(B)]
 		if len(A)!=B:raise ValueError(f"Expected {B} routes, got {len(A)}.")
@@ -94,7 +93,7 @@ class PartialSolution:
 			if not C:raise ValueError('One route cannot be null')
 			elif C[0]!=0:raise ValueError('Each route must start at depot 0.')
 		return A
-	def _init_costs(A,routes=_A):
+	def _init_costs(A,routes=_B):
 		B=routes
 		if not B:return[0]*A.problem.K
 		if len(B)!=A.problem.K:raise ValueError('Mismatch between routes and route_costs length.')
@@ -125,68 +124,68 @@ class PartialSolution:
 				else:
 					if C!=0:raise RuntimeError('Invalid route: node id out of range.')
 					D+=1
-			Q=E[-1];R=M>1 and E[-1]==0;S={_I:Q,_E:F,_F:H,_M:D,_D:R};L.append(S)
+			Q=E[-1];R=M>1 and E[-1]==0;S={_E:Q,_F:F,_G:H,_J:D,_D:R};L.append(S)
 		return J,K,G,L,D
-	def is_valid(B,verbose=_B):
+	def is_valid(B,verbose=_A):
 		A=B.problem;W,X,Q=A.N,A.M,A.K
-		if not len(B.routes)==len(B.states)==len(B.route_costs)==Q:return _B
-		if len(B.node_assignment)!=len(A.D):return _B
+		if not len(B.routes)==len(B.states)==len(B.route_costs)==Q:return _A
+		if len(B.node_assignment)!=len(A.D):return _A
 		R=set(range(1,W+1));S=set(range(1,X+1));L=set();M=[-1]*len(A.D);I=0;N=0;Y=0
 		for F in range(Q):
 			E=B.routes[F];J=len(E);O=B.states[F]
-			if not E or E[0]!=0:return _B
+			if not E or E[0]!=0:return _A
 			T=J>1 and E[-1]==0
-			if O[_D]!=T:return _B
+			if O[_D]!=T:return _A
 			G=set();J=len(E);H=0;U=E[0];K=0
 			for(P,C)in enumerate(E[1:],start=1):
-				if not 0<=C<A.num_nodes:return _B
+				if not 0<=C<A.num_nodes:return _A
 				if C!=0:
 					Z=M[C]
-					if Z not in(-1,F):return _B
+					if Z not in(-1,F):return _A
 					M[C]=F
 				K+=A.D[U][C];U=C
 				if A.is_ppick(C):
 					V=A.rev_ppick(C)
 					if P+1<J:
 						a=E[P+1];b=A.pserve(V)[1]
-						if a!=b:return _B
+						if a!=b:return _A
 					I+=1;R.discard(V)
 				elif A.is_pdrop(C):0
 				elif A.is_lpick(C):
 					D=A.rev_lpick(C)
-					if D in G:return _B
+					if D in G:return _A
 					H+=A.q[D-1]
-					if H>A.Q[F]:return _B
+					if H>A.Q[F]:return _A
 					I+=1;G.add(D);S.discard(D);L.add(D)
 				elif A.is_ldrop(C):
 					D=A.rev_ldrop(C)
-					if D not in G:return _B
+					if D not in G:return _A
 					H-=A.q[D-1]
-					if H<0:return _B
+					if H<0:return _A
 					I+=1;G.remove(D);L.discard(D)
 				else:
-					if P!=J-1:return _B
-					if H!=0 or G:return _B
-					if not T:return _B
+					if P!=J-1:return _A
+					if H!=0 or G:return _A
+					if not T:return _A
 					I+=1
-			if O[_E]!=G:return _B
-			if O[_F]!=H:return _B
-			if B.route_costs[F]!=K:return _B
+			if O[_F]!=G:return _A
+			if O[_G]!=H:return _A
+			if B.route_costs[F]!=K:return _A
 			N=max(N,K);Y+=K
-		if R!=B.remaining_pass_serve:return _B
-		if S!=B.remaining_parc_pick:return _B
-		if L!=B.remaining_parc_drop:return _B
-		if M!=B.node_assignment:return _B
-		if B.max_cost!=N:return _B
-		if B.num_actions!=I:return _B
+		if R!=B.remaining_pass_serve:return _A
+		if S!=B.remaining_parc_pick:return _A
+		if L!=B.remaining_parc_drop:return _A
+		if M!=B.node_assignment:return _A
+		if B.max_cost!=N:return _A
+		if B.num_actions!=I:return _A
 		return _C
 	def is_pending(A):return A.num_actions<A.problem.num_actions
 	def is_identical(A,other):
 		B=other
 		if A is B:return _C
-		if A.problem is not B.problem or A.num_actions!=B.num_actions:return _B
+		if A.problem is not B.problem or A.num_actions!=B.num_actions:return _A
 		return sorted(tuple(A[:3])for A in A.routes)==sorted(tuple(A[:3])for A in B.routes)
-	def copy(A):return PartialSolution(problem=A.problem,routes=[A.copy()for A in A.routes]if A.routes else _A)
+	def copy(A):return PartialSolution(problem=A.problem,routes=[A.copy()for A in A.routes]if A.routes else _B)
 	def enumerate_action_nodes(B,route_idx):
 		D=B.problem;E=B.routes[route_idx];C=[]
 		for A in E:
@@ -197,40 +196,41 @@ class PartialSolution:
 	def possible_expand(E,t_idx):
 		H=t_idx;F=E.states[H]
 		if F[_D]:return[]
-		A=E.problem;G=F[_I];C=[]
-		for I in E.remaining_pass_serve:J,K=A.pserve(I);D=A.D[G][J]+A.D[J][K];C.append((_G,I,D))
+		A=E.problem;G=F[_E];C=[]
+		for I in E.remaining_pass_serve:J,K=A.pserve(I);D=A.D[G][J]+A.D[J][K];C.append((_H,I,D))
 		for B in E.remaining_parc_pick:
 			L=A.q[B-1]
-			if F[_F]+L<=A.Q[H]:D=A.D[G][A.lpick(B)];C.append((_R,B,D))
-		for B in F[_E]:D=A.D[G][A.ldrop(B)];C.append((_S,B,D))
+			if F[_G]+L<=A.Q[H]:D=A.D[G][A.lpick(B)];C.append((_P,B,D))
+		for B in F[_F]:D=A.D[G][A.ldrop(B)];C.append((_Q,B,D))
 		C.sort(key=lambda x:x[2]);return C
 	def check_expand(A,route_idx,kind,actid):
 		E=route_idx;C=actid;B=kind;D=A.states[E];F=A.problem
-		if D[_D]:return _B
-		if B==_G:return C in A.remaining_pass_serve
-		if B==_R:return C in A.remaining_parc_pick and D[_F]+F.q[C-1]<=F.Q[E]
-		if B==_S:return C in D[_E]
+		if D[_D]:return _A
+		if B==_H:return C in A.remaining_pass_serve
+		if B==_P:return C in A.remaining_parc_pick and D[_G]+F.q[C-1]<=F.Q[E]
+		if B==_Q:return C in D[_F]
 		raise ValueError(f"Unknown action kind: {B}")
-	def check_return(B,route_idx):A=B.states[route_idx];return not(A[_D]or A[_E])
+	def check_return(B,route_idx):A=B.states[route_idx];return not(A[_D]or A[_F])
 	def apply_extend(A,route_idx,kind,actid,inc):
 		G=kind;C=actid;B=route_idx;I=A.routes[B];D=A.states[B];E=A.problem
 		if D[_D]:raise ValueError(f"Cannot apply action on ended route {B}.")
-		if G==_G:K,J=E.pserve(C);I.append(K);I.append(J);A.node_assignment[K]=B;A.node_assignment[J]=B;A.remaining_pass_serve.discard(C);D[_I]=J;D[_M]+=1;A.route_costs[B]+=inc;A.max_cost=max(A.max_cost,A.route_costs[B]);A.min_cost=min(A.route_costs);A.avg_cost=sum(A.route_costs)/A.problem.K;A.num_actions+=1;return
-		elif G==_R:
+		if G==_H:K,J=E.pserve(C);I.append(K);I.append(J);A.node_assignment[K]=B;A.node_assignment[J]=B;A.remaining_pass_serve.discard(C);D[_E]=J;D[_J]+=1;A.route_costs[B]+=inc;A.max_cost=max(A.max_cost,A.route_costs[B]);A.min_cost=min(A.route_costs);A.avg_cost=sum(A.route_costs)/A.problem.K;A.num_actions+=1;return
+		elif G==_P:
 			F=E.q[C-1]
-			if D[_F]+F>E.Q[B]:raise ValueError(f"Taxi {B} capacity exceeded for parcel {C}.")
-			H=E.lpick(C);D[_F]+=F;D[_E].add(C);A.remaining_parc_pick.discard(C);A.remaining_parc_drop.add(C)
-		elif G==_S:
+			if D[_G]+F>E.Q[B]:raise ValueError(f"Taxi {B} capacity exceeded for parcel {C}.")
+			H=E.lpick(C);D[_G]+=F;D[_F].add(C);A.remaining_parc_pick.discard(C);A.remaining_parc_drop.add(C)
+		elif G==_Q:
 			F=E.q[C-1]
-			if D[_F]-F<0:raise ValueError(f"Taxi {B} load cannot be negative after dropping parcel {C}.")
-			H=E.ldrop(C);D[_F]-=F;D[_E].discard(C);A.remaining_parc_drop.discard(C)
+			if D[_G]-F<0:raise ValueError(f"Taxi {B} load cannot be negative after dropping parcel {C}.")
+			H=E.ldrop(C);D[_G]-=F;D[_F].discard(C);A.remaining_parc_drop.discard(C)
 		else:raise ValueError(f"Unknown action kind: {G}")
-		D[_I]=H;D[_M]+=1;I.append(H);A.node_assignment[H]=B;A.route_costs[B]+=inc;A.max_cost=max(A.max_cost,A.route_costs[B]);A.min_cost=min(A.route_costs);A.avg_cost=sum(A.route_costs)/A.problem.K;A.num_actions+=1
+		D[_E]=H;D[_J]+=1;I.append(H);A.node_assignment[H]=B;A.route_costs[B]+=inc;A.max_cost=max(A.max_cost,A.route_costs[B]);A.min_cost=min(A.route_costs);A.avg_cost=sum(A.route_costs)/A.problem.K;A.num_actions+=1
 	def apply_return(A,t_idx):
 		C=t_idx;D=A.routes[C];B=A.states[C]
 		if B[_D]:return
-		if B[_E]:raise ValueError(f"Taxi {C} must drop all loads before returning to depot.")
-		E=A.problem.D[B[_I]][0];D.append(0);B[_I]=0;B[_M]+=1;B[_D]=_C;A.route_costs[C]+=E;A.max_cost=max(A.max_cost,A.route_costs[C]);A.min_cost=min(A.route_costs);A.avg_cost=sum(A.route_costs)/A.problem.K;A.num_actions+=1
+		if B[_E]==0 and B[_J]>0:B[_D]=_C;return
+		if B[_F]:raise ValueError(f"Taxi {C} must drop all loads before returning to depot.")
+		E=A.problem.D[B[_E]][0];D.append(0);B[_E]=0;B[_J]+=1;B[_D]=_C;A.route_costs[C]+=E;A.max_cost=max(A.max_cost,A.route_costs[C]);A.min_cost=min(A.route_costs);A.avg_cost=sum(A.route_costs)/A.problem.K;A.num_actions+=1
 	def reverse_action(A,t_idx):
 		G=t_idx;F=A.routes[G];C=A.states[G]
 		if len(F)<=1:raise ValueError(f"No actions to reverse for taxi {G}.")
@@ -238,16 +238,16 @@ class PartialSolution:
 		if B.is_pdrop(D):
 			J=F.pop();I=F.pop();L=B.rev_pdrop(J)
 			if B.rev_ppick(I)!=L:raise ValueError('Inconsistent route state: pdrop not preceded by corresponding ppick.')
-			H=F[-1];K=B.D[H][I]+B.D[I][J];C[_I]=H;C[_M]-=1;C[_D]=_B;A.remaining_pass_serve.add(L);A.node_assignment[J]=-1;A.node_assignment[I]=-1;A.route_costs[G]-=K;A.max_cost=max(A.route_costs);A.min_cost=min(A.route_costs);A.avg_cost=sum(A.route_costs)/A.problem.K;A.num_actions-=1;return
-		D=F.pop();H=F[-1];K=B.D[H][D];C[_I]=H;C[_M]-=1;C[_D]=_B
-		if B.is_lpick(D):E=B.rev_lpick(D);C[_F]-=B.q[E-1];C[_E].discard(E);A.remaining_parc_pick.add(E);A.remaining_parc_drop.discard(E)
-		elif B.is_ldrop(D):E=B.rev_ldrop(D);C[_F]+=B.q[E-1];C[_E].add(E);A.remaining_parc_pick.discard(E);A.remaining_parc_drop.add(E)
+			H=F[-1];K=B.D[H][I]+B.D[I][J];C[_E]=H;C[_J]-=1;C[_D]=_A;A.remaining_pass_serve.add(L);A.node_assignment[J]=-1;A.node_assignment[I]=-1;A.route_costs[G]-=K;A.max_cost=max(A.route_costs);A.min_cost=min(A.route_costs);A.avg_cost=sum(A.route_costs)/A.problem.K;A.num_actions-=1;return
+		D=F.pop();H=F[-1];K=B.D[H][D];C[_E]=H;C[_J]-=1;C[_D]=_A
+		if B.is_lpick(D):E=B.rev_lpick(D);C[_G]-=B.q[E-1];C[_F].discard(E);A.remaining_parc_pick.add(E);A.remaining_parc_drop.discard(E)
+		elif B.is_ldrop(D):E=B.rev_ldrop(D);C[_G]+=B.q[E-1];C[_F].add(E);A.remaining_parc_pick.discard(E);A.remaining_parc_drop.add(E)
 		elif D==0:0
 		else:raise ValueError(f"Unexpected node type to reverse: {D}")
 		A.route_costs[G]-=K;A.max_cost=max(A.route_costs);A.min_cost=min(A.route_costs);A.avg_cost=sum(A.route_costs)/A.problem.K;A.node_assignment[D]=-1;A.num_actions-=1
-	def is_completed(A,verbose=_B):
-		if A.num_actions!=A.problem.num_actions:return _B
-		if not all(A[_D]for A in A.states):return _B
+	def is_completed(A,verbose=_A):
+		if A.num_actions!=A.problem.num_actions:return _A
+		if not all(A[_D]for A in A.states):return _A
 		return _C
 	def to_solution(A):
 		if not A.is_completed(verbose=_C):return
@@ -262,7 +262,7 @@ class PartialSolutionSwarm:
 		A.problem=B[0].problem;A.num_partials=len(B);A.partial_lists=B;A.partial_num_actions=[A.num_actions for A in B];A.partial_costs=[A.max_cost for A in B];A.min_cost=min(A.partial_costs);A.max_cost=max(A.partial_costs);A.avg_cost=sum(A.max_cost for A in B)/len(B)
 	def update(A):A.partial_num_actions=[A.num_actions for A in A.partial_lists];A.partial_costs=[A.max_cost for A in A.partial_lists];A.min_cost=min(A.partial_costs);A.max_cost=max(A.partial_costs);A.avg_cost=sum(A.max_cost for A in A.partial_lists)/len(A.partial_lists)
 	def opt(B):
-		B.update();C=10**18;D=_A
+		B.update();C=10**18;D=_B
 		for E in B.partial_lists:
 			if E.is_completed():
 				A=E.to_solution()
@@ -271,30 +271,30 @@ class PartialSolutionSwarm:
 	def stats(A):A.update();return{'num_partials':A.num_partials,'min_cost':A.min_cost,'max_cost':A.max_cost,'avg_cost':A.avg_cost}
 	def copy(A):B=[A.copy()for A in A.partial_lists];return PartialSolutionSwarm(solutions=B)
 def weighted(kind,inc,pweight=.7):
-	if kind==_G:return pweight*inc
+	if kind==_H:return pweight*inc
 	return inc+1
 def action_weight(action,pweight=.7):A=action;return weighted(A[1],A[3],pweight)
 def softmax_weighter(incs,t):
 	A=incs;B,E=min(A),max(A);C=E-B
-	if C<1e-06:return[_J]*len(A)
+	if C<1e-06:return[_K]*len(A)
 	D=[]
-	for F in A:G=(F-B)/C;D.append((_J-G+.1)**(_J/t))
+	for F in A:G=(F-B)/C;D.append((_K-G+.1)**(_K/t))
 	return D
-def balanced_scorer(partial,sample_size=8,w_std=.15,seed=_A):
+def balanced_scorer(partial,sample_size=8,w_std=.15,seed=_B):
 	B=sample_size;A=partial;E=random.Random(seed);C=sorted(A.route_costs)
 	if len(C)==1:return A.max_cost
 	D=E.choices(C,k=B);F=sum(D)/B;G=sum((A-F)**2 for A in D)/B;H=G**.5;return A.max_cost+w_std*H
 def check_general_action(partial,action):
 	A=partial;B,C,D,E=action
-	if C==_P:return A.check_return(B)
+	if C==_M:return A.check_return(B)
 	return A.check_expand(B,C,D)
 def apply_general_action(partial,action):
 	A=partial;B,C,D,E=action
-	if C==_P:A.apply_return(B)
+	if C==_M:A.apply_return(B)
 	else:A.apply_extend(B,C,D,E)
-def enumerate_actions_greedily(partial,width=_A,asymmetric=_C):
+def enumerate_actions_greedily(partial,width=_B,asymmetric=_C):
 	D=width;A=partial
-	if D is _A:D=10**9
+	if D is _B:D=10**9
 	B=A.problem;I=[A for(A,B)in enumerate(A.states)if not B[_D]]
 	if not I:return[]
 	E=sorted(I,key=lambda idx:A.route_costs[idx]);J=len(E)
@@ -320,7 +320,7 @@ def enumerate_actions_greedily(partial,width=_A,asymmetric=_C):
 			I=[(H,A,B,C)for(A,B,C)in C];B.extend(I);B.sort(key=lambda item:item[3]);B=B[:D]
 		return B
 	F=N(aggressive=_C)
-	if not F:F=N(aggressive=_B)
+	if not F:F=N(aggressive=_A)
 	V=A.max_cost;G=[];H=[]
 	for O in F:
 		C,W,a,P=O;X=weighted(W,P);Q=X,O
@@ -332,7 +332,7 @@ def enumerate_actions_greedily(partial,width=_A,asymmetric=_C):
 		S=[]
 		for C in E:
 			Y=A.states[C]
-			if A.check_return(C):Z=B.D[Y[_I]][0];S.append((C,_P,0,Z))
+			if A.check_return(C):Z=B.D[Y[_E]][0];S.append((C,_M,0,Z))
 		return S[:D]
 	return R
 def sample_from_weight(rng,weights):
@@ -344,7 +344,7 @@ def sample_from_weight(rng,weights):
 			D+=G
 			if E<=D:B=F;break
 	return B
-def repair_one_route(partial,route_idx,steps,T=_J,seed=_A,verbose=_B):
+def repair_one_route(partial,route_idx,steps,T=_K,seed=_B,verbose=_A):
 	B=route_idx;A=partial;E=random.Random(seed);C=0
 	for M in range(steps):
 		F=A.states[B]
@@ -353,14 +353,14 @@ def repair_one_route(partial,route_idx,steps,T=_J,seed=_A,verbose=_B):
 		if not D:A.apply_return(B);C+=1;break
 		G=[weighted(A,B)for(A,C,B)in D];H=softmax_weighter(G,T);I=sample_from_weight(E,H);J,K,L=D[I];A.apply_extend(B,J,K,L);C+=1
 	return A,C
-def repair_operator(partial,repair_proba=_A,steps=_A,T=_J,seed=_A,verbose=_B):
+def repair_operator(partial,repair_proba=_B,steps=_B,T=_K,seed=_B,verbose=_A):
 	C=steps;B=repair_proba;A=partial;E=random.Random(seed)
-	if B is _A:B=_J
-	if C is _A:C=10**9
-	I=list(range(A.problem.K));D=A.problem.K;J=round(B*D+.5);K=min(D,max(1,J));L=E.sample(I,K);F=0;G=[_B]*D
+	if B is _B:B=_K
+	if C is _B:C=10**9
+	I=list(range(A.problem.K));D=A.problem.K;J=round(B*D+.5);K=min(D,max(1,J));L=E.sample(I,K);F=0;G=[_A]*D
 	for H in L:A,M=repair_one_route(partial=A,route_idx=H,steps=C,T=T,seed=E.randint(0,1000000),verbose=verbose);F+=M;G[H]=_C
 	return A,G,F
-def destroy_one_route(problem,route,route_idx,steps=10,verbose=_B):
+def destroy_one_route(problem,route,route_idx,steps=10,verbose=_A):
 	E='The destroyed route is likely invalid beforehand.';A=problem;C=route[:];D=0
 	while D<steps and len(C)>1:
 		B=C.pop()
@@ -371,44 +371,44 @@ def destroy_one_route(problem,route,route_idx,steps=10,verbose=_B):
 		else:raise RuntimeError(E)
 		D+=1
 	return C,D
-def destroy_operator(sol,destroy_proba,destroy_steps,seed=_A,t=_J,verbose=_B):
+def destroy_operator(sol,destroy_proba,destroy_steps,seed=_B,t=_K,verbose=_A):
 	A=sol;M=random.Random(seed);B=A.problem.K;D=[A[:]for A in A.routes];N=A.route_costs;O=round(destroy_proba*B+.5);P=min(B,max(1,O));Q=softmax_weighter(N,t=t);G=[];E=list(range(B));H=Q[:]
 	for T in range(P):
 		if not E:break
 		F=sample_from_weight(M,H);G.append(E[F]);E.pop(F);H.pop(F)
-	I=[_B]*B;J=0
+	I=[_A]*B;J=0
 	for C in G:
 		K=D[C]
 		if len(K)<=2:continue
 		R,L=destroy_one_route(A.problem,K,C,steps=destroy_steps,verbose=verbose)
 		if L>0:D[C]=R;I[C]=_C;J+=L
 	S=PartialSolution(problem=A.problem,routes=D);return S,I,J
-def greedy_solver(problem,partial=_A,num_actions=7,t_actions=.01,seed=_A,verbose=_B):
+def greedy_solver(problem,partial=_B,num_actions=7,t_actions=.01,seed=_B,verbose=_A):
 	A=partial;D=time.time();G=random.Random(seed)
-	if A is _A:A=PartialSolution(problem=problem)
+	if A is _B:A=PartialSolution(problem=problem)
 	C=0;E=A.num_actions
 	while A.is_pending():
-		C+=1;F=enumerate_actions_greedily(A,num_actions);B=[A for A in F if A[1]!=_P]
+		C+=1;F=enumerate_actions_greedily(A,num_actions);B=[A for A in F if A[1]!=_M]
 		if not B:B=F
-		if not B:return _A,{_L:C,_K:time.time()-D,_N:A.num_actions-E,_O:'error'}
+		if not B:return _B,{_R:C,_N:time.time()-D,_L:A.num_actions-E,_O:'error'}
 		H=[A[3]for A in B];I=softmax_weighter(H,t_actions);J=sample_from_weight(G,I);K=B[J];apply_general_action(A,K)
-	L=A.to_solution();M={_L:C,_K:time.time()-D,_N:A.num_actions-E,_O:_T};return L,M
-def iterative_greedy_solver(problem,partial=_A,iterations=10000,num_actions=7,t_actions=.01,destroy_proba=.53,destroy_steps=13,destroy_t=1.3,rebuild_proba=.29,rebuild_steps=3,rebuild_t=1.2,time_limit=3e1,seed=_A,verbose=_B):
+	L=A.to_solution();M={_R:C,_N:time.time()-D,_L:A.num_actions-E,_O:'done'};return L,M
+def iterative_greedy_solver(problem,partial=_B,iterations=10000,num_actions=7,t_actions=.01,destroy_proba=.53,destroy_steps=13,destroy_t=1.3,rebuild_proba=.29,rebuild_steps=3,rebuild_t=1.2,time_limit=3e1,seed=_B,verbose=_A):
 	N=rebuild_steps;M=rebuild_proba;L=destroy_steps;K=destroy_proba;F=partial;E=problem;B=seed;G=time.time();O=G+time_limit;X=random.Random(B);assert 1e-05<K<.99999;assert 1e-05<M<.99999;assert 1<=N<=L
-	if F is _A:F=PartialSolution(problem=E,routes=[])
-	C,Y=greedy_solver(problem=E,partial=F,num_actions=num_actions,t_actions=t_actions,seed=3*B if B else _A,verbose=verbose)
-	if not C:return _A,{_K:time.time()-G,_O:'error'}
-	H=C.max_cost;D=Y[_N];P=H;Q=0;R=0;S=0;T=_T;I=0
+	if F is _B:F=PartialSolution(problem=E,routes=[])
+	C,Y=greedy_solver(problem=E,partial=F,num_actions=num_actions,t_actions=t_actions,seed=3*B if B else _B,verbose=verbose)
+	if not C:return _B,{_N:time.time()-G,_O:'error'}
+	H=C.max_cost;D=Y[_L];P=H;Q=0;R=0;S=0;T='done';I=0
 	for Z in range(1,iterations+1):
-		if O and time.time()>=O:T=_X;break
-		U=_A if B is _A else 2*B+98*Z;a,b,V=destroy_operator(C,K,L,seed=U,t=destroy_t);R+=V;D+=V;J=a
+		if O and time.time()>=O:T='overtime';break
+		U=_B if B is _B else 2*B+98*Z;a,b,V=destroy_operator(C,K,L,seed=U,t=destroy_t);R+=V;D+=V;J=a
 		for(c,d)in enumerate(b):
 			if not d:continue
 			if X.random()>M:continue
 			J,W=repair_one_route(J,route_idx=c,steps=N,T=rebuild_t,seed=U);S+=W;D+=W
-		A,e=greedy_solver(E,partial=J,num_actions=1,verbose=_B);P+=A.max_cost if A else 0;D+=e[_N];I+=1 if A else 0
+		A,e=greedy_solver(E,partial=J,num_actions=1,verbose=_A);P+=A.max_cost if A else 0;D+=e[_L];I+=1 if A else 0
 		if A and A.max_cost<H:C=A;H=A.max_cost;Q+=1
-	f=time.time()-G;g={_L:I,_N:D,'improvements':Q,'actions_destroyed':R,'actions_rebuilt':S,'average_cost':P/(I+1),_K:f,_O:T};return C,g
+	f=time.time()-G;g={_R:I,_L:D,'improvements':Q,'actions_destroyed':R,'actions_rebuilt':S,'average_cost':P/(I+1),_N:f,_O:T};return C,g
 class TreeSegment:
 	def __init__(A,data,op,identity,sum_like=_C,add_neutral=0):
 		A.num_elements=len(data);A.op=op;A.identity=identity;A.sum_like=sum_like;A.num_leaves=1
@@ -497,9 +497,9 @@ class MinMaxPfsumArray:
 				for G in range(F,H):C+=D.arr[G];B=min(B,C)
 			A+=E
 		return B
-	def query_max_prefix(I,l,r):
-		B=float(_Q);A=0;C=0;B=float(_Q);A=0
-		for D in I.block_arr:
+	def query_max_prefix(J,l,r):
+		I='-inf';B=float(I);A=0;C=0;B=float(I);A=0
+		for D in J.block_arr:
 			E=D.size
 			if A+E<=l:C+=D.sum;A+=E;continue
 			if A>=r:break
@@ -530,26 +530,26 @@ class MinMaxPfsumArray:
 def cost_decrement_intra_swap(partial,route_idx,a_idx,len_a,b_idx,len_b):
 	P=partial;I=len_b;H=len_a;C=b_idx;B=a_idx
 	if B>C:B,C=C,B;H,I=I,H
-	A=P.problem.D;D=P.routes[route_idx];Q=len(D);J=D[B-1];K=D[B];L=D[B+H-1];M=D[B+H]if B+H<Q else _A;R=D[C-1];N=D[C];O=D[C+I-1];E=D[C+I]if C+I<Q else _A;F=0;G=0
+	A=P.problem.D;D=P.routes[route_idx];Q=len(D);J=D[B-1];K=D[B];L=D[B+H-1];M=D[B+H]if B+H<Q else _B;R=D[C-1];N=D[C];O=D[C+I-1];E=D[C+I]if C+I<Q else _B;F=0;G=0
 	if B+H==C:
 		F+=A[J][K];F+=A[L][N]
-		if E is not _A:F+=A[O][E]
+		if E is not _B:F+=A[O][E]
 		G+=A[J][N];G+=A[O][K]
-		if E is not _A:G+=A[L][E]
+		if E is not _B:G+=A[L][E]
 	else:
 		F+=A[J][K]
-		if M is not _A:F+=A[L][M]
+		if M is not _B:F+=A[L][M]
 		F+=A[R][N]
-		if E is not _A:F+=A[O][E]
+		if E is not _B:F+=A[O][E]
 		G+=A[J][N]
-		if M is not _A:G+=A[O][M]
+		if M is not _B:G+=A[O][M]
 		G+=A[R][K]
-		if E is not _A:G+=A[L][E]
+		if E is not _B:G+=A[L][E]
 	return F-G
-def intra_swap_one_route_operator(partial,route_idx,steps=_A,mode=_H,uplift=1,seed=_A,verbose=_B):
+def intra_swap_one_route_operator(partial,route_idx,steps=_B,mode=_I,uplift=1,seed=_B,verbose=_A):
 	M=mode;L=steps;K=route_idx;D=partial;a=random.Random(seed);D=D.copy();C=D.problem;F=D.routes[K];R=C.K;N=len(F)
-	if N<5:return D,[_B]*R,0
-	if L is _A:L=N**2
+	if N<5:return D,[_A]*R,0
+	if L is _B:L=N**2
 	H={};A=[];E=[];I={}
 	def b():
 		nonlocal H,A,E,I;H={B:A for(A,B)in enumerate(F)};B=1;L=0
@@ -574,20 +574,20 @@ def intra_swap_one_route_operator(partial,route_idx,steps=_A,mode=_H,uplift=1,se
 				if U in I:V=I[U];B[J]=V;B[V]=J
 	O=[0]*G;W=0
 	for J in range(G):W+=E[J];O[J]=W
-	X=TreeSegment(O,min,10**18,_B);Y=TreeSegment(O,max,0,_B)
+	X=TreeSegment(O,min,10**18,_A);Y=TreeSegment(O,max,0,_A)
 	def e(i,j):
-		if E[i]>0 and B[i]<=j:return _B
-		if E[j]<0 and B[j]>=i:return _B
+		if E[i]>0 and B[i]<=j:return _A
+		if E[j]<0 and B[j]>=i:return _A
 		return _C
 	def f(i,j):
 		B=E[i];D=E[j];A=D-B
 		if A>0:
-			if Y.query(i,j)+A>C.Q[K]:return _B
+			if Y.query(i,j)+A>C.Q[K]:return _A
 		elif A<0:
-			if X.query(i,j)+A<0:return _B
+			if X.query(i,j)+A<0:return _A
 		return _C
 	def g(i,j):
-		if not(e(i,j)and f(i,j)):return _B,0
+		if not(e(i,j)and f(i,j)):return _A,0
 		B,C=A[i];E,F=A[j];G=cost_decrement_intra_swap(D,K,B,C,E,F);return _C,G
 	def h():
 		for A in range(G):
@@ -595,14 +595,14 @@ def intra_swap_one_route_operator(partial,route_idx,steps=_A,mode=_H,uplift=1,se
 				D,C=g(A,B)
 				if not D or C<uplift:continue
 				yield(A,B,C)
-				if M==_H:return
+				if M==_I:return
 	def i():
 		A=list(h())
 		if not A:return
-		if M==_H:return A[0]
-		elif M==_U:return max(A,key=lambda x:x[2])
-		elif M==_V:return a.choice(A)
-	P=0;Z=[_B]*R
+		if M==_I:return A[0]
+		elif M==_S:return max(A,key=lambda x:x[2])
+		elif M==_T:return a.choice(A)
+	P=0;Z=[_A]*R
 	def j(action):nonlocal F,D;H,I,J=action;B,E=A[H];C,G=A[I];L=F[:B]+F[C:C+G]+F[B+E:C]+F[B:B+E]+F[C+G:];F[:]=L;D.decrease_cost(K,J)
 	def k(action):
 		nonlocal E,B,A,H,I;C,D,Q=action;J=E[D]-E[C]
@@ -615,51 +615,51 @@ def intra_swap_one_route_operator(partial,route_idx,steps=_A,mode=_H,uplift=1,se
 			for P in range(C+1,D):A[P][0]+=K
 		H={B:A for(A,B)in enumerate(F)};I={A[B][0]+C:B for B in range(G)for C in range(A[B][1])}
 	while _C:
-		if L is not _A and P>=L:break
+		if L is not _B and P>=L:break
 		Q=i()
-		if Q is _A:break
+		if Q is _B:break
 		j(Q);k(Q);P+=1;Z[K]=_C
 	return D,Z,P
-def intra_swap_operator(partial,steps=_A,mode=_H,uplift=1,seed=_A,verbose=_B):
+def intra_swap_operator(partial,steps=_B,mode=_I,uplift=1,seed=_B,verbose=_A):
 	F=verbose;E=partial;B=steps
-	if B is _A:B=10**9
-	C=0;G=E.problem.K;H=[_B]*G;A=E.copy()
+	if B is _B:B=10**9
+	C=0;G=E.problem.K;H=[_A]*G;A=E.copy()
 	for D in range(G):
 		I,J,K=intra_swap_one_route_operator(A,route_idx=D,steps=B-C,mode=mode,uplift=uplift,seed=seed,verbose=F);A=I;C+=K
 		if J[D]:H[D]=_C
-	if A.is_valid(verbose=F)is _B:A.stdin_print();raise ValueError('Intra-swap operator produced invalid solution.')
+	if A.is_valid(verbose=F)is _A:A.stdin_print();raise ValueError('Intra-swap operator produced invalid solution.')
 	return A,H,C
 def cost_decrement_inter_swap(partial,raidx,rbidx,paidx,qaidx,pbidx,qbidx):
-	T=rbidx;S=raidx;P=qbidx;O=pbidx;N=qaidx;M=paidx;F=partial;A=F.problem.D;G=F.routes[S];H=F.routes[T];a=len(G);b=len(H);assert G[M]!=0 and H[O]!=0,'Cannot swap depot nodes.';c=F.route_costs[S];d=F.route_costs[T];e=F.max_cost;Q=G[M-1];I=G[M];U=G[M+1];V=G[N-1];J=G[N];B=_A
+	T=rbidx;S=raidx;P=qbidx;O=pbidx;N=qaidx;M=paidx;F=partial;A=F.problem.D;G=F.routes[S];H=F.routes[T];a=len(G);b=len(H);assert G[M]!=0 and H[O]!=0,'Cannot swap depot nodes.';c=F.route_costs[S];d=F.route_costs[T];e=F.max_cost;Q=G[M-1];I=G[M];U=G[M+1];V=G[N-1];J=G[N];B=_B
 	if N+1<a:B=G[N+1]
-	R=H[O-1];K=H[O];W=H[O+1];X=H[P-1];L=H[P];C=_A
+	R=H[O-1];K=H[O];W=H[O+1];X=H[P-1];L=H[P];C=_B
 	if P+1<b:C=H[P+1]
 	D=0
 	if M+1==N:
 		D-=A[Q][I]+A[I][J]
-		if B is not _A:D-=A[J][B]
+		if B is not _B:D-=A[J][B]
 		D+=A[Q][K]+A[K][L]
-		if B is not _A:D+=A[L][B]
+		if B is not _B:D+=A[L][B]
 	else:
 		D-=A[Q][I]+A[I][U]+A[V][J]
-		if B is not _A:D-=A[J][B]
+		if B is not _B:D-=A[J][B]
 		D+=A[Q][K]+A[K][U]+A[V][L]
-		if B is not _A:D+=A[L][B]
+		if B is not _B:D+=A[L][B]
 	E=0
 	if O+1==P:
 		E-=A[R][K]+A[K][L]
-		if C is not _A:E-=A[L][C]
+		if C is not _B:E-=A[L][C]
 		E+=A[R][I]+A[I][J]
-		if C is not _A:E+=A[J][C]
+		if C is not _B:E+=A[J][C]
 	else:
 		E-=A[R][K]+A[K][W]+A[X][L]
-		if C is not _A:E-=A[L][C]
+		if C is not _B:E-=A[L][C]
 		E+=A[R][I]+A[I][W]+A[X][J]
-		if C is not _A:E+=A[J][C]
+		if C is not _B:E+=A[J][C]
 	Y=c+D;Z=d+E;f=[F.route_costs[A]for A in range(F.problem.K)if A!=S and A!=T];g=max(Y,Z,*f);h=e-g;return Y,Z,h
-def inter_swap_route_pair_operator(partial,route_a_idx,route_b_idx,steps=_A,mode=_H,uplift=1,seed=_A,verbose=_B):
+def inter_swap_route_pair_operator(partial,route_a_idx,route_b_idx,steps=_B,mode=_I,uplift=1,seed=_B,verbose=_A):
 	N=mode;M=steps;H=route_b_idx;G=route_a_idx;W=random.Random(seed);B=partial.copy();A=B.problem;C=B.routes[G];D=B.routes[H];S=len(C);T=len(D)
-	if S<5 or T<5:return B,[_B]*A.K,0
+	if S<5 or T<5:return B,[_A]*A.K,0
 	def U(route):
 		D=route;G=len(D);E=[0]*G;H=[0]*G;I=0
 		for(J,B)in enumerate(D):
@@ -668,57 +668,57 @@ def inter_swap_route_pair_operator(partial,route_a_idx,route_b_idx,steps=_A,mode
 			elif A.is_lpick(B):F=A.rev_lpick(B);C=A.q[F-1]
 			elif A.is_ldrop(B):F=A.rev_ldrop(B);C=-A.q[F-1]
 			I+=C;E[J]=I;H[J]=C
-		K=TreeSegment(data=E,op=min,identity=10**18,sum_like=_B);L=TreeSegment(data=E,op=max,identity=0,sum_like=_B);M={B:A for(A,B)in enumerate(D)};return M,H,K,L
+		K=TreeSegment(data=E,op=min,identity=10**18,sum_like=_A);L=TreeSegment(data=E,op=max,identity=0,sum_like=_A);M={B:A for(A,B)in enumerate(D)};return M,H,K,L
 	I,E,O,P=U(C);J,F,Q,R=U(D);X=A.Q[G];Y=A.Q[H]
 	def Z(req_a,req_b):
 		A,G,M=req_a;B,H,N=req_b;C=F[B]-E[A];D=E[A]-F[B]
 		if C!=0:
 			I=O.query(A,G);J=P.query(A,G)
-			if I+C<0 or J+C>X:return _B
+			if I+C<0 or J+C>X:return _A
 		if D!=0:
 			K=Q.query(B,H);L=R.query(B,H)
-			if K+D<0 or L+D>Y:return _B
+			if K+D<0 or L+D>Y:return _A
 		return _C
 	def a(req_a,req_b):
 		A,B,C=req_a;D,E,F=req_b
-		if C==_G:
-			if E!=D+1:return _B
-		if F==_G:
-			if B!=A+1:return _B
+		if C==_H:
+			if E!=D+1:return _A
+		if F==_H:
+			if B!=A+1:return _A
 		return _C
 	def b(req_a,req_b):
 		C=req_b;A=req_a;D,E,F=A;I,J,F=C
-		if not a(A,C):return _B,0,0,0
-		if not Z(A,C):return _B,0,0,0
+		if not a(A,C):return _A,0,0,0
+		if not Z(A,C):return _A,0,0,0
 		K,L,M=cost_decrement_inter_swap(B,G,H,D,E,I,J);return _C,K,L,M
 	def c():
 		H=[B for B in range(S)if A.is_ppick(C[B])or A.is_lpick(C[B])];K=[B for B in range(T)if A.is_ppick(D[B])or A.is_lpick(D[B])]
 		def F(p_idx,route,pos):
 			B=p_idx;D=route[B];C=''
-			if A.is_ppick(D):E=B+1;C=_G
+			if A.is_ppick(D):E=B+1;C=_H
 			else:
 				G=A.rev_lpick(D);F=A.ldrop(G)
 				if F not in pos:return
-				E=pos[F];C=_W
+				E=pos[F];C=_U
 			return B,E,C
 		for L in H:
 			B=F(L,C,I)
-			if B is _A:continue
+			if B is _B:continue
 			for M in K:
 				E=F(M,D,J)
-				if E is _A:continue
+				if E is _B:continue
 				O,P,Q,G=b(B,E)
 				if not O or G<uplift:continue
 				yield(B,E,P,Q,G)
-				if N==_H:return
+				if N==_I:return
 	def d():
 		A=list(c())
 		if not A:return
-		if N==_V:return W.choice(A)
-		elif N==_U:return max(A,key=lambda x:x[4])
+		if N==_T:return W.choice(A)
+		elif N==_S:return max(A,key=lambda x:x[4])
 		else:return A[0]
-	K=0;V=0;L=[_B]*A.K
-	if M is _A:M=10**9
+	K=0;V=0;L=[_A]*A.K
+	if M is _B:M=10**9
 	def e(action):nonlocal C,D,B;nonlocal I,J;P,Q,R,S,T=action;L,M,U=P;N,O,U=Q;A,E=C[L],C[M];F,K=D[N],D[O];del I[A];del I[E];I[F]=L;I[K]=M;del J[F];del J[K];J[A]=N;J[E]=O;C[L],C[M]=F,K;D[N],D[O]=A,E;B.node_assignment[A]=H;B.node_assignment[E]=H;B.node_assignment[F]=G;B.node_assignment[K]=G;B.route_costs[G]=R;B.route_costs[H]=S;B.max_cost-=T
 	def f(action):
 		nonlocal I,J;nonlocal E,F;nonlocal O,P;nonlocal Q,R;L,M,K,__,___=action;A,C,K=L;B,D,K=M;G=F[B]-E[A]
@@ -730,31 +730,31 @@ def inter_swap_route_pair_operator(partial,route_a_idx,route_b_idx,steps=_A,mode
 		nonlocal K,L,V
 		while K<M:
 			A=d()
-			if A is _A:break
+			if A is _B:break
 			f(A);e(A);V+=A[4];L[G]=_C;L[H]=_C;K+=1
 	g();return B,L,K
-def inter_swap_operator(partial,steps=_A,mode=_H,uplift=1,seed=_A,verbose=_B):
+def inter_swap_operator(partial,steps=_B,mode=_I,uplift=1,seed=_B,verbose=_A):
 	M=verbose;H=steps;G=partial;T=random.Random(seed);I=G.problem.K
-	if I<2:return G.copy(),[_B]*I,0
-	A=G.copy();J=[_B]*I;D=0;N=H if H is not _A else 10**9;E=[(-B,A)for(A,B)in enumerate(A.route_costs)];C=[(B,A)for(A,B)in enumerate(A.route_costs)];heapq.heapify(E);heapq.heapify(C)
+	if I<2:return G.copy(),[_A]*I,0
+	A=G.copy();J=[_A]*I;D=0;N=H if H is not _B else 10**9;E=[(-B,A)for(A,B)in enumerate(A.route_costs)];C=[(B,A)for(A,B)in enumerate(A.route_costs)];heapq.heapify(E);heapq.heapify(C)
 	def U():
 		while E:
 			B,C=heapq.heappop(E)
 			if-B==A.route_costs[C]:return-B,C
-	def V(exclude_idx=_A):
+	def V(exclude_idx=_B):
 		while C:
 			D,B=heapq.heappop(C)
 			if B==exclude_idx:continue
 			if D==A.route_costs[B]:return D,B
 	def K(idx):B=idx;D=A.route_costs[B];heapq.heappush(E,(-D,B));heapq.heappush(C,(D,B))
 	while _C:
-		if H is not _A and D>=N:break
+		if H is not _B and D>=N:break
 		O=U()
-		if O is _A:break
-		W,B=O;P=[];Q=_B
+		if O is _B:break
+		W,B=O;P=[];Q=_A
 		while _C:
 			L=V(exclude_idx=B)
-			if L is _A:break
+			if L is _B:break
 			W,F=L;P.append(L);X,R,S=inter_swap_route_pair_operator(A,route_a_idx=B,route_b_idx=F,steps=N-D,mode=mode,uplift=uplift,seed=T.randint(10,10**9),verbose=M)
 			if S>0:
 				K(B);K(F);A=X;D+=S
@@ -763,7 +763,7 @@ def inter_swap_operator(partial,steps=_A,mode=_H,uplift=1,seed=_A,verbose=_B):
 				Q=_C;break
 		for(Y,Z)in P:heapq.heappush(C,(Y,Z))
 		if not Q:K(B);break
-	if A.is_valid(verbose=M)is _B:raise ValueError('Inter-swap operator produced invalid solution.')
+	if A.is_valid(verbose=M)is _A:raise ValueError('Inter-swap operator produced invalid solution.')
 	return A,J,D
 def cost_decrement_relocate(partial,rfidx,rtidx,pfidx,qfidx,ptidx,qtidx):
 	R=qtidx;Q=ptidx;P=rtidx;O=rfidx;I=qfidx;H=pfidx;B=partial;A=B.problem.D;Y=B.max_cost;E=B.routes[O];J=B.routes[P];Z=B.route_costs[O];a=B.route_costs[P];C=E[H];D=E[I];K=E[H-1];S=E[H+1];T=E[I-1];L=E[I+1];F=0
@@ -773,9 +773,9 @@ def cost_decrement_relocate(partial,rfidx,rtidx,pfidx,qfidx,ptidx,qtidx):
 	if R==Q+1:G-=A[M][N];G+=A[M][C]+A[C][D]+A[D][N]
 	else:G-=A[M][V]+A[W][N];G+=A[M][C]+A[C][V]+A[W][D]+A[D][N]
 	X=a+G;b=[B.route_costs[A]for A in range(B.problem.K)if A!=O and A!=P];c=max(U,X,*b);return U,X,Y-c
-def relocate_from_to(partial,route_from_idx,route_to_idx,steps,mode,uplift=1,seed=_A,verbose=_B):
+def relocate_from_to(partial,route_from_idx,route_to_idx,steps,mode,uplift=1,seed=_B,verbose=_A):
 	L=mode;K=partial;F=route_from_idx;E=route_to_idx;N=random.Random(seed);A=K.problem;C=K.copy();B=C.routes[F];D=C.routes[E];H=len(B);G=len(D)
-	if H<5:return K,[_B]*A.K,0
+	if H<5:return K,[_A]*A.K,0
 	def M(route,n):
 		E=[0]*n
 		for(F,B)in enumerate(route):
@@ -787,20 +787,20 @@ def relocate_from_to(partial,route_from_idx,route_to_idx,steps,mode,uplift=1,see
 	I=M(B,H);J=M(D,G);O=A.Q[F];P=A.Q[E]
 	def Q(req):
 		D,E,A,B,C=req
-		if C==_W:return _C
+		if C==_U:return _C
 		return B==A+1
 	def R(req):
 		D,E,F,G,K=req
-		if K==_G:return _C
+		if K==_H:return _C
 		H=B[D]
 		if A.is_lpick(H):L=A.rev_lpick(H);C=A.q[L-1]
 		else:C=0
 		M=I.query_min_prefix(D,E);N=I.query_max_prefix(D,E)
-		if M-C<0:return _B
-		if N-C>O:return _B
+		if M-C<0:return _A
+		if N-C>O:return _A
 		Q=J.query_min_prefix(F-1,G-1);R=J.query_max_prefix(F-1,G-1)
-		if Q+C<0:return _B
-		if R+C>P:return _B
+		if Q+C<0:return _A
+		if R+C>P:return _A
 		return _C
 	def S(req):
 		A=req
@@ -810,25 +810,25 @@ def relocate_from_to(partial,route_from_idx,route_to_idx,steps,mode,uplift=1,see
 	def T():
 		M={B:A for(A,B)in enumerate(B)};H=[]
 		for(E,I)in enumerate(B[1:],start=1):
-			if A.is_ppick(I):C=E+1;H.append((E,C,_G))
+			if A.is_ppick(I):C=E+1;H.append((E,C,_H))
 			elif A.is_lpick(I):
 				N=A.rev_lpick(I);O=A.ldrop(N);C=M.get(O)
-				if C is not _A and C>E:H.append((E,C,_W))
+				if C is not _B and C>E:H.append((E,C,_U))
 		P=[(B,B+1)for B in range(1,G)if not A.is_ppick(D[B-1])];Q=[(B,C)for B in range(1,G)if not A.is_ppick(D[B-1])for C in range(B+1,G+1)if not A.is_ppick(D[C-2])]
 		for(E,C,K)in H:
-			R=P if K==_G else Q
+			R=P if K==_H else Q
 			for(T,U)in R:
 				J=E,C,T,U,K;F=S(J)
-				if F is _A:continue
+				if F is _B:continue
 				V,V,W=F
 				if W<uplift:continue
-				if L==_H:yield(J,F);return
+				if L==_I:yield(J,F);return
 				else:yield(J,F)
 	def U():
 		A=list(T())
 		if not A:return
-		if L==_V:return N.choice(A)
-		elif L==_U:return max(A,key=lambda x:x[1][2])
+		if L==_T:return N.choice(A)
+		elif L==_S:return max(A,key=lambda x:x[1][2])
 		else:return A[0]
 	def V(action):nonlocal B,D,C;(A,G,J,K,O),(L,M,N)=action;H=B[A];I=B[G];del B[G];del B[A];D.insert(J,H);D.insert(K,I);C.routes[F]=B;C.routes[E]=D;C.route_costs[F]=L;C.route_costs[E]=M;C.max_cost-=N;C.node_assignment[H]=E;C.node_assignment[I]=E
 	def W(action):
@@ -840,23 +840,23 @@ def relocate_from_to(partial,route_from_idx,route_to_idx,steps,mode,uplift=1,see
 			else:return 0
 		I.delete(E);I.delete(C);J.insert(G,F(K));J.insert(H,F(L))
 	def X():
-		nonlocal H,G,B,D;C=0;I=[_B]*A.K
+		nonlocal H,G,B,D;C=0;I=[_A]*A.K
 		while C<steps:
 			J=U()
-			if J is _A:break
+			if J is _B:break
 			W(J);V(J);C+=1;I[F]=_C;I[E]=_C;H-=2;G+=2
 			if H<5:break
 		return I,C
 	Y,Z=X();return C,Y,Z
-def relocate_operator(partial,steps=_A,mode=_H,uplift=1,seed=_A,verbose=_B):
+def relocate_operator(partial,steps=_B,mode=_I,uplift=1,seed=_B,verbose=_A):
 	E=partial;B=steps;C=E.problem.K
-	if C<2:return E.copy(),[_B]*C,0
-	if B==_A:B=10**9
-	M=random.Random(seed);A=E.copy();H=[_B]*C;D=0
+	if C<2:return E.copy(),[_A]*C,0
+	if B==_B:B=10**9
+	M=random.Random(seed);A=E.copy();H=[_A]*C;D=0
 	while D<B:
 		I=list(enumerate(A.route_costs));F=max(I,key=lambda x:x[1])[0];N=[A for(A,B)in sorted(I,key=lambda x:x[1])]
 		if len(A.routes[F])<5:break
-		J=_B
+		J=_A
 		for G in N:
 			if G==F:continue
 			if len(A.routes[G])<2:continue
@@ -868,145 +868,9 @@ def relocate_operator(partial,steps=_A,mode=_H,uplift=1,seed=_A,verbose=_B):
 				J=_C;break
 		if not J:break
 	return A,H,D
-def _default_vfunc(partial,sample_size=6,w_std=.15,seed=_A):'Default value function: negative max route cost.';return-balanced_scorer(partial,sample_size=sample_size,w_std=w_std,seed=seed)
-def _default_selpolicy(actions,seed=_A,t=.1):
-	'Default selection policy: choose action with minimal incremental cost.';A=actions;B=random.Random(seed)
-	if not A:return
-	C=softmax_weighter([action_weight(A)for A in A],t=t);D=sample_from_weight(B,C);return A[D]
-def _default_simpolicy(partial,seed=_A):'Default simulation policy: greedy balanced solver.';B=partial;A=seed;C,D=greedy_solver(B.problem,partial=B);assert C is not _A,'Greedy solver failed in simulation policy.';A=107*A+108 if A is not _A else _A;return PartialSolution.from_solution(C)
-def _default_defpolicy(partial,verbose=_B,seed=_A):'Default defense policy: beam search solver.';A=partial;B,C=iterative_greedy_solver(A.problem,partial=A,iterations=2000,time_limit=2e1,verbose=verbose);return B
-@dataclass
-class RewardFunction:
-	visits:int=0;min_value:float=float('inf');max_value:float=float(_Q)
-	def update(A,value):
-		B=value
-		if not math.isfinite(B):return
-		A.visits+=1;A.min_value=min(A.min_value,B);A.max_value=max(A.max_value,B)
-	def reward_from_value(A,value,reward_pow=_J):
-		D=value;B=reward_pow
-		if not math.isfinite(D):return .0
-		if A.visits==0:return .5**B
-		if A.max_value==A.min_value:return .5**B
-		E=A.max_value-A.min_value;C=(D-A.min_value)/E;C=C**B;return max(.0,min(_J,C))
-@dataclass
-class MCTSNode:
-	partial:PartialSolution;parent:Optional[_Y]=_A;action:Optional[Action]=_A;width:Optional[int]=_A;children:List[_Y]=field(default_factory=list);visits:int=0;total_cost:int=0;total_reward:float=.0;untried_actions:List[Action]=field(default_factory=list)
-	def __post_init__(A):A.untried_actions=enumerate_actions_greedily(A.partial,A.width)
-	@property
-	def is_terminal(self):return self.partial.is_completed()
-	@property
-	def average_reward(self):
-		A=self
-		if A.visits==0:return .0
-		return A.total_reward/A.visits
-	@property
-	def average_cost(self):
-		A=self
-		if A.visits==0:return .0
-		return A.total_cost/A.visits
-	def uct_score(A,uct_c):
-		if A.visits==0:return float('inf')
-		B=A.average_reward;C=A.parent.visits if A.parent else A.visits;D=uct_c*math.sqrt(math.log(C+1)/A.visits);return B+D
-	def update(A,cost,reward):A.visits+=1;A.total_cost+=cost;A.total_reward+=reward
-def _select(root,exploration):
-	B=[root];A=root
-	while _C:
-		if A.untried_actions:return B
-		if not A.children:return B
-		A=max(A.children,key=lambda child:child.uct_score(exploration));B.append(A)
-def _expand(node,selection_policy,width):
-	A=node
-	if not A.untried_actions:return
-	B=selection_policy(A.untried_actions)
-	if B is _A:return
-	try:A.untried_actions.remove(B)
-	except ValueError:pass
-	C=A.partial.copy();apply_general_action(C,B);D=MCTSNode(C,parent=A,action=B,width=width);A.children.append(D);return D
-def _backpropagate(path,cost,reward):
-	for A in reversed(path):A.update(cost,reward)
-def _gather_leaves(node,value_function,limit=_A):
-	A=limit
-	if A is _A:A=10**9
-	assert A is not _A and A>0,'Limit must be positive';B=[];G=count()
-	def D(current):
-		C=current
-		if not C.children:
-			E=value_function(C.partial);F=E,next(G),C
-			if len(B)<A:heapq.heappush(B,F)
-			elif E>B[0][0]:heapq.heapreplace(B,F)
-			return
-		for H in C.children:D(H)
-	D(node);C=sorted(B,key=lambda item:item[0],reverse=_C);return[A[2]for A in C]
-def _run_mcts(problem,partial,width,uct_c,cutoff_depth,cutoff_depth_inc,cutoff_iter,reward_pow,value_function,selection_policy,simulation_policy,defense_policy,seed,time_limit,verbose):
-	e='best_rollout_cost';Z=time_limit;Y=cutoff_depth;X=problem;O=partial;J=width;G=seed;C=verbose;P=time.time();f=P+Z;E=RewardFunction()
-	if G is not _A:random.seed(G)
-	if O is _A:O=PartialSolution(problem=X,routes=[])
-	g=O or PartialSolution(problem=X,routes=[]);I=MCTSNode(g,width=J);A=0;B=_A;K=_A;D=10**18;L=0;a=Y;b=0;c=_T
-	while _C:
-		if time.time()>=f:
-			c=_X
-			if C:print(f"[MCTS] Reached time limit: {Z:.2f}s")
-			break
-		A+=1;Q=_select(I,uct_c);H=Q[-1];F=H.partial.num_actions
-		if F>L:
-			L=F
-			if F>0 and F==a:
-				b+=1;a+=Y+cutoff_depth_inc*b;I=MCTSNode(H.partial,width=J);E=RewardFunction()
-				if C:print(f"[MCTS] Cutoff at iter {A}, abs_depth {F}, new root set.")
-				continue
-		if A>0 and A%cutoff_iter==0:
-			I=MCTSNode(H.partial,width=J);E=RewardFunction()
-			if C:print(f"[MCTS] Cutoff at iteration {A}, depth {F}, new root set.")
-			continue
-		if not H.is_terminal:
-			R=_expand(H,selection_policy,J)
-			if R is not _A:Q.append(R);M=R
-			else:M=H
-		else:break
-		N=simulation_policy(M.partial.copy(),seed=12*G if G is not _A else _A)
-		if N is _A or not N.is_completed():
-			if C:print(f"[MCTS] Rollout failed or incomplete at iteration {A}.")
-			E.update(float(_Q));continue
-		S=N.to_solution();assert S is not _A,'Conversion from rollout to solution failed.';T=S.max_cost
-		if T<=D:
-			if B is _A or M.partial.num_actions>B.num_actions:B=M.partial.copy();D=T;K=S
-		d=value_function(N);E.update(d);h=E.reward_from_value(d,reward_pow=reward_pow);_backpropagate(Q,T,h)
-		if C:
-			i=10**(len(str(A))-1)
-			if A%i==0 or A%1000==0:j=time.time()-P;print(f"[MCTS] [Iteration {A}] Cost: {D:.3f}, Value range: {E.min_value:.3f} - {E.max_value:.3f}, Depth: {F}, Max depth: {L}, Time: {j:.2f}s.")
-	U={_L:A,_K:time.time()-P,e:D,_O:c}
-	if C:print(f"[MCTS] Iterations count: {A}, Max absolute depth reached: {L}, Time={U[_K]:.3f}s.");print(f"[MCTS] Best leaf depth: {B.num_actions if B else'N/A'} with rollout cost: {D:.3f}.")
-	if B is _A:B=I.partial
-	if B is not _A and B.is_pending():
-		if C:print(f"[MCTS] Applying defense policy on best leaf...")
-		V=defense_policy(B,verbose=C,seed=24*G if G is not _A else _A)
-		if V is not _A:
-			W=V.max_cost
-			if K is _A or W<D:
-				if C:print(f"[MCTS] Defense policy improved solution: {D:.3f} -> {W:.3f}")
-				K=V;D=W;U[e]=D
-	return I,B,K,U
-def mcts_enumerator(problem,partial=_A,n_return=5,width=3,uct_c=.58,cutoff_depth=9,cutoff_depth_inc=4,cutoff_iter=11300,reward_pow=1.69,value_function=_default_vfunc,selection_policy=_default_selpolicy,simulation_policy=_default_simpolicy,defense_policy=_default_defpolicy,seed=_A,time_limit=3e1,verbose=_B):A=value_function;B,C,C,D=_run_mcts(problem,partial,width=width,uct_c=uct_c,cutoff_depth=cutoff_depth,cutoff_depth_inc=cutoff_depth_inc,cutoff_iter=cutoff_iter,reward_pow=reward_pow,value_function=A,selection_policy=selection_policy,simulation_policy=simulation_policy,defense_policy=defense_policy,time_limit=time_limit,seed=seed,verbose=verbose);E=_gather_leaves(B,value_function=A,limit=max(1,n_return));F=[A.partial.copy()for A in E];return F,D
-def mcts_solver(problem,partial=_A,width=3,uct_c=.58,cutoff_depth=9,cutoff_depth_inc=4,cutoff_iter=11300,reward_pow=1.69,value_function=_default_vfunc,selection_policy=_default_selpolicy,simulation_policy=_default_simpolicy,defense_policy=_default_defpolicy,seed=_A,time_limit=3e1,verbose=_B):
-	F='------------------------------';D=seed;C=verbose;G=time.time();E,K,B,A=_run_mcts(problem=problem,partial=partial,value_function=value_function,selection_policy=selection_policy,simulation_policy=simulation_policy,defense_policy=defense_policy,width=width,uct_c=uct_c,cutoff_depth=cutoff_depth,cutoff_depth_inc=cutoff_depth_inc,cutoff_iter=cutoff_iter,reward_pow=reward_pow,seed=D,time_limit=time_limit,verbose=C);assert B
-	if C:print(f"[MCTS] Applying relocate operator to final solution...")
-	H=PartialSolution.from_solution(B);I,E,E=relocate_operator(H,mode=_H,seed=_A if D is _A else 4*D+123);B=I.to_solution();assert B;J=B.max_cost
-	if C:print(f"[MCTS] After relocate, final solution cost: {J}")
-	A['used_best_rollout']=_C;A[_L]=A.get(_L,0);A[_K]=time.time()-G
-	if C:
-		if B is not _A:print();print(f"[MCTS] Final solution cost: {B.max_cost:.3f} after {A[_L]} iterations in {A[_K]:.2f}s.");print(F);print()
-		else:print();print(f"[MCTS] No solution found after {A[_L]} iterations in {A[_K]:.2f}s.");print(F);print()
-	return B,A
 def read_instance():
 	A,B,D=map(int,sys.stdin.readline().strip().split());E=list(map(int,sys.stdin.readline().split()));F=list(map(int,sys.stdin.readline().split()));C=[[0]*(2*A+2*B+1)for C in range(2*A+2*B+1)]
 	for G in range(2*A+2*B+1):H=sys.stdin.readline().strip();C[G]=list(map(int,H.split()))
 	return ShareARideProblem(A,B,D,E,F,C)
-def main(verbose=_B):
-	G=read_instance();A=G.num_nodes;A=G.num_nodes
-	if A<=100:B,C,D,E,F=9,3,9000,6,.6
-	elif A<=250:B,C,D,E,F=8,2,4000,4,.5
-	elif A<=500:B,C,D,E,F=7,1,1400,3,.3
-	elif A<=1000:B,C,D,E,F=6,0,600,2,.1
-	else:B,C,D,E,F=5,0,250,2,.05
-	H,I=mcts_solver(G,width=E,uct_c=F,cutoff_depth=B,cutoff_depth_inc=C,cutoff_iter=D,seed=42,time_limit=28e1,verbose=verbose);assert H;H.stdin_print()
-if __name__=='__main__':main(verbose=_B)
+def main(verbose=_A):A=read_instance();B,C=iterative_greedy_solver(problem=A,iterations=12000,time_limit=24e1,verbose=verbose);B.stdin_print()
+if __name__=='__main__':main(verbose=_A)

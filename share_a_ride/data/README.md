@@ -138,12 +138,14 @@ Like `.sol` in **VRPLIB/TSPLIB**:
 - **Cost:** `<int/float>` (max route cost)
 
 ---
+
 **7. USAGE**  
 Benchmark for:  
 - *Exact methods*: Exhaustive search, Branch-and-Bound, MILP solvers, Branch-and-Cut.
 - *Tree search methods*: Beam Search, Monte Carlo Tree Search.
 - *Local search methods*: Tabu Search, Variable Neighborhood Search.
 - *Population-based methods*: Simulated Annealing, Adaptive Large Neighborhood Search, Genetic Algorithms.
+
 
 8. Benchmarking Procedure
 The benchmarking procedure involves the following steps:

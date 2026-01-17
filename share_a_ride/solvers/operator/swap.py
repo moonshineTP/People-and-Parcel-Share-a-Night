@@ -8,7 +8,7 @@ from typing import List, Optional, Tuple, Dict
 from share_a_ride.core.solution import PartialSolution
 from share_a_ride.solvers.operator.utils import TreeSegment
 
-Request = Tuple[int, int, str]
+SwapRequest = Tuple[int, int, str]
 
 
 
@@ -690,8 +690,8 @@ def inter_swap_route_pair_operator (
 
 
     def check_swap(
-            req_a: Request,
-            req_b: Request
+            req_a: SwapRequest,
+            req_b: SwapRequest
         ) -> Tuple[bool, int, int, int]:
         paidx, qaidx, _ = req_a
         pbidx, qbidx, _ = req_b
@@ -722,7 +722,7 @@ def inter_swap_route_pair_operator (
             if prob.is_ppick(route_b[actid]) or prob.is_lpick(route_b[actid])
         ]
 
-        def form_request(p_idx: int, route: List[int], pos: Dict[int, int]) -> Optional[Request]:
+        def form_request(p_idx: int, route: List[int], pos: Dict[int, int]) -> Optional[SwapRequest]:
             p_node = route[p_idx]
             kind = ''
             if prob.is_ppick(p_node):
@@ -782,7 +782,7 @@ def inter_swap_route_pair_operator (
         steps = 10**9   # Effectively unlimited
 
     # Helper to update the partial solution
-    def update_partial(action: Tuple[Request, Request, int, int, int]):
+    def update_partial(action: Tuple[SwapRequest, SwapRequest, int, int, int]):
         nonlocal route_a, route_b, current_par
         nonlocal pos_a, pos_b
 
@@ -821,7 +821,7 @@ def inter_swap_route_pair_operator (
 
 
     # Helper to update precalculated data structures
-    def update_segment(action: Tuple[Request, Request, int, int, int]):
+    def update_segment(action: Tuple[SwapRequest, SwapRequest, int, int, int]):
         nonlocal pos_a, pos_b
         nonlocal load_delta_a, load_delta_b
         nonlocal min_load_segment_a, max_load_segment_a

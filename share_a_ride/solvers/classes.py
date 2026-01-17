@@ -70,7 +70,7 @@ class SolverTags(Enum):
     """
     ALNS = []
     ACO = [AlgoTag.ITERATIVE, AlgoTag.POPULATION, AlgoTag.DEFENSIVE, AlgoTag.NEARBASED]
-    ASTAR = [AlgoTag.PRUNE, AlgoTag.DEFENSIVE, AlgoTag.NEARBASED]
+    ASTAR = [AlgoTag.EXPANSIVE, AlgoTag.DEFENSIVE, AlgoTag.NEARBASED]
     BEAM = [AlgoTag.DEFENSIVE, AlgoTag.EXPANSIVE, AlgoTag.POPULATION, AlgoTag.NEARBASED]
     BNB = [AlgoTag.PRUNE]
     EXHAUST = [AlgoTag.PRUNE]
@@ -134,7 +134,8 @@ class SolverParams(Enum):
     BEAM = {
         "scaling": {"time_limit": 60.0},
         "hyperparameters": {
-            "n_partials": 99,
+            "n_partials": 100,
+            "width": 5,
             "r_intra": 0.55,
             "r_inter": 0.75,
             "f_intra": 0.05,

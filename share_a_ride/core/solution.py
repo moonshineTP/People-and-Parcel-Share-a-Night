@@ -928,18 +928,16 @@ class PartialSolution:
         # Validity
         if state["ended"]:
             return
-        if state["pos"] == 0 and state["actions"] > 0:
-            state["ended"] = True
-            return
         if state["parcels"]:
             raise ValueError(f"Taxi {t_idx} must drop all loads before returning to depot.")
 
-        # Update state
+        # Always append 0 and add travel cost (even if already at depot, cost is 0)
         inc = self.problem.D[state["pos"]][0]
         route.append(0)
         state["pos"] = 0
         state["actions"] += 1
         state["ended"] = True
+        state["active"] = True
 
         # Update stats
         self.route_costs[t_idx] += inc

@@ -111,7 +111,7 @@ def iterative_greedy_solver(    # Actually quite like a large neighborhood searc
         problem: ShareARideProblem,
         partial: Optional[PartialSolution] = None,
         iterations: int = 10000,
-        num_actions: int = 5,
+        num_actions: int = 7,
         t_actions: float = 0.01,
         destroy_proba: float = 0.53,
         destroy_steps: int = 13,

@@ -49,6 +49,7 @@ def beam_enumerator(
         swarm: Optional[PartialSolutionSwarm] = None,
         n_partials: int = 20,
         n_return: int = 10,
+        width: int = 5,
         r_intra: float = 0.55,
         r_inter: float = 0.75,
         f_intra: float = 0.10,
@@ -164,7 +165,7 @@ def beam_enumerator(
     # Expand a beam to the next depth
     def expand(beam: List[PartialSolution], aggressive=False) -> List[PartialSolution]:
         candidates: List[PartialSolution] = []
-        actions_per = 3 if aggressive else None
+        actions_per = min(3, width) if aggressive else width
 
         for partial in beam:
             actions = enumerate_actions_greedily(
@@ -294,6 +295,7 @@ def beam_solver(
         swarm: Optional[PartialSolutionSwarm] = None,
         n_partials: int = 20,
         n_returns: int = 10,
+        width: int = 5,
         r_intra: float = 0.55,
         r_inter: float = 0.75,
         f_intra: float = 0.05,
@@ -339,6 +341,8 @@ def beam_solver(
 
     # Apply defense policy to complete any pending partial solutions (e.g. if timed out).
     # This ensures we have complete solutions before refinement.
+    if verbose:
+        print("[BeamSearch] Applying defense policy to complete pending partial solutions...")
     for idx, partial in enumerate(solswarm.partial_lists):
         if partial.is_pending():
             completed_sol = defense_policy(
@@ -351,7 +355,7 @@ def beam_solver(
 
     # Apply relocate operator to final beam for refinement.
     if verbose:
-        print("[BeamSearch] Applying relocate operator to refine final beam solutions...")
+        print("[BeamSearch] Applying relocate operator to refine final solutions...")
     for idx, partial in enumerate(solswarm.partial_lists):
         refined_partial, _, _ = relocate_operator(
             partial,
@@ -378,7 +382,7 @@ def beam_solver(
             seed=seed,
             verbose=verbose
         )
-    
+
     if verbose:
         if best_sol is not None:
             print(
@@ -388,8 +392,8 @@ def beam_solver(
             print()
         else:
             print("[BeamSearch] No valid solution could be constructed.")
-        print("------------------------------")
-        print()
+            print("------------------------------")
+            print()
 
     return best_sol, stats
 

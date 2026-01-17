@@ -278,10 +278,10 @@ def try_instance(
 # ================ Playground ================
 if __name__ == "__main__":
     solvernames = [
-        # SolverName.BEAM,
+        SolverName.BEAM,
         # SolverName.GREEDY,
         # SolverName.HGS,
-        SolverName.ACO,
+        # SolverName.ACO,
         # SolverName.ASTAR,
         # SolverName.MCTS,
         # SolverName.ALNS,
@@ -312,4 +312,3 @@ if __name__ == "__main__":
     #             verbose=True,
     #             time_limit=400,
     #         )
-
