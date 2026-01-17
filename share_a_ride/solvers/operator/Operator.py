@@ -5,7 +5,8 @@ Operators are stateless functions that transform routes.
 
 from typing import Callable, Dict, Any, List
 from share_a_ride.core.problem import ShareARideProblem
-class Operator():
+
+class Operator:
     """
     Container for operator functions in the share_a_ride problem.
     Operators are stateless functions that transform routes.
