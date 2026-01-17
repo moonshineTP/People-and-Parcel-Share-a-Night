@@ -266,8 +266,8 @@ def hgs_solver(
         init_swarm, _ = beam_enumerator(
             problem,
             n_partials=n_partials,
-            r_intra=0.75,
-            f_intra=0.2,
+            n_return=20,
+            r_intra=1.2,
             r_inter=1.2,
             time_limit=10**9,   # Effectively no limit
             seed=11*seed if seed is not None else None,
@@ -308,7 +308,7 @@ def hgs_solver(
         print("[HGS] Trying to run a first solve...")
 
     # We use a large limit to ensure we find *some* feasible solution first.
-    t1 = max(1.0, time_limit * 0.2)
+    t1 = max(1.0, time_limit * 0.3)
     res = solve_instance(
         10**18, t1, initial_data=initial_sol_data
     )
@@ -318,8 +318,8 @@ def hgs_solver(
 
         if init_best_cost < 10**18:
             if verbose:
-                print("[HGS] Falling back to Greedy solution.")
-            return init_best_sol, {"method": "greedy", "cost": init_best_cost, "status": "done"}
+                print("[HGS] Falling back to initial solution.")
+            return init_best_sol, {"method": "initial", "cost": init_best_cost, "status": "done"}
 
         return None, {"error": "Infeasible", "status": "error"}
 
@@ -338,7 +338,6 @@ def hgs_solver(
 
 
     # //// Phase 2: Binary Search
-    best_res = res
     best_max_cost = current_max
     low: int = int(current_max / 1.2)       # Christian's suggestion
     high: int = current_max                 # We want to improve, not loosen
@@ -378,7 +377,6 @@ def hgs_solver(
 
             # Update binary search bounds
             if actual_max < best_max_cost:
-                best_res = res_iter
                 best_max_cost = actual_max
             high = min(mid, actual_max)
 

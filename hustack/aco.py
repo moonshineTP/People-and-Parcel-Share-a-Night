@@ -808,10 +808,10 @@ def read_instance():
 	return ShareARideProblem(A,B,D,E,F,C)
 def main(verbose=_A):
 	F=verbose;G=read_instance();E=G.num_nodes
-	if E<=100:A,B,C,D=150,25,150,6
-	elif E<=250:A,B,C,D=60,15,60,5
-	elif E<=500:A,B,C,D=25,10,25,4
-	elif E<=1000:A,B,C,D=12,4,8,3
-	else:A,B,C,D=6,2,3,2
+	if E<=100:A,B,C,D=80,16,160,8
+	elif E<=250:A,B,C,D=30,10,60,6
+	elif E<=500:A,B,C,D=25,5,25,5
+	elif E<=1000:A,B,C,D=12,4,12,4
+	else:A,B,C,D=6,3,3,3
 	H,I=aco_solver(G,seed=42,verbose=F,n_partials=A,n_cutoff=B,iterations=C,width=D,time_limit=24e1);H.stdin_print(verbose=F)
 if __name__=='__main__':main(verbose=_A)

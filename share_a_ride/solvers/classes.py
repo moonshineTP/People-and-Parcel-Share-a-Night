@@ -166,8 +166,6 @@ class SolverParams(Enum):
     ACO = {
         "scaling": {"iterations": 10, "time_limit": 60.0},
         "hyperparameters": {
-            "n_partials": 40,
-            "n_cutoff": 10,
             "width": 5,
             "q_prob": 0.72,
             "alpha": 1.36,

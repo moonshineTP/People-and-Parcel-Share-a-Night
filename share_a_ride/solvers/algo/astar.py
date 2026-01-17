@@ -624,7 +624,7 @@ def astar_solver(
         print(
             f"[A*] After relocate, final solution cost: {best_cost}"
         )
-    
+
     if verbose:
         print()
         print(
@@ -634,7 +634,7 @@ def astar_solver(
         )
         print("------------------------------")
         print()
-    
+
     return best_solution, stats
 
 

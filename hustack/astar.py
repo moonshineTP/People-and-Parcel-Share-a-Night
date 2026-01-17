@@ -977,10 +977,10 @@ def read_instance():
 	return ShareARideProblem(A,B,D,E,F,C)
 def main(verbose=_A):
 	F=read_instance();A=F.num_nodes;A=F.num_nodes
-	if A<=100:B,C,D,E=10,2000,8,.1
-	elif A<=250:B,C,D,E=8,1000,6,.2
-	elif A<=500:B,C,D,E=6,360,4,.5
-	elif A<=1000:B,C,D,E=5,150,3,1.5
-	else:B,C,D,E=4,80,2,2
+	if A<=100:B,C,D,E=10,5000,8,.2
+	elif A<=250:B,C,D,E=8,2000,6,.3
+	elif A<=500:B,C,D,E=6,900,4,.8
+	elif A<=1000:B,C,D,E=5,400,3,1.2
+	else:B,C,D,E=4,160,2,1.6
 	G,H=astar_solver(F,eps=E,width=D,cutoff_depth=B,cutoff_size=C,cutoff_ratio=.286,time_limit=27e1,seed=42,verbose=verbose);assert G;G.stdin_print()
 if __name__=='__main__':main(verbose=_A)
