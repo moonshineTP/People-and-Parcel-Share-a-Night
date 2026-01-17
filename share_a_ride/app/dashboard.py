@@ -146,7 +146,7 @@ class ShareARideDashboard:
         st.markdown("#### Best vs Recent Attempts")
         chart = self._render_best_attempts_chart(df)
         if chart:
-            st.altair_chart(chart, use_container_width=True)
+            st.altair_chart(chart, width='stretch')
         else:
             st.write("No data for best attempts.")
 
@@ -155,7 +155,7 @@ class ShareARideDashboard:
         st.markdown("#### Recent Attempts (Cost over Time)")
         chart = self._render_recent_attempts_chart(df)
         if chart:
-            st.altair_chart(chart, use_container_width=True)
+            st.altair_chart(chart, width='stretch')
         else:
             st.write("No data for recent attempts.")
 
@@ -188,7 +188,7 @@ class ShareARideDashboard:
             display_df = solver_summary.copy()
             if "success_rate" in display_df.columns:
                 display_df["success_rate"] = display_df["success_rate"].apply(lambda x: f"{x:.1%}" if isinstance(x, (int, float)) else x)
-            st.dataframe(display_df, use_container_width=True)
+            st.dataframe(display_df, width='stretch')
         else:
             st.write("No solver summary data available.")
 
@@ -200,7 +200,7 @@ class ShareARideDashboard:
         with col_pie:
             chart = self._render_solver_leaderboard_pie(solver_leaderboard)
             if chart:
-                st.altair_chart(chart, use_container_width=True)
+                st.altair_chart(chart, width='stretch')
             else:
                 st.write("No leaderboard data available.")
 
@@ -215,7 +215,7 @@ class ShareARideDashboard:
                 solver_configs = None
         
         if solver_configs is not None and not solver_configs.empty:
-            st.dataframe(solver_configs, use_container_width=True)
+            st.dataframe(solver_configs, width='stretch')
         else:
             st.write("No configuration data available.")
 
