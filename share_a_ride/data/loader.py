@@ -18,6 +18,7 @@ It serves for 3 main business domains:
 """
 import os
 import json
+import ast
 import math
 from functools import lru_cache
 
@@ -71,7 +72,18 @@ def _parse_json_like(value) -> dict | list | None:
     if not text:
         return {}
 
-    return json.loads(text)
+    # Try standard JSON first
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Fallback to Python literal (ast.literal_eval) for single-quoted strings
+    try:
+        return ast.literal_eval(text)
+    except (ValueError, SyntaxError, MemoryError):
+        # Final fallback: return empty dict if both fail
+        return {}
 
 
 def _coerce_optional_int(value: object) -> int | None:
@@ -629,7 +641,7 @@ class DataLoader:
     @staticmethod
     @lru_cache(maxsize=16)
     def _load_normalized_frames(dataset: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-        attempts_path = path_router(dataset, "attempt")
+        attempts_path = path_router(dataset, "record")
         scoreboard_path = path_router(dataset, "summarize")
 
         attempts_df = normalize_attempts(

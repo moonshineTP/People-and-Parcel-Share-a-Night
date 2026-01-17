@@ -293,4 +293,4 @@ if __name__ == "__main__":
     from share_a_ride.solvers.algo.utils import test_problem
 
     # Run greedy solver
-    solution, info = greedy_solver(test_problem, verbose=True)
+    solution, info = iterative_greedy_solver(test_problem, verbose=True)
