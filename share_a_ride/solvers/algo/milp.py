@@ -342,17 +342,17 @@ def milp(
     model.setObjective(z, GRB.MINIMIZE)
 
     # ============================================================================
-    # Phase 5: Constraints (X variables and z only)
+    # Phase 5: Constraints
     # ============================================================================
 
-    # Constraint 1: Coverage - each passenger pickup and parcel pickup served exactly once
+    # Formulation Constraint (1): Coverage - each passenger pickup and parcel pickup served exactly once
     for i in preproc["V_p_indices"] + preproc["V_l_indices"]:
         model.addConstr(
             gp.quicksum(x[i, j, ik] for j in range(num_nodes) for ik in range(k)) == 1,
             name=f"cov_{i}",
         )
 
-    # Constraint 2: Parcel pairing - pickup j and drop j+M paired for each vehicle
+    # Formulation Constraint (2): Parcel pairing - pickup j and drop j+M paired for each vehicle
     for j_idx, j in enumerate(preproc["V_l_indices"]):
         j_drop = preproc["V_lp_indices"][j_idx]
         for k_idx in range(k):
@@ -362,36 +362,30 @@ def milp(
                 name=f"pair_{j}_{j_drop}_{k_idx}",
             )
 
-    # Constraint 3: Vehicle start - each vehicle departs depot node 0
+    # Formulation Constraint (3): Vehicle start and end - each vehicle departs start depot and returns to end depot exactly once
+    end_depot = num_nodes - 1
     for k_idx in range(k):
         model.addConstr(
             gp.quicksum(x[0, i, k_idx] for i in range(num_nodes)) == 1,
             name=f"start_{k_idx}",
         )
-
-    # Constraint 4: Vehicle end - each vehicle returns to end depot node (num_nodes-1)
-    end_depot = num_nodes - 1
-    for k_idx in range(k):
         model.addConstr(
             gp.quicksum(x[i, end_depot, k_idx] for i in range(num_nodes)) == 1,
             name=f"end_{k_idx}",
         )
 
-    # Constraint 5: No entry to start depot
+    # Formulation Constraint (4): No entry to start depot and no exit from end depot
     for k_idx in range(k):
         model.addConstr(
             gp.quicksum(x[i, 0, k_idx] for i in range(num_nodes)) == 0,
             name=f"no_entry_{k_idx}",
         )
-
-    # Constraint 6: No exit from end depot
-    for k_idx in range(k):
         model.addConstr(
             gp.quicksum(x[end_depot, i, k_idx] for i in range(num_nodes)) == 0,
             name=f"no_exit_{k_idx}",
         )
 
-    # Constraint 7: Flow conservation - for each non-depot node
+    # Formulation Constraint (5): Flow conservation - for each non-depot node
     for i in range(1, num_nodes - 1):
         for k_idx in range(k):
             model.addConstr(
@@ -400,7 +394,8 @@ def milp(
                 name=f"flow_{i}_{k_idx}",
             )
 
-    # Constraint 8: Max cost definition - z >= cost of each vehicle's route
+    # Objective definition: z >= cost of each vehicle's route
+    # (Formulation Constraints (6)-(9) for timestamp ordering and weight validity not yet implemented)
     for k_idx in range(k):
         model.addConstr(
             z

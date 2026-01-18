@@ -301,7 +301,7 @@ def test_solution_extraction_with_parcels():
     assert solution is not None, "No solution found"
 
     # Verify solution is valid
-    assert solution.is_valid(), (
+    assert solution.is_valid(True), (
         f"Solution is invalid.\nRoutes: {solution.routes}\nCosts: {solution.route_costs}"
     )
 

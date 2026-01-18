@@ -47,7 +47,7 @@ class Solution:
         self.max_cost = max(new_route_costs) if new_route_costs else 0
 
 
-    def is_valid(self) -> bool:
+    def is_valid(self, verbose: bool = False) -> bool:
         """
         Verify if the solution components describe a valid solution.
         The main constraints are:
@@ -55,20 +55,43 @@ class Solution:
         - precedence: pickups occur before drops, performed by a same vehicle,
                         pickup-drop of passenger are done consecutively
         - capacity: parcel load does not exceed vehicle capacity
+        
+        Args:
+            verbose: If True, print detailed validation information
+            
+        Returns:
+            bool: True if solution is valid, False otherwise
         """
         prob = self.problem
         K = prob.K      # pylint: disable=invalid-name
 
+        if verbose:
+            print(f"\n{'='*60}")
+            print("SOLUTION VALIDATION")
+            print(f"{'='*60}")
+            print(f"Number of vehicles: {K}")
+            print(f"Number of routes: {len(self.routes)}")
+
         if len(self.routes) != K:
+            if verbose:
+                print(f"✗ FAILED: Expected {K} routes, got {len(self.routes)}")
             return False
 
+        if verbose:
+            print("✓ Route count matches")
 
         # //// Iterate over routes
         visited_nodes = set()
         for route_idx, route in enumerate(self.routes):
             # Check depot at start and end
             if not (route[0] == 0 and route[-1] == 0):
+                if verbose:
+                    print(f"✗ FAILED: Vehicle {route_idx} route does not start/end at depot 0")
+                    print(f"  Route: {route}")
                 return False
+
+            if verbose:
+                print(f"\nVehicle {route_idx}: {' → '.join(map(str, route))}")
 
             # Tracking containers
             route_len = len(route)
@@ -80,6 +103,8 @@ class Solution:
 
                 # Global coverage check
                 if node in visited_nodes:
+                    if verbose:
+                        print(f"  ✗ FAILED: Node {node} visited multiple times")
                     return False
                 visited_nodes.add(node)
 
@@ -89,7 +114,12 @@ class Solution:
                     # Check consecutivity
                     drop_node = prob.pserve(pid)[1]
                     if idx + 1 >= route_len or route[idx + 1] != drop_node:
+                        if verbose:
+                            print(f"  ✗ FAILED: Passenger {pid} pickup at {node} not followed by drop at {drop_node}")
                         return False
+                    
+                    if verbose:
+                        print(f"  ✓ Passenger {pid}: {node} → {drop_node}")
 
                 # passenger drop
                 elif prob.is_pdrop(node):
@@ -100,32 +130,65 @@ class Solution:
                     lid = prob.rev_lpick(node)
 
                     if lid in parcel_onboard:
+                        if verbose:
+                            print(f"  ✗ FAILED: Parcel {lid} picked up multiple times")
                         return False
+                    
                     parcel_load += prob.q[lid - 1]
                     if parcel_load > prob.Q[route_idx]:
+                        if verbose:
+                            print(f"  ✗ FAILED: Vehicle {route_idx} capacity exceeded")
+                            print(f"    Load before parcel {lid}: {parcel_load - prob.q[lid - 1]}")
+                            print(f"    Parcel weight: {prob.q[lid - 1]}")
+                            print(f"    Vehicle capacity: {prob.Q[route_idx]}")
                         return False
 
                     parcel_onboard.add(lid)
+                    if verbose:
+                        print(f"  ✓ Parcel {lid} pickup: load = {parcel_load}/{prob.Q[route_idx]}")
 
                 # parcel drop
                 elif prob.is_ldrop(node):
                     lid = prob.rev_ldrop(node)
 
                     if lid not in parcel_onboard:
+                        if verbose:
+                            print(f"  ✗ FAILED: Parcel {lid} dropped without pickup")
                         return False
 
                     if parcel_load - prob.q[lid - 1] < 0:
+                        if verbose:
+                            print(f"  ✗ FAILED: Negative load when dropping parcel {lid}")
                         return False
+                    
                     parcel_load -= prob.q[lid - 1]
                     parcel_onboard.remove(lid)
+                    if verbose:
+                        print(f"  ✓ Parcel {lid} drop: load = {parcel_load}/{prob.Q[route_idx]}")
 
             # at end of route
             if parcel_load != 0:
+                if verbose:
+                    print(f"  ✗ FAILED: Vehicle {route_idx} has {parcel_load} load at end of route")
                 return False
+            
+            if verbose:
+                print(f"  ✓ Vehicle {route_idx} route valid (cost: {self.route_costs[route_idx]})")
 
         # Final coverage check
         if len(visited_nodes) != prob.num_requests * 2:
+            if verbose:
+                print("\n✗ FAILED: Coverage check failed")
+                print(f"  Expected {prob.num_requests * 2} nodes, visited {len(visited_nodes)}")
+                print(f"  Visited: {sorted(visited_nodes)}")
             return False
+
+        if verbose:
+            print(f"\n{'='*60}")
+            print("[VALID] SOLUTION VALID")
+            print(f"  Max route cost: {self.max_cost}")
+            print(f"{'='*60}")
+            print()
 
         return True
 
