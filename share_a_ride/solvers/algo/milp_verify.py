@@ -239,7 +239,7 @@ def test_solution_extraction():
     )
 
     # Solve with Gurobi
-    solution, info_dict = milp(problem, time_limit=30.0, verbose=False)
+    solution, info_dict = milp(problem, time_limit=30.0, verbose=True)
 
     # Verify solution exists
     assert solution is not None, "No solution found"
@@ -295,7 +295,7 @@ def test_solution_extraction_with_parcels():
     )
 
     # Solve with Gurobi
-    solution, info_dict = milp(problem, time_limit=30.0, verbose=False)
+    solution, info_dict = milp(problem, time_limit=30.0, verbose=True)
 
     # Verify solution exists
     assert solution is not None, "No solution found"

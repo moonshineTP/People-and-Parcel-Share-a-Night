@@ -76,9 +76,11 @@ def _extract_routes_from_model(x: Dict, num_nodes: int, k: int, n: int, m: int) 
                 route_original.append(node_t)
                 route_original.append(n + m + node_t)
             else:
-                # Parcel pickup or drop node: keep as-is
-                route_original.append(node_t)
-
+                # Parcel pickup or drop node: map to original indices
+                if n + 1 <= node_t <= n + m:
+                    route_original.append(node_t)
+                else:
+                    route_original.append(node_t + n)
         routes.append(route_original)
 
     return routes
@@ -314,6 +316,7 @@ def milp(
                 x[i, j, k_idx] = model.addVar(
                     vtype=GRB.BINARY, name=f"X_{i}_{j}_{k_idx}"
                 )
+            model.addConstr(x[i, i, k_idx] == 0, name=f"no_self_loop_{k_idx}_{i}")
 
     # Continuous variables: tau[k,i] = timestamp of vehicle k at node i
     tau = {}
@@ -345,7 +348,8 @@ def milp(
     # Phase 5: Constraints
     # ============================================================================
 
-    # Formulation Constraint (1): Coverage - each passenger pickup and parcel pickup served exactly once
+    # Formulation Constraint (1): Coverage
+    # each passenger pickup and parcel pickup served exactly once
     for i in preproc["V_p_indices"] + preproc["V_l_indices"]:
         model.addConstr(
             gp.quicksum(x[i, j, ik] for j in range(num_nodes) for ik in range(k)) == 1,
@@ -362,7 +366,8 @@ def milp(
                 name=f"pair_{j}_{j_drop}_{k_idx}",
             )
 
-    # Formulation Constraint (3): Vehicle start and end - each vehicle departs start depot and returns to end depot exactly once
+    # Formulation Constraint (3): Vehicle start and end
+    # each vehicle departs start depot and returns to end depot exactly once
     end_depot = num_nodes - 1
     for k_idx in range(k):
         model.addConstr(
@@ -395,7 +400,6 @@ def milp(
             )
 
     # Objective definition: z >= cost of each vehicle's route
-    # (Formulation Constraints (6)-(9) for timestamp ordering and weight validity not yet implemented)
     for k_idx in range(k):
         model.addConstr(
             z
@@ -407,7 +411,85 @@ def milp(
             name=f"maxcost_{k_idx}",
         )
 
+    # Formulation Constraint (8): Weight bounds per vehicle per node
+    for k_idx in range(k):
+        for i in range(num_nodes):
+            lower_bound = max(0.0, preproc["q"][i])
+            upper_bound = min(
+                float(problem.Q[k_idx]), float(problem.Q[k_idx]) + preproc["q"][i]
+            )
+            model.addConstr(
+                w[k_idx, i] >= lower_bound,
+                name=f"w_lower_{k_idx}_{i}",
+            )
+            model.addConstr(
+                w[k_idx, i] <= upper_bound,
+                name=f"w_upper_{k_idx}_{i}",
+            )
+
+    # Formulation Constraint (9): Parcel precedence - pickup must come before drop
+    for j_idx, j in enumerate(preproc["V_l_indices"]):
+        j_drop = preproc["V_lp_indices"][j_idx]
+        for k_idx in range(k):
+            model.addConstr(
+                tau[k_idx, j] <= tau[k_idx, j_drop],
+                name=f"parcel_prec_{k_idx}_{j}_{j_drop}",
+            )
+
+    # Formulation Constraint (10): Linearized timestamp ordering ensures increasing order
+    m_tau = preproc["m_tau"]
+    m_1 = preproc["M_1"]
+    for k_idx in range(k):
+        for i in range(num_nodes):
+            for j in range(num_nodes):
+                if i != j:  # No self-loops
+                    model.addConstr(
+                        tau[k_idx, j] + m_1 * (1 - x[i, j, k_idx])
+                        >= m_tau + tau[k_idx, i],
+                        name=f"tau_order_{k_idx}_{i}_{j}",
+                    )
+
+    # Formulation Constraint (11): Linearized weight validity ensures weight accumulation
+    for k_idx in range(k):
+        for i in range(num_nodes):
+            for j in range(num_nodes):
+                if i != j:  # No self-loops
+                    model.addConstr(
+                        w[k_idx, j] - w[k_idx, i]
+                        >= preproc["q"][i]
+                        + preproc["W_ki"][k_idx, i] * (x[i, j, k_idx] - 1),
+                        name=f"w_flow_{k_idx}_{i}_{j}",
+                    )
+
     model.optimize()
+    if verbose:
+        # Debug output to stdout with flush
+        print("=== SOLVER MODEL ===", flush=True)
+        print(f"Total variables: {model.numVars}", flush=True)
+        print(f"Total constraints: {model.numConstrs}", flush=True)
+
+        print("\n=== SOLUTION VALUES ===", flush=True)
+        print(f"Status: {model.status}", flush=True)
+        print(
+            f"Objective: {model.objVal if model.solCount > 0 else 'No solution'}\n",
+            flush=True,
+        )
+
+        if model.solCount > 0:
+            print("=== X VARIABLES (Arc usage) ===", flush=True)
+            for v in model.getVars():
+                if v.VarName.startswith("X_") and v.X > 0.5:
+                    print(f"{v.VarName} = {v.X}", flush=True)
+
+            print("\n=== TAU VARIABLES (Timestamps) ===", flush=True)
+            for v in model.getVars():
+                if v.VarName.startswith("tau_") and v.X > 0:
+                    print(f"{v.VarName} = {v.X}", flush=True)
+
+            print("\n=== W VARIABLES (Parcel loads) ===", flush=True)
+            for v in model.getVars():
+                if v.VarName.startswith("w_") and v.X > 0:
+                    print(f"{v.VarName} = {v.X}", flush=True)
 
     elapsed_time = time.time() - start_time
 
