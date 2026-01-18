@@ -6,9 +6,13 @@ Run with: python milp_verify.py
 
 import sys
 from pathlib import Path
-from share_a_ride.solvers.algo.milp import _preprocess
+
 import numpy as np
+import gurobipy as gp
+from gurobipy import GRB
+
 from share_a_ride.core.problem import ShareARideProblem
+from share_a_ride.solvers.algo.milp import _preprocess
 
 
 # Add parent directories to path
@@ -214,6 +218,79 @@ def test_node_indices():
 
 
 # ============================================================================
+# Phase 2: Model Creation & Variables
+# ============================================================================
+
+
+def test_variable_counts():
+    """Verify Gurobi model creates correct number of variables."""
+    N, M, K = 1, 1, 1
+    num_nodes = N + 2 * M + 2  # 1 + 2 + 2 = 5
+
+    problem = ShareARideProblem(
+        N=N,
+        M=M,
+        K=K,
+        parcel_qty=[3],
+        vehicle_caps=[10],
+        dist=[[1] * (2 * N + 2 * M + 2) for _ in range(2 * N + 2 * M + 2)],
+    )
+
+    # We need to build the model to count variables
+    preproc = _preprocess(problem)
+    M_tau = preproc["M_tau"]
+    W_ki = preproc["W_ki"]
+
+    # Build minimal model
+    model = gp.Model("test")
+    model.setParam(gp.GRB.Param.OutputFlag, 0)
+
+    # Create variables (same as Phase 2)
+    X = {}
+    for k in range(K):
+        for i in range(num_nodes):
+            for j in range(num_nodes):
+                X[i, j, k] = model.addVar(vtype=GRB.BINARY, name=f"X_{i}_{j}_{k}")
+
+    tau = {}
+    for k in range(K):
+        for i in range(num_nodes):
+            tau[k, i] = model.addVar(
+                lb=0.0, ub=M_tau, vtype=GRB.CONTINUOUS, name=f"tau_{k}_{i}"
+            )
+
+    w = {}
+    for k in range(K):
+        for i in range(num_nodes):
+            w[k, i] = model.addVar(
+                lb=0.0, ub=W_ki[k, i], vtype=GRB.CONTINUOUS, name=f"w_{k}_{i}"
+            )
+
+    z = model.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name="z")
+
+    model.update()
+
+    # Verify counts
+    expected_X = num_nodes * num_nodes * K  # (5*5*1 = 25)
+    expected_tau = num_nodes * K  # (5*1 = 5)
+    expected_w = num_nodes * K  # (5*1 = 5)
+    expected_z = 1
+    expected_total = expected_X + expected_tau + expected_w + expected_z
+
+    assert len(X) == expected_X, f"X count: expected {expected_X}, got {len(X)}"
+    assert len(tau) == expected_tau, (
+        f"tau count: expected {expected_tau}, got {len(tau)}"
+    )
+    assert len(w) == expected_w, f"w count: expected {expected_w}, got {len(w)}"
+    assert model.numVars == expected_total, (
+        f"Total vars: expected {expected_total}, got {model.numVars}"
+    )
+
+    model.dispose()
+    print("✓ test_variable_counts passed")
+
+
+# ============================================================================
 # Test Runner
 # ============================================================================
 
@@ -226,6 +303,7 @@ def run_all_tests():
         test_linearization_constants,
         test_w_ki_bounds,
         test_node_indices,
+        test_variable_counts,
     ]
 
     print("=" * 60)

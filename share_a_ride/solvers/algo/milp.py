@@ -23,13 +23,13 @@ from share_a_ride.core.solution import Solution
 def _preprocess(problem: ShareARideProblem) -> Dict[str, Any]:
     """
     Preprocess the problem for MILP formulation.
-    
+
     Transforms the problem by merging passenger pickup+drop nodes and computes:
     - Transformed distance matrix
     - Weight delta array (q_i)
     - Linearization constants (M_tau, m_tau, M_1)
     - Weight bounds per vehicle per node (W_ki)
-    
+
     Returns:
         Dictionary with preprocessed data:
             - D_transformed: Transformed distance matrix (shape: (N+2M+1, N+2M+1))
@@ -50,13 +50,13 @@ def _preprocess(problem: ShareARideProblem) -> Dict[str, Any]:
     K = problem.K
     Q = problem.Q
     q_parcels = problem.q
-    
+
     # Convert distance matrix to numpy array for proper 2D indexing
     D_original = np.array(problem.D, dtype=float)
-    
+
     # Transformed node count: 1 (depot) + N (passengers merged) + M (parcel pickups) + M (parcel dropoffs) + 1 (end depot)
     num_nodes_transformed = N + 2 * M + 2
-    
+
     # Define node indices in transformed space
     # V_0 = {0, N+2M+1} (depot at start and end)
     # V_p = {1, ..., N} (passenger pickups, implicitly with drops)
@@ -65,15 +65,15 @@ def _preprocess(problem: ShareARideProblem) -> Dict[str, Any]:
     V_p_indices = list(range(1, N + 1))
     V_l_indices = list(range(N + 1, N + M + 1))
     V_lp_indices = list(range(N + M + 1, N + 2 * M + 1))
-    
+
     # Original node indices mapping
     # Original: 0=depot, 1..N=pass_pickup, N+1..N+M=parcel_pickup, N+M+1..2N+M=pass_drop, 2N+M+1..2N+2M=parcel_drop, 2N+2M=end_depot
     pass_pickup_original = list(range(1, N + 1))
     pass_drop_original = list(range(N + M + 1, 2 * N + M + 1))
-    
+
     # Build transformed distance matrix
     D_transformed = np.zeros((num_nodes_transformed, num_nodes_transformed))
-    
+
     for i in range(num_nodes_transformed):
         for j in range(num_nodes_transformed):
             # Depot to/from any node: use original indices
@@ -89,7 +89,7 @@ def _preprocess(problem: ShareARideProblem) -> Dict[str, Any]:
                 # Both i and j are in V_p ∪ V_l ∪ V'_l
                 i_is_pass = i in V_p_indices
                 j_is_pass = j in V_p_indices
-                
+
                 if not i_is_pass and not j_is_pass:
                     # Both are parcels: direct distance
                     D_transformed[i, j] = D_original[i, j]
@@ -101,38 +101,46 @@ def _preprocess(problem: ShareARideProblem) -> Dict[str, Any]:
                     # From parcel node i to passenger node j: i to j's pickup and drop
                     j_orig_pickup = pass_pickup_original[j - 1]
                     j_orig_drop = pass_drop_original[j - 1]
-                    D_transformed[i, j] = D_original[i, j_orig_pickup] + D_original[j_orig_pickup, j_orig_drop]
+                    D_transformed[i, j] = (
+                        D_original[i, j_orig_pickup]
+                        + D_original[j_orig_pickup, j_orig_drop]
+                    )
                 else:
                     # Both are passengers: from i's drop to j's pickup to drop
                     i_orig_drop = pass_drop_original[i - 1]
                     j_orig_pickup = pass_pickup_original[j - 1]
                     j_orig_drop = pass_drop_original[j - 1]
-                    D_transformed[i, j] = D_original[i_orig_drop, j_orig_pickup] + D_original[j_orig_pickup, j_orig_drop]
-    
+                    D_transformed[i, j] = (
+                        D_original[i_orig_drop, j_orig_pickup]
+                        + D_original[j_orig_pickup, j_orig_drop]
+                    )
+
     # Build q array (weight delta per node)
     q = np.zeros(num_nodes_transformed)
     for idx, node in enumerate(V_l_indices):
         q[node] = q_parcels[idx]  # Positive at pickup
     for idx, node in enumerate(V_lp_indices):
         q[node] = -q_parcels[idx]  # Negative at dropoff
-    
+
     # Compute linearization constants
     # M_tau = 2 * max distance, m_tau = min non-zero distance
     max_dist = np.max(D_transformed)
     M_tau = 2.0 * max_dist
-    
-    min_dist_nonzero = np.min(D_transformed[D_transformed > 0]) if np.any(D_transformed > 0) else 1.0
+
+    min_dist_nonzero = (
+        np.min(D_transformed[D_transformed > 0]) if np.any(D_transformed > 0) else 1.0
+    )
     m_tau = min_dist_nonzero
-    
+
     M_1 = M_tau + m_tau
-    
+
     # Compute W_ki bounds per vehicle per node
     # W_ki = min{2*Q_k, 2*Q_k + q_i}
     W_ki = np.zeros((K, num_nodes_transformed))
     for k in range(K):
         for i in range(num_nodes_transformed):
             W_ki[k, i] = min(2 * Q[k], 2 * Q[k] + q[i])
-    
+
     return {
         "D_transformed": D_transformed,
         "q": q,
@@ -179,8 +187,18 @@ def milp(
     # Phase 1: Preprocessing
     # ============================================================================
 
-    _ = _preprocess(problem)  # pylint: disable=unused-variable
-    # Preprocessing results will be unpacked when implementing Phase 2+
+    preproc = _preprocess(problem)
+    D_transformed = preproc["D_transformed"]
+    q = preproc["q"]
+    M_tau = preproc["M_tau"]
+    m_tau = preproc["m_tau"]
+    M_1 = preproc["M_1"]
+    W_ki = preproc["W_ki"]
+    N = preproc["N"]
+    M = preproc["M"]
+    K = preproc["K"]
+
+    num_nodes = N + 2 * M + 2
 
     # ============================================================================
     # Phase 2: Model Setup
@@ -197,24 +215,40 @@ def milp(
     model.setParam(GRB.Param.TimeLimit, time_limit)
 
     # ============================================================================
-    # Phase 3: Decision Variables (Scaffold - not defined yet)
+    # Phase 3: Decision Variables
     # ============================================================================
 
-    # pylint: disable=fixme
-    # TODO: Define decision variables
-    #   - X[i,j,k]: binary, vehicle k travels from node i to node j
-    #   - tau[k,i]: continuous, timestamp of vehicle k at node i
-    #   - w[k,i]: continuous, parcel load on vehicle k after node i
-    #   - z: continuous, maximum route cost
+    # Binary variables: X[i,j,k] = vehicle k travels from node i to node j
+    X = {}
+    for k in range(K):
+        for i in range(num_nodes):
+            for j in range(num_nodes):
+                X[i, j, k] = model.addVar(vtype=GRB.BINARY, name=f"X_{i}_{j}_{k}")
+
+    # Continuous variables: tau[k,i] = timestamp of vehicle k at node i
+    tau = {}
+    for k in range(K):
+        for i in range(num_nodes):
+            tau[k, i] = model.addVar(
+                lb=0.0, ub=M_tau, vtype=GRB.CONTINUOUS, name=f"tau_{k}_{i}"
+            )
+
+    # Continuous variables: w[k,i] = parcel load on vehicle k after visiting node i
+    w = {}
+    for k in range(K):
+        for i in range(num_nodes):
+            w[k, i] = model.addVar(
+                lb=0.0, ub=W_ki[k, i], vtype=GRB.CONTINUOUS, name=f"w_{k}_{i}"
+            )
+
+    # Continuous variable: z = maximum route cost (objective)
+    z = model.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name="z")
 
     # ============================================================================
     # Phase 4: Objective Function
     # ============================================================================
 
-    # pylint: disable=fixme
-    # TODO: Define constraints and set objective to minimize z
-    # For now, we create a placeholder variable and objective
-    z = model.addVar(name="z", lb=0.0)
+    # Minimize the maximum route cost across all vehicles
     model.setObjective(z, GRB.MINIMIZE)
 
     # ============================================================================
@@ -230,10 +264,6 @@ def milp(
     #   5. Parcel load constraints (capacity and flow conservation)
     #   6. Parcel ordering constraint (pickup before drop)
     #   7. Max cost definition constraint (z >= cost per vehicle)
-
-    # ============================================================================
-    # Phase 6: Optimize
-    # ============================================================================
 
     model.optimize()
 
