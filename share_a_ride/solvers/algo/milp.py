@@ -21,6 +21,11 @@ from share_a_ride.core.solution import Solution
 from share_a_ride.data.executor import attempt_dataset
 from share_a_ride.solvers.algo.Algo import AlgoSolver
 from share_a_ride.data.summarizer import summarize_dataset
+from share_a_ride.solvers.algo.utils import (
+    test_problem,
+    bnb_problem,
+    exhaustive_problem,
+)
 
 
 def _extract_routes_from_model(x: Dict, num_nodes: int, k: int, n: int, m: int) -> list:
@@ -463,13 +468,21 @@ def milp(
                         + preproc["W_ki"][k_idx, i] * (x[i, j, k_idx] - 1),
                         name=f"w_flow_{k_idx}_{i}_{j}",
                     )
+    model.update()
+    # ============================================================================
+    # Phase 6: Pre-Optimization Model Size Check
+    # ============================================================================
+
+    print("\n=== PRE-OPTIMIZATION MODEL SIZE ===", flush=True)
+    print(f"Total variables: {model.NumVars}", flush=True)
+    print(f"Total constraints: {model.NumConstrs}", flush=True)
 
     model.optimize()
     if verbose:
         # Debug output to stdout with flush
         print("=== SOLVER MODEL ===", flush=True)
-        print(f"Total variables: {model.numVars}", flush=True)
-        print(f"Total constraints: {model.numConstrs}", flush=True)
+        print(f"Total variables: {model.NumVars}", flush=True)
+        print(f"Total constraints: {model.NumConstrs}", flush=True)
 
         print("\n=== SOLUTION VALUES ===", flush=True)
         print(f"Status: {model.status}", flush=True)
@@ -543,8 +556,22 @@ def milp(
 
 
 if __name__ == "__main__":
-    solver = AlgoSolver(milp)
-    sols2, gaps2, msg2 = attempt_dataset(
-        solver, "H", note="test MILP on H dataset", verbose=True
-    )
-    summarize_dataset("H", verbose=True)
+    # TODO: Retrieve Gurobi Academic License before running tests
+    # solver = AlgoSolver(milp)
+    # sols2, gaps2, msg2 = attempt_dataset(
+    #     solver, "H", note="test MILP on H dataset", verbose=True
+    # )
+    # summarize_dataset("H", verbose=True)
+    problems = [exhaustive_problem, bnb_problem, test_problem]
+    passed_tests = 0
+    for prob in problems:
+        solver = AlgoSolver(milp)
+        try:
+            sol, info = solver.solve(prob)
+            if sol is None or not sol.is_valid():
+                print(f"Problem {prob.name} - No valid solution found. Info: {info}")
+            else:
+                passed_tests += 1
+        except Exception as e:
+            print(f"Problem {prob.name} - Exception during solving: {e}")
+    print(f"Passed {passed_tests} out of {len(problems)} tests.")
