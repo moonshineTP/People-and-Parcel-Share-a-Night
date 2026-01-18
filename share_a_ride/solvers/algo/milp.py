@@ -62,7 +62,6 @@ def milp_solver(
 
         # Add objective: minimize max route cost
         _add_objective(model, x, z, problem)
-        model.update()
 
         # Optimize
         model.optimize()
@@ -203,6 +202,38 @@ def _add_objective(
     model.setObjective(z, GRB.MINIMIZE)
 
 
+def _debug_print_solution(x: Dict, problem: ShareARideProblem, model: gp.Model) -> None:
+    """Debug: Print all non-zero x variables and model state."""
+    print("\n" + "=" * 60)
+    print("DEBUG: SOLUTION STATE AT EXTRACTION")
+    print("=" * 60)
+    print(f"Model Status: {_status_to_string(model.Status)}")
+    print(f"Objective Value: {model.ObjVal if model.SolCount > 0 else 'N/A'}")
+    print(f"Solution Count: {model.SolCount}")
+
+    non_zero_arcs = []
+    for (i, j, k), var in x.items():
+        if var.X > 0.5:
+            non_zero_arcs.append((i, j, k, var.X))
+
+    print(f"\nTotal X variables: {len(x)}")
+    print(f"Non-zero arcs (X > 0.5): {len(non_zero_arcs)}")
+
+    if non_zero_arcs:
+        print("\nNon-zero arcs by vehicle:")
+        for k in range(problem.K):
+            k_arcs = [(i, j) for i, j, vk, _ in non_zero_arcs if vk == k]
+            print(f"  Vehicle {k}: {k_arcs}")
+
+        print("\nAll non-zero x variables:")
+        for i, j, k, val in sorted(non_zero_arcs):
+            print(f"  x[{i:2d}, {j:2d}, {k}] = {val:.4f}")
+    else:
+        print("\n  ⚠️ NO NON-ZERO ARCS FOUND!")
+
+    print("=" * 60 + "\n")
+
+
 def _extract_solution(
     model: gp.Model, x: Dict, problem: ShareARideProblem, elapsed: float
 ) -> Tuple[Optional[Solution], Dict[str, Any]]:
@@ -231,6 +262,9 @@ def _extract_solution(
     else:
         info["gap"] = 0.0
 
+    # DEBUG: Print x values before route building
+    _debug_print_solution(x, problem, model)
+
     # Build routes from x values
     routes = _build_routes(x, problem)
     num_routes_used = sum(
@@ -242,6 +276,10 @@ def _extract_solution(
     try:
         sol = Solution(problem, routes)
         if not sol.is_valid():
+            print(
+                "The solution is found but not valid, maybe not all constrains were formed correctly? Solution:"
+            )
+            sol.stdin_print(True)
             info["status"] = "infeasible_solution"
             return None, info
         return sol, info
@@ -254,19 +292,33 @@ def _extract_solution(
 def _build_routes(x: Dict, problem: ShareARideProblem) -> list:
     """
     Reconstruct routes from arc variables.
-
     For each vehicle, traverse the path starting from depot.
     """
+    print(f"\n=== ROUTE BUILDING DEBUG ===")
+    print(f"Building {problem.K} routes from x values\n")
+
     routes = [[] for _ in range(problem.K)]
     visited = [[False] * problem.num_nodes for _ in range(problem.K)]
 
     for k in range(problem.K):
+        print(f"Vehicle {k}:")
         # Start from depot
         current = 0
         route = [0]
         visited[k][0] = True
+        iteration = 0
 
         while True:
+            iteration += 1
+            print(f"  Iter {iteration}: current={current}, route so far={route}")
+
+            # Debug: show available arcs from current
+            available = []
+            for j in range(problem.num_nodes):
+                if (current, j, k) in x and x[(current, j, k)].X > 0.5:
+                    available.append(j)
+            print(f"    Available arcs from {current}: {available}")
+
             # Find next node from current
             next_node = None
             for j in range(problem.num_nodes):
@@ -276,15 +328,28 @@ def _build_routes(x: Dict, problem: ShareARideProblem) -> list:
                         break
 
             if next_node is None:
-                # Try to return to depot
-                if (current, 0, k) in x and x[(current, 0, k)].X > 0.5:
-                    route.append(0)
+                print(f"  No next unvisited node found. current={current}")
+                # No more unvisited nodes, must return to depot
+                if current != 0:  # Only add depot if not already there
+                    has_return = (current, 0, k) in x and x[(current, 0, k)].X > 0.5
+                    print(
+                        f"    Checking return to depot: x[{current},0,{k}] exists={has_return}"
+                    )
+                    if has_return:
+                        route.append(0)
+                        print(f"    Added depot. Final route={route}")
+                    else:
+                        print(f"    ⚠️ NO RETURN ARC! Route incomplete: {route}")
+                else:
+                    print(f"    Already at depot. Route complete: {route}")
                 break
             else:
+                print(f"    Found next node: {next_node}")
                 route.append(next_node)
                 visited[k][next_node] = True
                 current = next_node
 
+        print(f"  Final route for vehicle {k}: {route}\n")
         routes[k] = route
 
     return routes

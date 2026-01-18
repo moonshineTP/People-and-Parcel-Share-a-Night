@@ -6,3 +6,6 @@ __pycache__/
 .VSCodeCounter/
 .idea/
 *.prof
+
+# Misc
+test_milp.py
