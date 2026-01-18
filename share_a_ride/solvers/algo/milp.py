@@ -1,10 +1,13 @@
 """
-Mixed Integer Linear Programming (MILP) solver for the Share-a-Ride Problem using Gurobi.
+Mixed Integer Linear Programming (MILP) solver for the Share-a-Ride Problem.
 
-This module provides an exact optimization solver using Gurobi's branch-and-cut algorithm.
+This module provides exact optimization using pluggable solver backends via a common model interface.
+Currently supports Gurobi backend.
 """
+# pylint: disable=fixme
 
 from typing import Dict, Any, Optional, Tuple
+from abc import ABC, abstractmethod
 import time
 import numpy as np
 
@@ -18,14 +21,206 @@ except ImportError as exc:
 
 from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.core.solution import Solution
-from share_a_ride.data.executor import attempt_dataset
 from share_a_ride.solvers.algo.Algo import AlgoSolver
-from share_a_ride.data.summarizer import summarize_dataset
-from share_a_ride.solvers.algo.utils import (
-    test_problem,
-    bnb_problem,
-    exhaustive_problem,
-)
+from share_a_ride.solvers.algo.utils import exact_problems
+
+
+# ============================================================================
+# Model Interface (Solver-Agnostic Abstraction)
+# ============================================================================
+
+
+class Model(ABC):
+    """
+    Abstract interface for MILP solver models.
+
+    Wraps solver libraries (Gurobi, Pyomo, etc) and exposes common operations.
+    Methods return native solver objects (variables, expressions) directly.
+    """
+
+    @abstractmethod
+    def createVar(
+        self,
+        lb: float = 0.0,
+        ub: float = float("inf"),
+        vtype: str = "C",
+        name: str = "",
+    ) -> Any:
+        """Create a variable. Returns native solver variable."""
+
+    @abstractmethod
+    def quicksum(self, expr) -> Any:
+        """Sum expression. Returns native solver expression."""
+
+    @abstractmethod
+    def addConstr(self, constraint, name: str = "") -> None:
+        """Add a constraint to the model."""
+
+    @abstractmethod
+    def setObjective(self, objective, sense: str = "min") -> None:
+        """Set the objective function."""
+
+    @abstractmethod
+    def setParam(self, param: str, value: Any) -> None:
+        """Set a solver parameter."""
+
+    @abstractmethod
+    def optimize(self) -> None:
+        """Solve the model."""
+
+    @abstractmethod
+    def update(self) -> None:
+        """Update the model state."""
+
+    @abstractmethod
+    def getVars(self) -> list:
+        """Get all variables in the model."""
+
+    @property
+    @abstractmethod
+    def status(self) -> int:
+        """Get solver status code."""
+
+    @property
+    @abstractmethod
+    def solCount(self) -> int:
+        """Get number of solutions found."""
+
+    @property
+    @abstractmethod
+    def objVal(self) -> float:
+        """Get objective value."""
+
+    @property
+    @abstractmethod
+    def MIPGap(self) -> float:
+        """Get MIP gap."""
+
+    @property
+    @abstractmethod
+    def NumVars(self) -> int:
+        """Get total number of variables."""
+
+    @property
+    @abstractmethod
+    def NumConstrs(self) -> int:
+        """Get total number of constraints."""
+
+    @abstractmethod
+    def get_status_code(self, status_name: str) -> int:
+        """Get solver-specific status code by name."""
+
+
+class GurobiModel(Model):
+    """Gurobi solver model wrapper implementing the Model interface."""
+
+    def __init__(self, name: str = "Model"):
+        self._model = gp.Model(name)
+
+    def createVar(
+        self,
+        lb: float = 0.0,
+        ub: float = float("inf"),
+        vtype: str = "C",
+        name: str = "",
+    ) -> Any:
+        """Create a variable and return native Gurobi variable."""
+        # Map generic vtype to Gurobi constants
+        if vtype == "B":
+            gurobi_vtype = GRB.BINARY
+        elif vtype == "I":
+            gurobi_vtype = GRB.INTEGER
+        else:  # "C" for continuous
+            gurobi_vtype = GRB.CONTINUOUS
+
+        return self._model.addVar(lb=lb, ub=ub, vtype=gurobi_vtype, name=name)
+
+    def quicksum(self, expr) -> Any:
+        """Sum expression using Gurobi's quicksum."""
+        return gp.quicksum(expr)
+
+    def addConstr(self, constraint, name: str = "") -> None:
+        """Add a constraint to the Gurobi model."""
+        self._model.addConstr(constraint, name=name)
+
+    def setObjective(self, objective, sense: str = "min") -> None:
+        """Set objective function (min or max)."""
+        gurobi_sense = GRB.MINIMIZE if sense == "min" else GRB.MAXIMIZE
+        self._model.setObjective(objective, gurobi_sense)
+
+    def setParam(self, param: str, value: Any) -> None:
+        """Set a Gurobi parameter by name."""
+        # Map common parameter names to Gurobi constants
+        param_map = {
+            "OutputFlag": GRB.Param.OutputFlag,
+            "TimeLimit": GRB.Param.TimeLimit,
+        }
+        gurobi_param = param_map.get(param)
+        if gurobi_param is None:
+            raise ValueError(f"Unknown parameter: {param}")
+        self._model.setParam(gurobi_param, value)
+
+    def optimize(self) -> None:
+        """Solve the model."""
+        self._model.optimize()
+
+    def update(self) -> None:
+        """Update model state."""
+        self._model.update()
+
+    def getVars(self) -> list:
+        """Get all variables in the model."""
+        return self._model.getVars()
+
+    @property
+    def status(self) -> int:
+        """Get solver status."""
+        return self._model.status
+
+    @property
+    def solCount(self) -> int:
+        """Get number of solutions found."""
+        return self._model.solCount
+
+    @property
+    def objVal(self) -> float:
+        """Get objective value."""
+        return self._model.objVal
+
+    @property
+    def MIPGap(self) -> float:
+        """Get MIP gap."""
+        return self._model.MIPGap
+
+    @property
+    def NumVars(self) -> int:
+        """Get number of variables."""
+        return self._model.NumVars
+
+    @property
+    def NumConstrs(self) -> int:
+        """Get number of constraints."""
+        return self._model.NumConstrs
+
+    def get_status_code(self, status_name: str) -> int:
+        """Get Gurobi status code by name."""
+        status_map = {
+            "OPTIMAL": GRB.OPTIMAL,
+            "TIME_LIMIT": GRB.TIME_LIMIT,
+            "INFEASIBLE": GRB.INFEASIBLE,
+        }
+        return status_map.get(status_name, -1)
+
+
+def _create_model(solver_name: str, name: str = "SARP") -> Model:
+    """Factory function to create a solver model wrapper."""
+    solver_lower = solver_name.lower()
+    if solver_lower == "gurobi":
+        return GurobiModel(name)
+    else:
+        raise ValueError(
+            f"Unknown MILP solver: '{solver_name}'. Supported solvers: 'gurobi'"
+        )
 
 
 def _extract_routes_from_model(x: Dict, num_nodes: int, k: int, n: int, m: int) -> list:
@@ -263,22 +458,30 @@ def milp(
     partial: Optional[Any] = None,  # pylint: disable=unused-argument
     time_limit: float = 30.0,
     verbose: bool = False,
+    solver: str = "gurobi",
     **_kwargs,
 ) -> Tuple[Optional[Solution], Dict[str, Any]]:
     """
-    Solve the Share-a-Ride Problem using Mixed Integer Linear Programming with Gurobi.
+    Solve the Share-a-Ride Problem using Mixed Integer Linear Programming.
+
+    Supports pluggable solver backends via abstracted model interface.
+    Currently supports 'gurobi' and 'pyomo'.
 
     Args:
         problem: The ShareARideProblem instance to solve.
         partial: Optional partial solution for warm-starting (not yet implemented).
         time_limit: Time limit for the solver in seconds.
-        verbose: Whether to print Gurobi output.
-        **kwargs: Additional solver parameters.
+        verbose: Whether to print solver output.
+        solver: Solver backend to use ("gurobi" or "pyomo").
+        **kwargs: Additional solver parameters (unused).
 
     Returns:
         A tuple of (solution, info_dict) where:
             - solution: Solution object if feasible, None if timeout/infeasible.
             - info_dict: Dictionary with solver statistics (elapsed_time, status, gap, etc).
+
+    Raises:
+        ValueError: If solver name is invalid.
     """
 
     start_time = time.time()
@@ -299,18 +502,17 @@ def milp(
     num_nodes = n + 2 * m + 2
 
     # ============================================================================
-    # Phase 2: Model Setup
+    # Phase 2: Model Creation (Solver Selection)
     # ============================================================================
 
-    # Create Gurobi model
-    model = gp.Model("SARP")
+    model = _create_model(solver, name="SARP")
 
     # Configure solver output
     if not verbose:
-        model.setParam(GRB.Param.OutputFlag, 0)
+        model.setParam("OutputFlag", 0)
 
     # Set time limit
-    model.setParam(GRB.Param.TimeLimit, time_limit)
+    model.setParam("TimeLimit", time_limit)
 
     # ============================================================================
     # Phase 3: Decision Variables
@@ -321,36 +523,34 @@ def milp(
     for k_idx in range(k):
         for i in range(num_nodes):
             for j in range(num_nodes):
-                x[i, j, k_idx] = model.addVar(
-                    vtype=GRB.BINARY, name=f"X_{i}_{j}_{k_idx}"
-                )
+                x[i, j, k_idx] = model.createVar(vtype="B", name=f"X_{i}_{j}_{k_idx}")
             model.addConstr(x[i, i, k_idx] == 0, name=f"no_self_loop_{k_idx}_{i}")
 
     # Continuous variables: tau[k,i] = timestamp of vehicle k at node i
     tau = {}
     for k_idx in range(k):
         for i in range(num_nodes):
-            tau[k_idx, i] = model.addVar(
-                lb=0.0, ub=max_tau, vtype=GRB.CONTINUOUS, name=f"tau_{k_idx}_{i}"
+            tau[k_idx, i] = model.createVar(
+                lb=0.0, ub=max_tau, vtype="C", name=f"tau_{k_idx}_{i}"
             )
 
     # Continuous variables: w[k,i] = parcel load on vehicle k after visiting node i
     w = {}
     for k_idx in range(k):
         for i in range(num_nodes):
-            w[k_idx, i] = model.addVar(
-                lb=0.0, ub=w_ki[k_idx, i], vtype=GRB.CONTINUOUS, name=f"w_{k_idx}_{i}"
+            w[k_idx, i] = model.createVar(
+                lb=0.0, ub=w_ki[k_idx, i], vtype="C", name=f"w_{k_idx}_{i}"
             )
 
     # Continuous variable: z = maximum route cost (objective)
-    z = model.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name="z")
+    z = model.createVar(lb=0.0, vtype="C", name="z")
 
     # ============================================================================
     # Phase 4: Objective Function
     # ============================================================================
 
     # Minimize the maximum route cost across all vehicles
-    model.setObjective(z, GRB.MINIMIZE)
+    model.setObjective(z, sense="min")
 
     # ============================================================================
     # Phase 5: Constraints
@@ -360,7 +560,8 @@ def milp(
     # each passenger pickup and parcel pickup served exactly once
     for i in preproc["V_p_indices"] + preproc["V_l_indices"]:
         model.addConstr(
-            gp.quicksum(x[i, j, ik] for j in range(num_nodes) for ik in range(k)) == 1,
+            model.quicksum(x[i, j, ik] for j in range(num_nodes) for ik in range(k))
+            == 1,
             name=f"cov_{i}",
         )
 
@@ -369,8 +570,8 @@ def milp(
         j_drop = preproc["V_lp_indices"][j_idx]
         for k_idx in range(k):
             model.addConstr(
-                gp.quicksum(x[i, j, k_idx] for i in range(num_nodes))
-                == gp.quicksum(x[i, j_drop, k_idx] for i in range(num_nodes)),
+                model.quicksum(x[i, j, k_idx] for i in range(num_nodes))
+                == model.quicksum(x[i, j_drop, k_idx] for i in range(num_nodes)),
                 name=f"pair_{j}_{j_drop}_{k_idx}",
             )
 
@@ -379,22 +580,22 @@ def milp(
     end_depot = num_nodes - 1
     for k_idx in range(k):
         model.addConstr(
-            gp.quicksum(x[0, i, k_idx] for i in range(num_nodes)) == 1,
+            model.quicksum(x[0, i, k_idx] for i in range(num_nodes)) == 1,
             name=f"start_{k_idx}",
         )
         model.addConstr(
-            gp.quicksum(x[i, end_depot, k_idx] for i in range(num_nodes)) == 1,
+            model.quicksum(x[i, end_depot, k_idx] for i in range(num_nodes)) == 1,
             name=f"end_{k_idx}",
         )
 
     # Formulation Constraint (4): No entry to start depot and no exit from end depot
     for k_idx in range(k):
         model.addConstr(
-            gp.quicksum(x[i, 0, k_idx] for i in range(num_nodes)) == 0,
+            model.quicksum(x[i, 0, k_idx] for i in range(num_nodes)) == 0,
             name=f"no_entry_{k_idx}",
         )
         model.addConstr(
-            gp.quicksum(x[end_depot, i, k_idx] for i in range(num_nodes)) == 0,
+            model.quicksum(x[end_depot, i, k_idx] for i in range(num_nodes)) == 0,
             name=f"no_exit_{k_idx}",
         )
 
@@ -402,8 +603,8 @@ def milp(
     for i in range(1, num_nodes - 1):
         for k_idx in range(k):
             model.addConstr(
-                gp.quicksum(x[i, j, k_idx] for j in range(num_nodes))
-                == gp.quicksum(x[j, i, k_idx] for j in range(num_nodes)),
+                model.quicksum(x[i, j, k_idx] for j in range(num_nodes))
+                == model.quicksum(x[j, i, k_idx] for j in range(num_nodes)),
                 name=f"flow_{i}_{k_idx}",
             )
 
@@ -411,7 +612,7 @@ def milp(
     for k_idx in range(k):
         model.addConstr(
             z
-            >= gp.quicksum(
+            >= model.quicksum(
                 d_transformed[i, j] * x[i, j, k_idx]
                 for i in range(num_nodes)
                 for j in range(num_nodes)
@@ -515,21 +716,26 @@ def milp(
 
     # Populate info dictionary with solver statistics
     info_dict["elapsed_time"] = elapsed_time
-    info_dict["solver"] = "Gurobi MILP"
+    info_dict["solver"] = f"{solver.capitalize()} MILP"
     info_dict["time_limit"] = time_limit
 
-    if model.status == GRB.OPTIMAL:
+    # Map solver-agnostic status to readable format
+    optimal_code = model.get_status_code("OPTIMAL")
+    time_limit_code = model.get_status_code("TIME_LIMIT")
+    infeasible_code = model.get_status_code("INFEASIBLE")
+
+    if model.status == optimal_code:
         info_dict["status"] = "optimal"
-    elif model.status == GRB.TIME_LIMIT:
+    elif model.status == time_limit_code:
         info_dict["status"] = "time_limit"
-    elif model.status == GRB.INFEASIBLE:
+    elif model.status == infeasible_code:
         info_dict["status"] = "infeasible"
     else:
         info_dict["status"] = f"status_{model.status}"
 
     if model.solCount > 0:
         info_dict["objective_value"] = model.objVal
-        info_dict["gap"] = model.MIPGap if model.status != GRB.OPTIMAL else 0.0
+        info_dict["gap"] = model.MIPGap if model.status != optimal_code else 0.0
     else:
         info_dict["objective_value"] = None
         info_dict["gap"] = None
@@ -562,16 +768,16 @@ if __name__ == "__main__":
     #     solver, "H", note="test MILP on H dataset", verbose=True
     # )
     # summarize_dataset("H", verbose=True)
-    problems = [exhaustive_problem, bnb_problem, test_problem]
+    problems = exact_problems
     passed_tests = 0
     for prob in problems:
-        solver = AlgoSolver(milp)
+        algo_solver = AlgoSolver(milp)
         try:
-            sol, info = solver.solve(prob)
+            sol, info = algo_solver.solve(prob)
             if sol is None or not sol.is_valid():
                 print(f"Problem {prob.name} - No valid solution found. Info: {info}")
             else:
                 passed_tests += 1
-        except Exception as e:
-            print(f"Problem {prob.name} - Exception during solving: {e}")
+        except Exception:
+            print(f"Problem {prob.name} - Exception during solving")
     print(f"Passed {passed_tests} out of {len(problems)} tests.")
