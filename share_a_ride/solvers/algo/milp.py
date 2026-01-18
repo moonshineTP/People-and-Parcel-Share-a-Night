@@ -18,6 +18,9 @@ except ImportError as exc:
 
 from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.core.solution import Solution
+from share_a_ride.data.executor import attempt_dataset
+from share_a_ride.solvers.algo.Algo import AlgoSolver
+from share_a_ride.data.summarizer import summarize_dataset
 
 
 def _extract_routes_from_model(x: Dict, num_nodes: int, k: int, n: int, m: int) -> list:
@@ -537,3 +540,11 @@ def milp(
         solution = None
 
     return solution, info_dict
+
+
+if __name__ == "__main__":
+    solver = AlgoSolver(milp)
+    sols2, gaps2, msg2 = attempt_dataset(
+        solver, "H", note="test MILP on H dataset", verbose=True
+    )
+    summarize_dataset("H", verbose=True)
