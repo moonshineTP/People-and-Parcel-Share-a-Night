@@ -8,11 +8,9 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import gurobipy as gp
-from gurobipy import GRB
 
 from share_a_ride.core.problem import ShareARideProblem
-from share_a_ride.solvers.algo.milp import _preprocess
+from share_a_ride.solvers.algo.milp import _preprocess, milp
 
 
 # Add parent directories to path
@@ -218,81 +216,108 @@ def test_node_indices():
 
 
 # ============================================================================
-# Phase 2: Model Creation & Variables
+# Test 6: Solution Extraction (end-to-end MILP solver)
 # ============================================================================
 
 
-def test_variable_counts():
-    """Verify Gurobi model creates correct number of variables."""
-    N, M, K = 1, 1, 1
-    num_nodes = N + 2 * M + 2  # 1 + 2 + 2 = 5
+def test_solution_extraction():
+    """Test solution extraction from solved Gurobi model with passenger decompression."""
+    # Create minimal problem: 1 passenger, 0 parcels, 1 vehicle
+    N, M, K = 1, 0, 1
 
     problem = ShareARideProblem(
         N=N,
         M=M,
         K=K,
-        parcel_qty=[3],
-        vehicle_caps=[10],
-        dist=[[1] * (2 * N + 2 * M + 2) for _ in range(2 * N + 2 * M + 2)],
+        parcel_qty=[],
+        vehicle_caps=[100],
+        dist=[
+            [0, 10, 10],  # Start depot -> pass. 0, pass. 0 drop
+            [10, 0, 10],  # Pass. 0 -> pass. 0 drop
+            [10, 10, 0],  # Pass. 0 drop -> anywhere
+        ],
     )
 
-    # We need to build the model to count variables
-    preproc = _preprocess(problem)
-    M_tau = preproc["M_tau"]
-    W_ki = preproc["W_ki"]
+    # Solve with Gurobi
+    solution, info_dict = milp(problem, time_limit=30.0, verbose=False)
 
-    # Build minimal model
-    model = gp.Model("test")
-    model.setParam(gp.GRB.Param.OutputFlag, 0)
+    # Verify solution exists
+    assert solution is not None, "No solution found"
 
-    # Create variables (same as Phase 2)
-    X = {}
-    for k in range(K):
-        for i in range(num_nodes):
-            for j in range(num_nodes):
-                X[i, j, k] = model.addVar(vtype=GRB.BINARY, name=f"X_{i}_{j}_{k}")
+    # Verify routes exist and are non-empty
+    assert len(solution.routes) == K, f"Expected {K} routes, got {len(solution.routes)}"
 
-    tau = {}
-    for k in range(K):
-        for i in range(num_nodes):
-            tau[k, i] = model.addVar(
-                lb=0.0, ub=M_tau, vtype=GRB.CONTINUOUS, name=f"tau_{k}_{i}"
-            )
+    # First route should start at 0 (start depot)
+    if len(solution.routes[0]) > 0:
+        assert solution.routes[0][0] == 0, "Route must start at depot 0"
 
-    w = {}
-    for k in range(K):
-        for i in range(num_nodes):
-            w[k, i] = model.addVar(
-                lb=0.0, ub=W_ki[k, i], vtype=GRB.CONTINUOUS, name=f"w_{k}_{i}"
-            )
+    # First route should end at 0 (same depot, both start and end)
+    if len(solution.routes[0]) > 1:
+        assert solution.routes[0][-1] == 0, (
+            f"Route must end at depot 0. Got {solution.routes[0][-1]}"
+        )
 
-    z = model.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name="z")
+    # Verify route costs are computed
+    assert len(solution.route_costs) == K, "Route costs mismatch"
+    assert all(cost >= 0 for cost in solution.route_costs), "Negative costs found"
 
-    model.update()
+    # Verify solver statistics
+    assert "elapsed_time" in info_dict, "Missing elapsed_time"
+    assert "status" in info_dict, "Missing status"
+    assert info_dict["solver"] == "Gurobi MILP", "Wrong solver name"
 
-    # Verify counts
-    expected_X = num_nodes * num_nodes * K  # (5*5*1 = 25)
-    expected_tau = num_nodes * K  # (5*1 = 5)
-    expected_w = num_nodes * K  # (5*1 = 5)
-    expected_z = 1
-    expected_total = expected_X + expected_tau + expected_w + expected_z
+    print("✓ test_solution_extraction passed")
 
-    assert len(X) == expected_X, f"X count: expected {expected_X}, got {len(X)}"
-    assert len(tau) == expected_tau, (
-        f"tau count: expected {expected_tau}, got {len(tau)}"
+
+def test_solution_extraction_with_parcels():
+    """Test solution extraction with both passengers and parcels, verify validity."""
+    # Create problem: 2 passengers, 1 parcel, 1 vehicle
+    N, M, K = 2, 1, 1
+
+    # Distance matrix: 2*N + 2*M + 1 = 8 nodes
+    # 0: depot, 1-2: passenger pickups, 3: parcel pickup, 4-5: passenger drops, 6: parcel drop
+    problem = ShareARideProblem(
+        N=N,
+        M=M,
+        K=K,
+        parcel_qty=[5],  # 1 parcel with weight 5
+        vehicle_caps=[20],  # Vehicle capacity 20
+        dist=[
+            [0, 5, 7, 3, 5, 7, 3, 0],  # 0: depot
+            [5, 0, 4, 6, 2, 6, 6, 5],  # 1: pass 0 pick
+            [7, 4, 0, 5, 6, 2, 5, 7],  # 2: pass 1 pick
+            [3, 6, 5, 0, 7, 5, 2, 3],  # 3: parcel pick
+            [5, 2, 6, 7, 0, 4, 7, 5],  # 4: pass 0 drop
+            [7, 6, 2, 5, 4, 0, 5, 7],  # 5: pass 1 drop
+            [3, 6, 5, 2, 7, 5, 0, 3],  # 6: parcel drop
+            [0, 5, 7, 3, 5, 7, 3, 0],  # 7: end depot (should be same as 0)
+        ],
     )
-    assert len(w) == expected_w, f"w count: expected {expected_w}, got {len(w)}"
-    assert model.numVars == expected_total, (
-        f"Total vars: expected {expected_total}, got {model.numVars}"
+
+    # Solve with Gurobi
+    solution, info_dict = milp(problem, time_limit=30.0, verbose=False)
+
+    # Verify solution exists
+    assert solution is not None, "No solution found"
+
+    # Verify solution is valid
+    assert solution.is_valid(), (
+        f"Solution is invalid.\nRoutes: {solution.routes}\nCosts: {solution.route_costs}"
     )
 
-    model.dispose()
-    print("✓ test_variable_counts passed")
+    # Verify routes exist
+    assert len(solution.routes) == K, f"Expected {K} routes, got {len(solution.routes)}"
 
+    # Verify route costs are computed
+    assert len(solution.route_costs) == K, "Route costs mismatch"
+    assert all(cost >= 0 for cost in solution.route_costs), "Negative costs found"
 
-# ============================================================================
-# Test Runner
-# ============================================================================
+    # Verify solver statistics
+    assert "elapsed_time" in info_dict, "Missing elapsed_time"
+    assert "status" in info_dict, "Missing status"
+    assert info_dict["solver"] == "Gurobi MILP", "Wrong solver name"
+
+    print("✓ test_solution_extraction_with_parcels passed")
 
 
 def run_all_tests():
@@ -303,7 +328,8 @@ def run_all_tests():
         test_linearization_constants,
         test_w_ki_bounds,
         test_node_indices,
-        test_variable_counts,
+        test_solution_extraction,
+        test_solution_extraction_with_parcels,
     ]
 
     print("=" * 60)
