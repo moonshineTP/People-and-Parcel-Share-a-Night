@@ -12,7 +12,6 @@ from typing import List, Tuple, Any, Dict, Iterator, Optional, Callable, Union
 from share_a_ride.core import solution
 from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.core.solution import PartialSolution, Solution
-from share_a_ride.core.utils import route_cost_from_sequence
 
 
 
@@ -256,7 +255,7 @@ def exhaust_enumerator(
         n_return: int = 1000,
         incumbent: Optional[int] = None,
         time_limit: float = 30.0,
-        seed: Optional[int] = None,
+        seed: Optional[int] = None,     # pylint: disable=unused-argument
         verbose: bool = False
     ) -> Tuple[List[Solution], Dict[str, Any]]:
     """
@@ -399,7 +398,7 @@ def exhaust_solver(
         partial: Optional[PartialSolution] = None,
         incumbent: Optional[int] = None,
         time_limit: float = 30.0,
-        seed: Optional[int] = None,
+        seed: Optional[int] = None,     # pylint: disable=unused-argument
         verbose: bool = False
     ) -> Tuple[Optional[Solution], Dict[str, Any]]:
     """

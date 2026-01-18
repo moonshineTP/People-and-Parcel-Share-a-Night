@@ -2,6 +2,7 @@
 Module for defining data classes used in data processing in share_a_ride/data.
 These classes encapsulate data related to datasets, instances, attempts, and solutions.
 """
+
 from enum import Enum
 from dataclasses import dataclass
 

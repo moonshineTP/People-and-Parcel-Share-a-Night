@@ -4,33 +4,31 @@ There are two main formats:
 - .inp files: simplified input format, used in the Hustack platform
 - .sarp files: detailed SARP format described in the data documentation.
 """
-import os
 import re
-from typing import Dict, Any
+from typing import Any
 
-from share_a_ride.core.problem import ShareARideProblem
-from share_a_ride.data.classes import Dataset
-from share_a_ride.data.router import path_router
-
-# Type alias for SARP instance dictionary
-Instance = Dict[str, Any]
+# Type aliases
+InstanceContent = dict[str, Any]
+SolutionContent = dict[str, Any]
 
 
 
-
-def _parse_dotsarp_to_instance(file_path: str) -> ShareARideProblem:
+# ================ Instance Parsing ================
+def parse_sarp_content(content: str) -> InstanceContent:
     """
-    Parse a SARP instance file (relative path ending at .sarp)
-    and return a ShareARideProblem object.
+    Parse .sarp file content string and return a InstanceContent (dict of problem features).
+    This is the core parsing logic used by both file-based and content-based parsing.
     """
 
-    # //// Read and preprocess file
-    with open(file_path, 'r', encoding='utf-8') as f:
-        lines = [line.strip() for line in f if line.strip() and not line.strip().startswith('//')]
+    # //// Preprocess content into lines
+    lines = [
+        line.strip() for line in content.splitlines()           # Strip whitespace
+        if line.strip() and not line.strip().startswith('//')   # Remove empty lines and comments
+    ]
 
 
     # //// Parse from lines
-    instance = {}
+    instance_content: InstanceContent = {}
     lineid = 0
 
     while lineid < len(lines):
@@ -38,20 +36,19 @@ def _parse_dotsarp_to_instance(file_path: str) -> ShareARideProblem:
 
         # Parse header fields
         if line.startswith('NAME'):
-            instance['name'] = line.split(':', 1)[1].strip()
+            instance_content['name'] = line.split(':', 1)[1].strip()
         elif line.startswith('COMMENT'):
-            instance['comment'] = line.split(':', 1)[1].strip()
+            instance_content['comment'] = line.split(':', 1)[1].strip()
         elif line.startswith('TYPE'):
-            instance['type'] = line.split(':', 1)[1].strip()
+            instance_content['type'] = line.split(':', 1)[1].strip()
         elif line.startswith('DIMENSION'):
-            instance['dimension'] = int(line.split(':')[1].strip())
+            instance_content['dimension'] = int(line.split(':')[1].strip())
         elif line.startswith('CAPACITY'):
-            instance['uniform_capacity'] = int(line.split(':')[1].strip())
+            instance_content['uniform_capacity'] = int(line.split(':')[1].strip())
         elif line.startswith('EDGE_WEIGHT_TYPE'):
             pass  # Not used currently
         elif line.startswith('EDGE_WEIGHT_FORMAT'):
             pass  # Not used currently
-
 
         # Parse EDGE_WEIGHT_SECTION
         elif line == 'EDGE_WEIGHT_SECTION':
@@ -61,8 +58,7 @@ def _parse_dotsarp_to_instance(file_path: str) -> ShareARideProblem:
                 row = list(map(int, lines[lineid].split()))
                 dist_matrix.append(row)
                 lineid += 1
-            instance['distance_matrix'] = dist_matrix
-
+            instance_content['distance_matrix'] = dist_matrix
 
         # Parse NODE_COORD_SECTION
         elif line == 'NODE_COORD_SECTION':
@@ -75,9 +71,8 @@ def _parse_dotsarp_to_instance(file_path: str) -> ShareARideProblem:
                 coords_dict[node_id] = (float(parts[1]), float(parts[2]))
                 node_order.append(node_id)
                 lineid += 1
-            instance['coords_dict'] = coords_dict
-            instance['node_order'] = node_order
-
+            instance_content['coords_dict'] = coords_dict
+            instance_content['node_order'] = node_order
 
         # Parse NODE_TYPE_SECTION
         elif line == 'NODE_TYPE_SECTION':
@@ -89,8 +84,7 @@ def _parse_dotsarp_to_instance(file_path: str) -> ShareARideProblem:
                 node_type = int(parts[2])
                 node_types[node_id] = node_type
                 lineid += 1
-            instance['node_types'] = node_types
-
+            instance_content['node_types'] = node_types
 
         # Parse PAIR_SECTION
         elif line == 'PAIR_SECTION':
@@ -107,9 +101,10 @@ def _parse_dotsarp_to_instance(file_path: str) -> ShareARideProblem:
                 elif category == 'L':
                     parcel_pairs.append((pickup, dropoff))
                 lineid += 1
-            instance['passenger_pairs'] = passenger_pairs
-            instance['parcel_pairs'] = parcel_pairs
-
+            instance_content['passenger_pairs'] = passenger_pairs
+            instance_content['N'] = len(passenger_pairs)
+            instance_content['parcel_pairs'] = parcel_pairs
+            instance_content['M'] = len(parcel_pairs)
 
         # Parse VEHICLE_CAPACITY_SECTION
         elif line == 'VEHICLE_CAPACITY_SECTION':
@@ -120,8 +115,8 @@ def _parse_dotsarp_to_instance(file_path: str) -> ShareARideProblem:
                 capacity = int(parts[2])
                 capacities.append(capacity)
                 lineid += 1
-            instance['vehicle_capacities'] = capacities
-
+            instance_content['vehicle_capacities'] = capacities
+            instance_content['K'] = len(capacities)
 
         # Parse PARCEL_QUANTITY_SECTION
         elif line == 'PARCEL_QUANTITY_SECTION':
@@ -133,81 +128,25 @@ def _parse_dotsarp_to_instance(file_path: str) -> ShareARideProblem:
                 quantity = int(parts[2])
                 parcel_quantities_dict[node_id] = quantity
                 lineid += 1
-            instance['parcel_quantities_dict'] = parcel_quantities_dict
-
+            instance_content['parcel_quantities_dict'] = parcel_quantities_dict
 
         # Parse DEPOT_SECTION
         elif line == 'DEPOT_SECTION':
             lineid += 1
             while lineid < len(lines) and lines[lineid] != 'END_DEPOT_SECTION':
-                instance['depot'] = int(lines[lineid])
+                instance_content['depot'] = int(lines[lineid])
                 lineid += 1
 
         lineid += 1
 
-
-    # //// Extract problem parameters
-    # Extract counts
-    N = len(instance['passenger_pairs'])        # pylint: disable=invalid-name
-    M = len(instance['parcel_pairs'])           # pylint: disable=invalid-name
-    K = len(instance['vehicle_capacities'])     # pylint: disable=invalid-name
-
-    # Reorder nodes to canonical order: depot - ppick - lpick - pdrop - ldrop
-    # 1. Identify node IDs for each category
-    depot_id = instance.get('depot', 1)
-    ppick_ids = [p[0] for p in instance['passenger_pairs']]
-    lpick_ids = [p[0] for p in instance['parcel_pairs']]
-    pdrop_ids = [p[1] for p in instance['passenger_pairs']]
-    ldrop_ids = [p[1] for p in instance['parcel_pairs']]
-
-    canonical_ids = [depot_id] + ppick_ids + lpick_ids + pdrop_ids + ldrop_ids
-
-    # 2. Map from node ID to original index in the distance matrix
-    # We assume the original order is the order in which nodes appeared in NODE_COORD_SECTION
-    node_order = instance.get('node_order', list(range(1, instance.get('dimension', 0) + 1)))
-    id_to_orig_idx = {node_id: i for i, node_id in enumerate(node_order)}
-
-    # 3. Reorder distance matrix
-    old_dist = instance['distance_matrix']
-    dist_matrix = []
-    for i_id in canonical_ids:
-        row = []
-        i_orig = id_to_orig_idx[i_id]
-        for j_id in canonical_ids:
-            j_orig = id_to_orig_idx[j_id]
-            row.append(old_dist[i_orig][j_orig])
-        dist_matrix.append(row)
-
-    # 4. Reorder coords
-    coords_dict = instance.get('coords_dict', {})
-    coords = []
-    for node_id in canonical_ids:
-        coords.append(coords_dict.get(node_id, (0.0, 0.0)))     # Default to (0.0, 0.0) if missing
-
-    # 5. Reorder parcel quantities
-    pq_dict = instance.get('parcel_quantities_dict', {})
-    parcel_quantities = [pq_dict.get(node_id, 0) for node_id in lpick_ids]
-
-    vehicle_capacities = instance['vehicle_capacities']
-
-
-    # //// Create ShareARideProblem instance
-    problem = ShareARideProblem(
-        N=N,
-        M=M,
-        K=K,
-        parcel_qty=parcel_quantities,
-        vehicle_caps=vehicle_capacities,
-        dist=dist_matrix,
-        coords=coords
-    )
-
-    return problem
+    return instance_content
 
 
 
 
-def _parse_inp_to_instance(content: str) -> ShareARideProblem:
+
+
+def parse_hustack_content(content: str) -> InstanceContent:
     """
     Parse the simplified input format described in description.txt.
     """
@@ -243,48 +182,129 @@ def _parse_inp_to_instance(content: str) -> ShareARideProblem:
     # Line 4->2N + 2M + 4: Distance matrix
     dist = []
     num_nodes = 2*N + 2*M + 1
-
-    for _ in range(num_nodes):
+    for _nodeid in range(num_nodes):
         if lineid >= len(lines):
             raise ValueError("Insufficient lines for distance matrix")
         row = list(map(int, lines[lineid].split()))
         dist.append(row)
         lineid += 1
 
-    return ShareARideProblem(N, M, K, q, Q, dist)
+
+    # Build passenger and parcel pairs
+    passenger_pairs = [(i, i + N + M) for i in range(1, N + 1)]
+    parcel_pairs = [(i + N, i + 2 * N + M) for i in range(1, M + 1)]
+
+    # Build parcel quantities dict
+    parcel_quantities_dict = {}
+    for lid in range(M):
+        parcel_quantities_dict[N + lid + 1] = q[lid]
+
+    # Build node_types based on canonical ordering
+    node_types = {0: 0}
+    for i in range(1, N + 1):
+        node_types[i] = 1
+    for i in range(N + 1, N + M + 1):
+        node_types[i] = 2
+    for i in range(N + M + 1, 2 * N + M + 1):
+        node_types[i] = 3
+    for i in range(2 * N + M + 1, 2 * N + 2 * M + 1):
+        node_types[i] = 4
+
+
+    # Build instance content dictionary matching parse_sarp_content keys
+    return {
+        'name': f"Hustack-N{N}-M{M}-K{K}",
+        'comment': "From Hustack OJ",
+        'type': "HUSTACK",                                  # Custom type
+        'dimension': 2 * N + 2 * M + 1,                     # Total nodes
+        'uniform_capacity': None,                           # Not used in this format
+        'distance_matrix': dist,
+        'coords_dict': {},                                  # No coords in this format
+        'node_order': list(range(2 * N + 2 * M + 1)),
+        'node_types': node_types,
+        'N': N,
+        'M': M,
+        'K': K,
+        'passenger_pairs': passenger_pairs,
+        'parcel_pairs': parcel_pairs,
+        'vehicle_capacities': Q,
+        'parcel_quantities_dict': parcel_quantities_dict,
+        'depot': 0
+    }
 
 
 
 
-def parse_dataset(dataset: Dataset) -> Dict[str, ShareARideProblem]:
+# ================ Solution Parsing ================
+def parse_sol_content(content: str) -> SolutionContent:
     """
-    Process a dataset enum object to route, scrape and pass all .sarp instance of
-    the dataset into ShareARideProblem instances.
+    Parse .sol file content string and return a structured solution dictionary.
 
-    Returns a list of ShareARideProblem objects.
+    The solution format supports:
+    - Cost line: "Cost <value>"
+    - Route lines: "Route #<id>: <node1> <node2> ..." or "Vehicle #<id>: ..."
+
+    Returns:
+        dict with keys:
+        - 'cost': int | None - reported cost from the solution file
+        - 'routes': list[dict] - list of route dicts with 'vehicle_id' and 'path' keys
     """
-    dataset_path = path_router(dataset.value.name, "readall")
-    instances = {}
+    # Preprocess lines
+    lines = content.splitlines()
 
-    filenames = os.listdir(dataset_path)
-    # Sort filenames in natural order (numerical order for numbers in string)
-    filenames.sort(key=lambda f: [int(c) if c.isdigit() else c for c in re.split(r'(\d+)', f)])
 
-    for filename in filenames:
-        if filename.endswith(".sarp"):
-            inst_name = os.path.splitext(filename)[0]
-            file_path = dataset_path + filename
-            problem = _parse_dotsarp_to_instance(file_path)
-            instances[inst_name] = problem
+    # //// Parse lines
+    reported_cost = None
+    routes = []
 
-    return instances
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+
+        # Parse Cost line
+        if line.lower().startswith("cost"):
+            try:
+                parts = line.split()
+                if len(parts) >= 2:
+                    reported_cost = int(parts[1])
+            except ValueError:
+                pass
+            continue
+
+        # Parse Route/Vehicle lines
+        if "Route" in line or "Vehicle" in line:
+            # Extract route ID e.g. Route #1 -> 1
+            route_match = re.search(r'#(\d+)', line)
+            vehicle_id = int(route_match.group(1)) if route_match else len(routes) + 1
+
+            # Extract stops - look for part after colon
+            if ":" in line:
+                path_str = line.split(":", 1)[1]
+            else:
+                path_str = line
+
+            # Get all integers as the path
+            path = [int(s) for s in re.findall(r'\b\d+\b', path_str)]
+            if path:
+                routes.append({
+                    'vehicle_id': vehicle_id,
+                    'path': path
+                })
+
+    # Return solution context content
+    return {
+        'cost': reported_cost,
+        'routes': routes
+    }
 
 
 
 
 # ================ Playground ================
 if __name__ == "__main__":
-    dts = Dataset.EXACT
-    problist = parse_dataset(dts)
-    for name, prob in problist.items():
-        print(f"Instance: {name}, N={prob.N}, M={prob.M}, K={prob.K}")
+    pass
+    # dts = Dataset.EXACT
+    # problist = parse_sarp_dataset(dts)
+    # for name, prob in problist.items():
+    #     print(f"Instance: {name}, N={prob.N}, M={prob.M}, K={prob.K}")

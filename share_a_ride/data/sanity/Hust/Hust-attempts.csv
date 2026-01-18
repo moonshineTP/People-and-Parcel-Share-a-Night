@@ -35,3 +35,4 @@ attempt_id,timestamp,dataset,instance,solver,seed,time_limit,hyperparams,status,
 34,2025-12-29T22:17:32+00:00,Hust,Hust_n10_m10_k2,BNB,42,60.0,,timeout,60.00014114379883,,"{""solutions_found"": 0, ""best_cost"": ""N/A""}",Test optimality
 35,2025-12-29T22:18:32+00:00,Hust,Hust_n3_m3_k2,BNB,42,60.0,,done,0.09771299362182617,,"{""solutions_found"": 0, ""best_cost"": ""N/A""}",Test optimality
 36,2025-12-29T22:18:32+00:00,Hust,Hust_n5_m5_k2,BNB,42,60.0,,done,2.2861006259918213,325,"{""solutions_found"": 1, ""best_cost"": 325}",Test optimality
+37,2026-01-18T10:29:40+00:00,Hust,Hust_n10_m10_k2,ACO,,60.0,"{""width"": 5, ""q_prob"": 0.72, ""alpha"": 1.36, ""beta"": 1.38, ""omega"": 3, ""phi"": 0.43, ""chi"": 1.77, ""gamma"": 0.4, ""kappa"": 2.34, ""sigma"": 12, ""rho"": 0.62}",done,17.191110134124756,739,"{""iterations"": 5, ""best_cost"": 739, ""elitists_count"": 50}",

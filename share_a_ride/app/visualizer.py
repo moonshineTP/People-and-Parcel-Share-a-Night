@@ -1,84 +1,325 @@
 """
 Streamlit solution visualizer for the Share-a-Ride app.
+To run the app, use:
+    streamlit run share_a_ride/app/visualizer.py
 """
-from __future__ import annotations
+import sys
+from pathlib import Path
 
-import math
-import re
+# Add root path to sys.path for module imports
+root_path = Path(__file__).resolve().parent.parent.parent
+if str(root_path) not in sys.path:
+    sys.path.append(str(root_path))
+
+from typing import Optional
+
 import pandas as pd
 import altair as alt
 import streamlit as st
 
+from share_a_ride.data.classes import Dataset
+from share_a_ride.data.loader import DataLoader
+from share_a_ride.solvers.classes import SolverName, SolverMode
+from share_a_ride.data.executor import try_instance
+from share_a_ride.data.router import path_router
+from share_a_ride.data.extractor import extract_sarp_core
+from share_a_ride.data.parser import parse_sarp_content, parse_sol_content
+from share_a_ride.data.transformer import transform_nodes, transform_edges
+
+
+
+
 class ShareARideSolutionVisualizer:
     """
-    Visualizer component for VRP/SARP solutions using Streamlit and Altair.
+    Visualizer view for VRP/SARP solutions using Streamlit and Altair.
     
-    It serves to:
+    This is a complete view component (like Dashboard) that handles:
+    1. UI controls for data input (file selection or text paste)
+    2. Data loading via DataLoader
+    3. Visualization rendering
+    
+    It serves 4 main display functions:
     1. Visualize Nodes (Depot, Pickup, Delivery) on a 2D plane.
     2. Draw Routes differentiating vehicles.
     3. Show directionality using arrow markers.
-    4. Display contextual info via tooltips.
+    4. Display contextual info via tooltips and summary metrics.
     """
 
-    def render(self, instance_content: str, solution_content: str | None = None):
+    def __init__(self):
+        # State
+        self.selected_dataset: Optional[str] = None
+        self.selected_instance: Optional[str] = None
+
+
+    def run(self):
+        """Main execution entry point for the visualizer view."""
+        st.title("Solution Visualizer")
+
+        # Build input controls
+        input_mode = st.radio(
+            "Input Mode",
+            ["Select from Dataset", "Paste Content", "Run Solver"],
+            horizontal=True
+        )
+
+        if input_mode == "Select from Dataset":
+            self._run_dataset_mode()
+        elif input_mode == "Paste Content":
+            self._run_paste_mode()
+        else:
+            self._run_solver_mode()
+
+
+    def _run_dataset_mode(self):
+        """Run visualizer with dataset/instance selection."""
+        # Dataset and instance selection
+        col1, col2 = st.columns(2)
+
+        with col1:
+            datasets = DataLoader.list_all_datasets()
+            self.selected_dataset = st.selectbox(
+                "Select Dataset",
+                options=[""] + datasets,
+                index=0
+            )
+
+        with col2:
+            if self.selected_dataset:
+                ds_enum = Dataset.from_str(self.selected_dataset)
+                instances = DataLoader.list_instances(ds_enum)
+                self.selected_instance = st.selectbox(
+                    "Select Instance",
+                    options=[""] + instances,
+                    index=0
+                )
+            else:
+                st.selectbox("Select Instance", options=[""], disabled=True)
+
+        # Load and render
+        if self.selected_dataset and self.selected_instance:
+            try:
+                ds_enum = Dataset.from_str(self.selected_dataset)
+                bundle = DataLoader.load_visualizer_bundle(
+                    dataset=ds_enum,
+                    instance=self.selected_instance
+                )
+                self.render(
+                    nodes_df=bundle['nodes_df'],
+                    edges_df=bundle['edges_df'],
+                    reported_cost=bundle['reported_cost']
+                )
+            except Exception as e:  # pylint: disable=broad-except
+                st.error(f"Failed to load data: {e}")
+        else:
+            st.info("Select a dataset and instance to visualize.")
+
+
+    def _run_solver_mode(self):
+        """Run visualizer with solver execution."""
+        st.subheader("Run Solver Experiment")
+
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            datasets = DataLoader.list_all_datasets()
+            sel_ds = st.selectbox("Dataset", options=[""] + datasets, key="run_ds")
+
+        with c2:
+            if sel_ds:
+                ds_enum = Dataset.from_str(sel_ds)
+                instances = DataLoader.list_instances(ds_enum)
+                sel_inst = st.selectbox("Instance", options=[""] + instances, key="run_inst")
+            else:
+                sel_inst = st.selectbox("Instance", options=[""], disabled=True, key="run_inst")
+
+        with c3:
+            # Solver selection
+            solvers = [s.value for s in SolverName]
+            sel_solver = st.selectbox("Solver", options=solvers, key="run_solver")
+
+        if st.button("Run Solver", type="primary", disabled=not (sel_ds and sel_inst and sel_solver)):
+            with st.spinner("Solving..."):
+                try:
+                    ds_enum = Dataset.from_str(sel_ds)
+                    # 1. Get raw problem
+                    inst_path = path_router(sel_ds, "readfile", sel_inst)
+                    problem = extract_sarp_core(inst_path)
+
+                    # 2. Write problem to run.inp
+                    with open(inst_path, 'r', encoding='utf-8') as f:
+                        raw_content = f.read()
+
+                    with open("share_a_ride/data/run.inp", "w", encoding='utf-8') as f:
+                        f.write(raw_content)
+
+                    # 3. Run Solver
+                    sol, gap = try_instance(
+                        dataset=ds_enum,
+                        inst_name=sel_inst,
+                        problem=problem,
+                        solver_name=SolverName(sel_solver),
+                        solver_mode=SolverMode.STANDARD,
+                        verbose=True
+                    )
+
+                    if sol:
+                        st.success(f"Solution found! Gap: {gap if gap is not None else 'N/A'}")
+
+                        # 4. Write solution to run.out
+                        sol_str = self._serialize_solution(sol)
+                        with open("share_a_ride/data/run.out", "w", encoding='utf-8') as f:
+                            f.write(sol_str)
+
+                        # 5. Visualize
+                        # Read run.inp and run.out
+                        with open("share_a_ride/data/run.inp", "r", encoding='utf-8') as f:
+                            inp_text = f.read()
+                        with open("share_a_ride/data/run.out", "r", encoding='utf-8') as f:
+                            out_text = f.read()
+
+                        # Transform
+                        instance_content = parse_sarp_content(inp_text)
+                        nodes_df = transform_nodes(instance_content)
+
+                        solution_content = parse_sol_content(out_text)
+                        edges_df, reported_cost = transform_edges(solution_content, nodes_df)
+
+                        self.render(nodes_df, edges_df, reported_cost)
+
+                    else:
+                        st.error("No solution found.")
+
+                except Exception as e:  # pylint: disable=broad-except
+                    st.error(f"Error executing solver: {e}")
+
+
+    def _serialize_solution(self, solution) -> str:
+        """
+        Helper to convert Solution object to .sol format string.
+        
+        Note: Following TSPLIB convention, depot is EXCLUDED from the route string.
+        The parser/transformer will inject depot at start/end when building edges.
+        """
+        lines = []
+        if hasattr(solution, 'max_cost'):
+            lines.append(f"Cost {solution.max_cost}")
+
+        for i, route in enumerate(solution.routes):
+            # Exclude depot (0) at start and end - TSPLIB convention
+            path = list(route)
+            if path and path[0] == 0:
+                path = path[1:]
+            if path and path[-1] == 0:
+                path = path[:-1]
+            # Format: Route #1: 1 2 3 (no depot)
+            path_str = " ".join(str(int(n)) for n in path)
+            lines.append(f"Route #{i+1}: {path_str}")
+
+        return "\n".join(lines)
+
+
+    def _run_paste_mode(self):
+        """Run visualizer with pasted content."""
+        st.write("Paste your Instance (SARP format) and Solution content below.")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            instance_input = st.text_area(
+                "Instance Content",
+                height=300,
+                help="Paste content of .sarp file here"
+            )
+        with col2:
+            solution_input = st.text_area(
+                "Solution Content",
+                height=300,
+                help="Paste solution route text here"
+            )
+
+        if st.button("Visualize", type="primary"):
+            if instance_input:
+                try:
+                    # Load visualization data from content via DataLoader
+                    bundle = DataLoader.load_visualizer_bundle(
+                        instance_content=instance_input,
+                        solution_content=solution_input if solution_input else None
+                    )
+
+                    # Render visualization
+                    self.render(
+                        nodes_df=bundle['nodes_df'],
+                        edges_df=bundle['edges_df'],
+                        reported_cost=bundle['reported_cost']
+                    )
+
+                except Exception as e:  # pylint: disable=broad-except
+                    st.error(f"Failed to parse input: {e}")
+            else:
+                st.error("Instance content is required.")
+
+
+
+
+    # ================ Rendering Entry Point ================
+    def render(
+            self,
+            nodes_df: pd.DataFrame,
+            edges_df: pd.DataFrame | None = None,
+            reported_cost: int | None = None
+        ):
         """
         Main entry point to render the visualization.
         
         Args:
-            instance_content: Raw text content of the .sarp/.vrp instance file.
-            solution_content: Raw text content of the solution (routes).
+            nodes_df: DataFrame with columns [id, x, y, demand, type_id, type_label]
+                      The depot is identified by type_label == "Depot" (always node id 0).
+            edges_df: DataFrame with route edges (optional), columns include
+                      [vehicle_id, order, x, y, mid_x, mid_y, angle, distance]
+            reported_cost: Cost value from solution file (optional)
         """
-        # 1. Parse Data
-        try:
-            nodes_df, depot_ids = self._parse_instance_data(instance_content)
-        except Exception as e:
-            st.error(f"Failed to parse instance data: {e}")
+        if nodes_df.empty:
+            st.warning("No node data to display.")
             return
 
-        routes_df = pd.DataFrame()
-        reported_cost = None
-        
-        if solution_content:
-            try:
-                # Use the first depot found as the default start/end for routes
-                default_depot = depot_ids[0] if depot_ids else 1
-                routes_df, reported_cost = self._parse_solution_text(solution_content, nodes_df, default_depot)
-            except Exception as e:
-                st.warning(f"Could not parse solution fully: {e}")
+        # Ensure edges_df is a DataFrame (not None)
+        if edges_df is None:
+            edges_df = pd.DataFrame()
 
-        # 2. Draw Chart
+        # Draw Chart
         st.markdown("### Solution Visualization")
-        
-        if not nodes_df.empty:
-            chart = self._build_altair_chart(nodes_df, routes_df)
-            st.altair_chart(chart, width='stretch')
-        
-        # 3. Metrics (if solution exists)
-        if not routes_df.empty:
-            self._render_metrics(routes_df, reported_cost)
+        chart = self._build_altair_chart(nodes_df, edges_df)
+        st.altair_chart(chart, width='stretch')
 
-    def _render_metrics(self, routes_edge_df: pd.DataFrame, reported_cost: float | None):
+        # Metrics (if solution exists)
+        if not edges_df.empty:
+            self._render_metrics(edges_df, reported_cost)
+
+
+    def _render_metrics(self, edge_df: pd.DataFrame, reported_cost: int | None):
         """Display summary metrics based on the calculated edges."""
+
         # Calculate total distance based on Euclidean distance of segments
-        total_dist = routes_edge_df["distance"].sum()
-        num_vehicles = routes_edge_df["vehicle_id"].nunique()
-        
+        total_dist = edge_df["distance"].sum()
+        num_vehicles = edge_df["vehicle_id"].nunique()
+
+        # Display metrics in 3 columns
         cols = st.columns(3)
         cols[0].metric("Calculated Distance (Euclidean)", f"{total_dist:,.2f}")
         cols[1].metric("Vehicles Used", f"{num_vehicles}")
         if reported_cost is not None:
             cols[2].metric("Reported Cost (from file)", f"{reported_cost:,.2f}")
 
-    def _build_altair_chart(self, nodes_df: pd.DataFrame, edges_df: pd.DataFrame) -> alt.Chart:
+
+    def _build_altair_chart(self, nodes_df: pd.DataFrame, edges_df: pd.DataFrame) -> alt.LayerChart:
         """
         Compose the Altair chart with Layers: Routes -> Arrows -> Nodes.
         """
-        
-        # --- Layer 1: Routes (Lines) ---
+
+        # //// Layer 1: Routes (Lines)
         # We need edges data: x, y, x2, y2, vehicle_id
         routes_layer = alt.Chart(pd.DataFrame()).mark_line()
         arrows_layer = alt.Chart(pd.DataFrame()).mark_point()
 
+        # Visualize
         if not edges_df.empty:
             # Lines
             routes_layer = alt.Chart(edges_df).mark_line(
@@ -95,21 +336,8 @@ class ShareARideSolutionVisualizer:
                 ]
             )
 
-            # Arrows (Midpoint markers with rotation)
-            arrows_layer = alt.Chart(edges_df).mark_point(
-                shape="triangle",
-                size=100,
-                fillOpacity=1
-            ).encode(
-                x='mid_x:Q',
-                y='mid_y:Q',
-                color='vehicle_id:N',
-                angle='angle:Q', 
-                tooltip=['vehicle_id', 'distance']
-            )
 
-        # --- Layer 2: Nodes (Points) ---
-        
+        # //// Layer 2: Nodes (Points)
         # Base node layer
         nodes_base = alt.Chart(nodes_df).encode(
             x=alt.X('x:Q', title='X Coord'),
@@ -121,232 +349,67 @@ class ShareARideSolutionVisualizer:
             ]
         )
 
-        # Draw Depots (Squares, Black)
+        # Draw Depots (Squares, Magenta) - single depot per instance (always node 0)
         depots = nodes_base.transform_filter(
             alt.datum.type_label == 'Depot'
         ).mark_square(
-            size=150, color='black', opacity=1
+            size=200, color='darkmagenta', opacity=1
         )
 
-        # Draw Pickups (Up triangles)
-        pickups = nodes_base.transform_filter(
-            alt.datum.type_label == 'Pickup'
+        # Passenger Pickup: Left half-circle (wedge pointing left) - Blue
+        # SVG path for left half-circle: arc from top to bottom on left side
+        left_half_circle = "M 0 -1 A 1 1 0 0 0 0 1 L 0 -1 Z"
+        pickups_p = nodes_base.transform_filter(
+            alt.datum.type_label == 'pickP'
         ).mark_point(
-            shape="triangle-up", size=100, filled=True, opacity=0.8
+            shape=left_half_circle, size=200, filled=True, opacity=0.9
         ).encode(
-            color=alt.value("#1f77b4") # Blue
+            color=alt.value("#1f77b4")  # Blue
         )
 
-        # Draw Deliveries (Down triangles)
-        deliveries = nodes_base.transform_filter(
-            alt.datum.type_label == 'Delivery'
+        # Passenger Dropoff: Right half-circle (wedge pointing right) - Blue (same color, paired)
+        right_half_circle = "M 0 -1 A 1 1 0 0 1 0 1 L 0 -1 Z"
+        deliveries_p = nodes_base.transform_filter(
+            alt.datum.type_label == 'dropP'
         ).mark_point(
-            shape="triangle-down", size=100, filled=True, opacity=0.8
+            shape=right_half_circle, size=200, filled=True, opacity=0.9
         ).encode(
-            color=alt.value("#d62728") # Red
+            color=alt.value("#1f77b4")  # Blue (same as pickup for pairing)
         )
 
-        # Draw Others/Stops (Circles, Gray)
-        stops = nodes_base.transform_filter(
-            (alt.datum.type_label != 'Depot') &
-            (alt.datum.type_label != 'Pickup') &
-            (alt.datum.type_label != 'Delivery')
-        ).mark_circle(
-            size=80, opacity=0.6
+        # Parcel Pickup: Up triangle - Orange
+        pickups_l = nodes_base.transform_filter(
+            alt.datum.type_label == 'pickL'
+        ).mark_point(
+            shape="triangle-up", size=160, filled=True, opacity=0.8
         ).encode(
-            color=alt.value("gray")
+            color=alt.value("#ff7f0e")  # Orange
+        )
+
+        # Parcel Dropoff: Down triangle - Orange (same color, paired)
+        deliveries_l = nodes_base.transform_filter(
+            alt.datum.type_label == 'dropL'
+        ).mark_point(
+            shape="triangle-down", size=160, filled=True, opacity=0.8
+        ).encode(
+            color=alt.value("#ff7f0e")  # Orange (same as pickup for pairing)
         )
 
         # Labels (Node IDs) - Optional, can be cluttered if many nodes
         # Only show for small instances or on hover? Let's show small text always.
         text = nodes_base.mark_text(
-            align='left', baseline='middle', dx=7, fontSize=10
+            align='left', baseline='middle', dx=7, fontSize=10, color='white'
         ).encode(text='id:N')
 
         # Combine
-        return (routes_layer + arrows_layer + depots + pickups + deliveries + stops + text).interactive()
+        return (
+            routes_layer + arrows_layer + text
+            + depots + pickups_p + pickups_l + deliveries_p + deliveries_l
+        ).interactive()
 
-    # ================= Data Parsing Helpers =================
 
-    @staticmethod
-    def _parse_instance_data(content: str) -> tuple[pd.DataFrame, list[int]]:
-        """
-        Parses .sarp/.vrp content to extract node info.
-        Returns:
-            - DataFrame with cols: [id, x, y, demand, type_label]
-            - List of depot IDs
-        """
-        lines = content.splitlines()
-        
-        coords = {}  # {id: (x, y)}
-        demands = {} # {id: demand}
-        node_types = {} # {id: type_code}
-        depots = []
 
-        current_section = None
 
-        for line in lines:
-            line = line.strip()
-            if not line: continue
-            
-            if line.startswith("NODE_COORD_SECTION"):
-                current_section = "COORD"
-                continue
-            elif line.startswith("DEMAND_SECTION"):
-                current_section = "DEMAND"
-                continue
-            elif line.startswith("DEPOT_SECTION"):
-                current_section = "DEPOT"
-                continue
-            elif line.startswith("NODE_TYPE_SECTION"):
-                current_section = "TYPE"
-                continue
-            elif "SECTION" in line:
-                current_section = None # Other sections we ignore for now
-                continue
-            elif line == "EOF":
-                break
-
-            parts = re.split(r'\s+', line)
-            
-            if current_section == "COORD" and len(parts) >= 3:
-                try:
-                    coords[int(parts[0])] = (float(parts[1]), float(parts[2]))
-                except ValueError: pass
-            
-            elif current_section == "DEMAND" and len(parts) >= 2:
-                try:
-                    demands[int(parts[0])] = float(parts[1])
-                except ValueError: pass
-            
-            elif current_section == "DEPOT":
-                try:
-                    val = int(parts[0])
-                    if val != -1:
-                        depots.append(val)
-                except ValueError: pass
-
-            elif current_section == "TYPE" and len(parts) >= 3:
-                # Format likely: ID ID TYPE? Or ID TYPE ...?
-                # The user example showed "122 122 3". Let's assume ID is first col, Type is 3rd?
-                # Actually commonly in SARP: ID OriginalID Type
-                # Let's try to parse the last numeric column as type if 3 cols, or 2nd if 2 cols.
-                try:
-                    nid = int(parts[0])
-                    ntype = int(parts[-1]) 
-                    node_types[nid] = ntype
-                except ValueError: pass
-
-        # Build DataFrame
-        data = []
-        for nid, (x, y) in coords.items():
-            d = demands.get(nid, 0)
-            
-            # Determine Label
-            # Heuristic map based on common VRP/SARP: 
-            # 0: Depot, 1: Station/Stop, 2: Pickup, 3: Delivery?
-            # Or -1: Depot. 
-            # We use the depots list as truth for Depot.
-            
-            t_code = node_types.get(nid, -1)
-            
-            if nid in depots:
-                t_label = "Depot"
-            else:
-                if t_code == 2: t_label = "Pickup"
-                elif t_code == 3: t_label = "Delivery"
-                else: t_label = "Stop"
-            
-            data.append({
-                "id": nid,
-                "x": x,
-                "y": y,
-                "demand": d,
-                "type_label": t_label
-            })
-
-        df = pd.DataFrame(data)
-        return df, depots
-
-    @staticmethod
-    def _parse_solution_text(content: str, nodes_df: pd.DataFrame, default_depot: int) -> tuple[pd.DataFrame, float | None]:
-        """
-        Parses solution text into a dataframe of edges.
-        Also parses the 'Cost' line.
-        """
-        edges = []
-        coords = nodes_df.set_index("id")[["x", "y"]].to_dict('index')
-        lines = content.splitlines()
-        
-        reported_cost = None
-        
-        for line in lines:
-            line = line.strip()
-            if not line: continue
-
-            # Parse Cost
-            if line.lower().startswith("cost"):
-                try:
-                    # "Cost 5623.47"
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        reported_cost = float(parts[1])
-                except ValueError: pass
-                continue
-
-            # Parse Routes
-            if "Route" in line or "Vehicle" in line:
-                # Extract route ID e.g. Route #1 -> 1
-                route_match = re.search(r'#(\d+)', line)
-                vid = f"V{route_match.group(1)}" if route_match else "V?"
-                
-                # Extract stops
-                # Look for part after colon
-                if ":" in line:
-                    path_str = line.split(":", 1)[1]
-                else:
-                    path_str = line
-                
-                # Get all integers
-                path = [int(s) for s in re.findall(r'\b\d+\b', path_str)]
-                
-                if not path: continue
-
-                # Inject Depot if needed
-                # If first node is not depot, prepend it
-                if path[0] != default_depot:
-                    path.insert(0, default_depot)
-                # If last node is not depot, append it
-                if path[-1] != default_depot:
-                    path.append(default_depot)
-
-                # Generate segments
-                for i in range(len(path) - 1):
-                    u, v = path[i], path[i+1]
-                    if u in coords and v in coords:
-                        x1, y1 = coords[u]['x'], coords[u]['y']
-                        x2, y2 = coords[v]['x'], coords[v]['y']
-                        
-                        dx, dy = x2 - x1, y2 - y1
-                        dist = math.sqrt(dx*dx + dy*dy)
-                        angle = math.degrees(math.atan2(dy, dx)) - 90 
-                        mid_x, mid_y = (x1 + x2) / 2, (y1 + y2) / 2
-
-                        edges.append({
-                            "vehicle_id": vid,
-                            "order": i * 2,
-                            "x": x1, "y": y1,
-                            "mid_x": mid_x, "mid_y": mid_y,
-                            "angle": angle,
-                            "distance": dist
-                        })
-                        edges.append({
-                            "vehicle_id": vid,
-                            "order": i * 2 + 1,
-                            "x": x2, "y": y2,
-                            "mid_x": mid_x, "mid_y": mid_y,
-                            "angle": angle,
-                            "distance": dist
-                        })
-
-        return pd.DataFrame(edges), reported_cost
+if __name__ == "__main__":
+    visualizer = ShareARideSolutionVisualizer()
+    visualizer.run()

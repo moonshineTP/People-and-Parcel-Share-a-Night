@@ -11,7 +11,6 @@ from share_a_ride.core.solution import PartialSolution, Solution
 from share_a_ride.solvers.algo.utils import apply_general_action, enumerate_actions_greedily
 from share_a_ride.solvers.operator.repair import repair_one_route
 from share_a_ride.solvers.operator.destroy import destroy_operator
-from share_a_ride.solvers.operator.relocate import relocate_operator
 from share_a_ride.solvers.utils.weighter import softmax_weighter
 from share_a_ride.solvers.utils.sampler import sample_from_weight
 

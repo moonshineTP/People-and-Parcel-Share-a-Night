@@ -1,213 +1,61 @@
-**Title**: **SARP data**  
-**Version**: **1.0**  
-**Maintainer**: **moonshineTP**  
-**Format type**: **Extended VRPLIB**
+# Data Module
 
----
+This directory contains the data management, processing, and ETL (Extract, Transform, Load) pipeline for the Share-a-Ride project.
 
-**1. OVERVIEW**  
+## ETL Architecture
 
-This dataset represents small-scale to large-scale instances of the *Share-a-Ride Problem (SARP)*
+The data pipeline is organized into a formal ETL structure to separate file access, data processing, and application loading:
 
-The format extends the well-known **TSPLIB/VRPLIB** structure to accommodate the unique requirements of SARP, which involves coordinating multiple taxis to serve both passenger and parcel requests with specific constraints.
+1.  **Extract (extractor.py)**: Responsible for all physical I/O operations. It reads raw content from .sarp, .sol, and .csv files and handles resource discovery (e.g., crawling datasets to list instances).
+2.  **Transform (transformer.py)**: The logic layer that cleans and normalizes raw data. It converts parsed content into structured pandas.DataFrame formats (like NodesDF or EdgesDF) ready for visualization and analysis.
+3.  **Load (loader.py)**: The primary API surface for the application layer. It orchestrates the extractor and transformer, implements caching mechanisms (LRU), and provides high-level "Data Bundles" tailored for Dashboard and Visualizer components.
 
----
+## Module Overview
 
-**2. PROBLEM DESCRIPTION**  
-**Given:**  
-- **K** taxis (vehicles) located at a depot (node `0`).  
-- **N** passenger requests and **M** parcel requests.
+### Core ETL Layers
+- [extractor.py](extractor.py): Physically extracts raw data and listed resources from the filesystem.
+- [transformer.py](transformer.py): Transforms raw data structures into normalized DataFrames.
+- [loader.py](loader.py): Provides cached data loading and bundling for the application.
 
-**Each request consists of two nodes:**  
-- *Passenger* `i` (1 ≤ i ≤ N):  
-    - **pickup node** = `i`  
-    - **dropoff node** = `i + N + M`  
-    - *constraint:* served *directly* (pickup → dropoff with no intermediate stops).  
-- *Parcel* `j` (1 ≤ j ≤ M):  
-    - **pickup node** = `j + N`  
-    - **dropoff node** = `j + 2N + M`  
-    - each parcel `j` has quantity *q[j]* (load/weight).
+### Processing & Analysis
+- [executor.py](executor.py): Orchestrates solver execution on instances/datasets and records raw results to *-attempts.csv.
+- [summarizer.py](summarizer.py): Processes attempts records to generate *-scoreboard.csv summaries, tracking performance improvements.
 
-Each vehicle **k** has maximum capacity *Q[k]*.  
-Distance between nodes *i* and *j* is *d(i,j)*. All routes start and end at the depot (`0`).
-
-**Objective (benchmark):**  
-Minimize the **maximum total route cost** among all taxis, subject to direct-ride and capacity constraints.
-
----
-
-**3. FILE STRUCTURE**  
-Each `<name>.sarp` file follows **TSPLIB** header syntax.
-
-**Required sections:**  
-- `NAME : <string>`                     # instance name  
-- `COMMENT: <string>`                   # comment  
-- `TYPE : SARP`                         # problem type  
-- `DIMENSION : <integer>`               # nodes = 2N + 2M + 1  
-- `EDGE_WEIGHT_TYPE : EXPLICIT`         # {EXPLICIT, EUC_2D}  
-- `EDGE_WEIGHT_FORMAT : FULL_MATRIX`    # optional, only support FULL_MATRIX
-- `CAPACITY : <integer>`                # vehicle capacity (if uniform)
-- `EDGE_WEIGHT_SECTION`  
-        ```  
-        D lines of D integers each  
-        ```  
-- `END_EDGE_WEIGHT_SECTION`  
-
-- `NODE_COORD_SECTION`  
-        ```  
-        D lines of "<id> <x> <y>"  
-        ```  
-- `END_NODE_COORD_SECTION`  
-
-- `NODE_TYPE_SECTION`  
-        ```
-        id  node_id  type  
-        ```  
-    type ∈ {0=DEPOT,1=PASS_PICKUP,2=PARC_PICKUP,3=PASS_DROPOFF,4=PARC_DROPOFF}  
-- `END_NODE_TYPE_SECTION`
-
-- `PAIR_SECTION`  
-        ```
-        id  pickup_node  category  drop_node  
-        ```  
-    category ∈ {P=passenger, L=parcel}  
-- `END_PAIR_SECTION`
-
-- `VEHICLE_CAPACITY_SECTION`  
-        ```
-        id  vehicle_id  capacity  
-        ```  
-- `END_VEHICLE_CAPACITY_SECTION`
-
-- `PARCEL_QUANTITY_SECTION`  
-        ```
-        id  parcel_node_id  quantity  
-        ```  
-- `END_PARCEL_QUANTITY_SECTION`
-
-- `DEPOT_SECTION`  
-        ```
-        depot_node_id  
-        ```  
-- `END_DEPOT_SECTION`
-
-All sections end with `END_<SECTION>_SECTION`. 
-File ends with **EOF**.
-
----
-
-**4. DATA UNITS AND CONVENTIONS**  
-**Indexing:**  
-- File IDs are 1-based; internal processing can be 0-based.
-- Depot node ID should be 1 across all instances.
-
-**Units:**  
-- Distances: integer/float; unit = meters (if unspecified).  
-- Parcel quantities *q_j* and capacities *Q_k*: integer load units (e.g., kg).
-
-**Distance matrix:**  
-- FULL_MATRIX over 0..D-1; d(i,i)=0; d(i,j)≥0; should expect it is asymmetric.
-
-**Service:**  
-- Each node visited exactly once
-- Passengers: only one onboard, not necessarily direct.
-- Parcels: multiple onboard, as long as capacity constraints are met; intermediate stops allowed.
-
-**Parsing:**  
-- Numeric fields: base-10 integers, whitespace-separated.  
-- Section names/EOF markers: uppercase.  
-- UTF-8 text.  
-- 32-bit ints suffice.
-
-**Scope:**  
-- No travel/service times or time windows unless extended.
-
----
-
-**5. RELATION TO SOURCE DATA**  
-These instances are curated from existing datasets, some of them include Li et al., Solomon et al., Talliard et al.,...
-Modifications is made to adapt them to SARP context, including adding parcel requests and adjusting vehicle capacities.
-The detail of modifications is mentioned in share_a_ride/precurated
-All original data sources are properly cited in the folder of each dataset.
-
----
-
-**6. OUTPUT FORMAT (REFERENCE)**  
-Like `.sol` in **VRPLIB/TSPLIB**:  
-- **Route #i:** `v1 v2 … vj` (NO depot node appeared)  
-- **Cost:** `<int/float>` (max route cost)
-
----
-
-**7. USAGE**  
-Benchmark for:  
-- *Exact methods*: Exhaustive search, Branch-and-Bound, MILP solvers, Branch-and-Cut.
-- *Tree search methods*: Beam Search, Monte Carlo Tree Search.
-- *Local search methods*: Tabu Search, Variable Neighborhood Search.
-- *Population-based methods*: Simulated Annealing, Adaptive Large Neighborhood Search, Genetic Algorithms.
+### Helpers & Metadata
+- [router.py](router.py): Centralized path management mapping actions and datasets to physical file locations.
+- [parser.py](parser.py): Grammar-level parsing logic for SARP instance formats and solution files.
+- [classes.py](classes.py): Shared domain models, constants, and column definitions.
 
 
-8. Benchmarking Procedure
-The benchmarking procedure involves the following steps:
-- Configure a solver. File paths are resolved via path_router.
-- Run attempts:
-        - attempt_instance(dataset, instance_name): parses the <name>.sarp, calls solver.solve, and appends one row to the dataset attempts CSV.
-                - attempt_id: auto-increment (1-based; header written if the file is empty).
-                - timestamp: UTC ISO-8601 without microseconds.
-                - solver fields: solver name, seed and time_limit from solver.args; hyperparams as JSON.
-                - results: status from solver info (done/timeout/error), time from info, cost = sol.max_cost or None.
-                - info JSON: a pruned copy of solver info (status and time removed).
-                - gap% (in-memory): computed only if both current cost and prior best_cost exist.
-        - attempt_dataset(dataset): iterates all .sarp instances in the dataset and calls attempt_instance for each; returns (solutions, gaps, textual summary).
-- Summarize results:
-        - summarize_dataset(dataset): enumerates all instances in the dataset folder and calls summarize_instance per instance.
-        - summarize_instance(dataset, inst_name): reads all rows for the instance from the attempts CSV, then writes/updates a single row in the dataset scoreboard CSV:
-                - Counts: num_attempts, successful_attempts (status == done).
-                - Best: min cost among done attempts; captures attempt_id, timestamp, solver, args (seed/time_limit only), hyperparams, elapsed_time.
-                - Improvement vs previous best in the scoreboard: cost_improvement and percentage_improvement (rounded to 2 decimals); sets note = "improved" if improved.
-                - If no successful attempt exists: best_* and improvement fields are None.
-        - The scoreboard file must exist (can be empty); header is written if empty.
+## Data Structure
 
-- Loading data for Dashboard and Visualization:
-        - Use dataloader.py to load attempts and scoreboard CSVs into DataFrames.
-        - The GUI in gui.py then visualizes:
-                - Instance-wise performance over attempts (costs, gaps, times).
-                - Solver-wise comparisons (best costs, success rates).
-        - Allows filtering by dataset, solver, hyperparameters.
+The data is organized hierarchically by purpose:
+share_a_ride/data/{purpose}/{dataset}/{instance}.sarp
 
----
+- **Purpose**: High-level categorization (Sanity, Benchmark, Test, Train, Val).
+- **Dataset**: A collection of instances (e.g., Li, Solomon, Golden).
+- **Instance**: Individual SARP problem files.
+- **Attempts/Scoreboard**: Execution records and summaries stored within each dataset folder.
 
+## Support for Application
 
-**9. DATASET STRUCTURE**
-This folder classifies datasets into subfolders based on their usage in the research:
-- `sanity`: small instances for initial testing and debugging.
-- `train`: medium-sized instances for training.
-- `val`: validation instances for hyperparameter tuning.
-- `test`: large-scale instances for evaluation, specifically for learning-augmented methods.
-- `benchmark`: comprehensive set of instances for benchmarking methods of all types across scales.
+The data module provides the backbone for the Streamlit-based application ([app.py](../app/app.py)):
 
+- **Dashboard Support**: `DataLoader.load_dashboard_bundle()` provides the `DataBundle` required by [dashboard.py](../app/dashboard.py), including historical performance, solver leaderboards, and hyperparameter trends.
+- **Visualizer Support**: `DataLoader.load_visualizer_bundle()` provides the `VisualizationBundle` for [visualizer.py](../app/visualizer.py), containing canonical node coordinates and solution route geometries.
+- **Performance**: Heavy use of `functools.lru_cache` in the Load layer ensures that switching between datasets in the UI is nearly instantaneous, as redundant disk I/O and data normalization are avoided.
 
-**10. ADDITIONAL CONSIDERATIONS**
+## Principles and Contribution Guidelines
 
-**Notes:**
-- attempt_instance creates the attempts CSV header if the file is empty; attempt_id = number of existing lines (header excluded).
-- summarize_instance requires the scoreboard file to exist; create an empty file first if needed.
-- Gaps are reported during execution only when a prior best_cost exists for the instance.
+To maintain the integrity of the data pipeline, please follow these design principles:
 
-**Citations:**
-If you use this dataset in your research, please cite the github repository:
-```@misc{moonshineTP_share_a_ride,
-  author = {moonshineTP},
-  title = {Share-a-Ride Problem (SARP) Dataset and Benchmark},
-  year = {2025},
-  url = {https://github.com/moonshineTP/People-and-Parcel-Share-a-Night/tree/main/share_a_ride/data},
-}
-```
-
-**Contributions:**
-Contributions and improvements to this dataset and benchmark are welcome. Please submit issues or pull requests on
-the GitHub repository.
-
----
-
-END OF FILE
+1.  **Strict ETL Separation**:
+    -   **Extract**: Keep file-system specifics and raw reading in `extractor.py`.
+    -   **Transform**: Keep pandas logic, data cleaning, and data-type normalization in `transformer.py`.
+    -   **Load**: Keep application-specific bundling and caching in `loader.py`.
+2.  **Stateless Extraction**: Extraction functions should be pure and stateless. They should take a path/content and return a dictionary or raw DataFrame.
+3.  **Normalized DataFrames**: All transformation functions must return standard `pd.DataFrame` objects using the type aliases and column definitions (e.g., `NodesDF`, `ATTEMPT_DF_COLUMNS`) defined in `transformer.py` and `classes.py`.
+4.  **Enum-First API**: Public methods in the Load layer should prefer taking `Dataset` enum members rather than raw strings to ensure type safety across the application.
+5.  **Canonical Ordering**: Always maintain the project's canonical node ordering: `Depot (0)` -> `Passenger Pickups` -> `Parcel Pickups` -> `Passenger Dropoffs` -> `Parcel Dropoffs`. This ensures that solvers, metrics, and visualizers remain interoperable.
+6.  **Fail Fast in Data, but Safe in Application**: Missing data should be raised as early as possible, while
+extraction and transformation functions should handle missing files or empty CSVs gracefully by returning empty DataFrames with correct schemas.

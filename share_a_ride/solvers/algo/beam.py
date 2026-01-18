@@ -327,6 +327,7 @@ def beam_solver(
     solswarm, stats = beam_enumerator(
         problem=problem,
         swarm=swarm,
+        width=width,
         n_partials=n_partials,
         n_return=n_returns,
         r_intra=r_intra,

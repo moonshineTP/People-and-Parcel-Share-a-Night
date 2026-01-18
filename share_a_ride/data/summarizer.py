@@ -24,7 +24,7 @@ from typing import Dict, Any, List, Optional
 
 from share_a_ride.data.router import path_router
 from share_a_ride.data.classes import SCOREBOARD_COLUMNS, Dataset
-from share_a_ride.data.parser import parse_dataset
+from share_a_ride.data.extractor import extract_dataset
 
 
 
@@ -49,7 +49,7 @@ def summarize_dataset(dataset: Dataset, verbose: bool = False) -> Dict[str, Any]
     scoreboard_file = path_router(dataset_name, "summarize")
 
     # Get all instance names from the dataset folder
-    instances = parse_dataset(dataset)
+    instances = extract_dataset(dataset)
     n_instances = len(instances)
 
     if verbose:
@@ -100,7 +100,7 @@ def summarize_dataset(dataset: Dataset, verbose: bool = False) -> Dict[str, Any]
             print(f"[{i}/{n_instances}] Summarizing: {inst}")
 
         # Get attempts info for this instance
-        inst_attempts = attempts_by_instance.get(inst, [])
+        inst_atts = attempts_by_instance[inst]
 
         # Get previous best cost
         previous_best_cost: Optional[int] = None
@@ -115,9 +115,9 @@ def summarize_dataset(dataset: Dataset, verbose: bool = False) -> Dict[str, Any]
         # Summarize
         summary = summarize_per_instance(
             dataset,
-            inst,
-            inst_attempts,
-            previous_best_cost,
+            inst_name=inst,
+            instance_attempts=inst_atts,
+            previous_best_cost=previous_best_cost,
             verbose=verbose
         )
 
@@ -161,13 +161,30 @@ def summarize_dataset(dataset: Dataset, verbose: bool = False) -> Dict[str, Any]
         valid_summaries = [s for s in summaries.values() if s]
         print(f"Instances with attempts: {len(valid_summaries)}/{n_instances}")
 
+        # Count improvements
+        improved_count = 0
         for inst, summary in summaries.items():
             if summary:     # Only print if there is a summary
+                improvement_str = ""
+                if summary.get('cost_improvement') is not None:
+                    gap = summary['cost_improvement']
+                    pct = summary.get('percentage_improvement', 0)
+                    if gap < 0:  # Improvement (new cost is lower)
+                        improved_count += 1
+                        improvement_str = f" [IMPROVED by {abs(gap):.2f} ({abs(pct):.2f}%)]"
+                    elif gap > 0:  # Regression
+                        improvement_str = f" [REGRESSED by {gap:.2f} ({pct:.2f}%)]"
+                    else:
+                        improvement_str = " [NO CHANGE]"
+
                 print(
-                    f"  - {inst}: {summary['successful_attempts']}/{summary['num_attempts']}" \
-                    f" successful, best cost: {summary['best_cost']}, " 
-                    f"solver: {summary['best_solver']}"
+                    f"  - {inst}: {summary['successful_attempts']}/{summary['num_attempts']}" 
+                    f" successful, best cost: {summary['best_cost']}, "
+                    f"solver: {summary['best_solver']}{improvement_str}"
                 )
+
+        if improved_count > 0:
+            print(f"\n>>> Total improvements: {improved_count} instance(s)")
         print(f"{'='*60}\n")
 
 
@@ -180,7 +197,7 @@ def summarize_per_instance(
         dataset: Dataset,
         inst_name: str,
         instance_attempts: List[Dict[str, Any]],
-        previous_best_cost: Optional[int],
+        previous_best_cost: Optional[int] = None,
         verbose: bool = False
     ) -> Dict[str, Any]:
     """
@@ -238,7 +255,9 @@ def summarize_per_instance(
             'best_solver_args'          : None,
             'best_solver_hyperparams'   : None,
             'best_time_taken'           : None,
-            'note'                      : None
+            'cost_improvement'          : None,
+            'percentage_improvement'    : None,
+            'notes'                     : None
         }
 
     else:                       # There is a best attempt
@@ -248,6 +267,17 @@ def summarize_per_instance(
             args_dict['seed'] = best_attempt['seed']
         if best_attempt['time_limit']:
             args_dict['time_limit'] = best_attempt['time_limit']
+
+        # Calculate improvement from previous best
+        cost_improvement: Optional[float] = None
+        percentage_improvement: Optional[float] = None
+        if previous_best_cost is not None and previous_best_cost > 0:
+            # Positive means regression (new cost is higher)
+            # Negative means improvement (new cost is lower)
+            cost_improvement = best_cost - previous_best_cost
+            percentage_improvement = round(
+                (cost_improvement / previous_best_cost) * 100, 2
+            )
 
         summary = {
             'dataset'                   : dataset_name,
@@ -261,16 +291,34 @@ def summarize_per_instance(
             'best_solver_args'          : str(args_dict),
             'best_solver_hyperparams'   : best_attempt['hyperparams'],
             'best_time_taken'           : best_attempt['elapsed_time'],
+            'cost_improvement'          : cost_improvement,
+            'percentage_improvement'    : percentage_improvement,
+            'notes'                     : None
         }
 
 
     # //// Logging
     if verbose:
         print(f"{'-'*40}")
-        print(  f"Instance summary for {inst_name}:")
-        print(  f"  Attempts: {num_attempts} ({successful_attempts} successful)")
-        print(  f"  Best cost: {summary['best_cost']}")
-        print(  f"  Best solver: {summary['best_solver']}")
+        print(f"Instance summary for {inst_name}:")
+        print(f"  Attempts: {num_attempts} ({successful_attempts} successful)")
+        print(f"  Best cost: {summary['best_cost']}")
+        print(f"  Best solver: {summary['best_solver']}")
+        if previous_best_cost is not None and summary.get('cost_improvement') is not None:
+            gap = summary['cost_improvement']
+            pct = summary.get('percentage_improvement', 0)
+            if gap < 0:
+                print(
+                    f"  >>> IMPROVED from {previous_best_cost} by {abs(gap):.2f} ({abs(pct):.2f}%)"
+                )
+            elif gap > 0:
+                print(
+                    f"  >>> REGRESSED from {previous_best_cost} by {gap:.2f} ({pct:.2f}%)"
+                )
+            else:
+                print(
+                    f"  >>> NO CHANGE from previous best: {previous_best_cost}"
+                )
         print()
 
 

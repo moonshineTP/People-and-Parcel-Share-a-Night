@@ -6,3 +6,6 @@ __pycache__/
 .idea/
 .prof/
 report/
+submission/
+test/
+minified/

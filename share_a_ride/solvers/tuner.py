@@ -108,15 +108,15 @@ def tune_solver(
 
 # ================ Playground ================
 if __name__ == "__main__":
-    from share_a_ride.data.parser import parse_dataset
     from share_a_ride.data.classes import Dataset
+    from share_a_ride.data.extractor import extract_dataset
 
-    dts = parse_dataset(Dataset.CMT)
+    dts = extract_dataset(Dataset.CMT)
     tune_solver(
         problems=list(dts.values()),
         solver_name=SolverName.ACO,
         solver_mode=SolverMode.HEAVY,
         n_trials=20,
-        n_repeats=3,
+        n_repeats=2,
         study_name="aco_tuning",
     )

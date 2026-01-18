@@ -668,7 +668,7 @@ class DesirabilityMatrix:
 		D,B,E,G=action;F=A.problem.Q[D];H=partial.states[D];C=H[_F]
 		if B==_O:C+=A.problem.q[E-1]
 		if B==_P:C-=A.problem.q[E-1]
-		I=(1+weighted(B,G))**A.chi;J=A.saving_matrix[prev[1]][curr[0]];K=2-int(B=='pickP');L=(1+A.gamma*(F-C)/F)*A.kappa;return J/I*K*L
+		I=(1+weighted(B,G))**A.chi;J=A.saving_matrix[prev[1]][curr[0]];K=2-int(B=='serveP');L=(1+A.gamma*(F-C)/F)*A.kappa;return J/I*K*L
 class NearestExpansionCache:
 	def __init__(C,problem,n_nearest=3):
 		A=problem;C.nearest_actions=[]

@@ -3,6 +3,5 @@ pandas
 gurobipy 
 ortools 
 optuna 
-pylint 
-basedpyright
+altair
 streamlit

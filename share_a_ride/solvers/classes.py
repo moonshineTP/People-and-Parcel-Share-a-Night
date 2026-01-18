@@ -164,7 +164,7 @@ class SolverParams(Enum):
         },
     }
     ACO = {
-        "scaling": {"iterations": 10, "time_limit": 60.0},
+        "scaling": {"iterations": 5, "time_limit": 60.0},
         "hyperparameters": {
             "width": 5,
             "q_prob": 0.72,
@@ -257,7 +257,7 @@ class SolverParams(Enum):
     # ================ Interval scaling ================
     @staticmethod
     def interval(
-            val: Union[int, float], c: float = 2
+            val: Union[int, float], c: float = 1.33
         ) -> Union[Tuple[int, int], Tuple[float, float]]:
         """
         Compute hyperparameters interval for tuning. Scale the base hyperparameter

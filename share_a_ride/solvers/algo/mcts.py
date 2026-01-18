@@ -553,7 +553,7 @@ def _run_mcts(
     # Defensive policy integration
     if best_leaf is not None and best_leaf.is_pending():
         if verbose:
-            print(f"[MCTS] Applying defense policy on best leaf...")
+            print("[MCTS] Applying defense policy on best leaf...")
         def_sol = defense_policy(
             best_leaf, verbose=verbose, seed=24 * seed if seed is not None else None
         )
@@ -561,7 +561,10 @@ def _run_mcts(
             cost = def_sol.max_cost
             if best_solution is None or cost < best_solution_cost:
                 if verbose:
-                    print(f"[MCTS] Defense policy improved solution: {best_solution_cost:.3f} -> {cost:.3f}")
+                    print(
+                        f"[MCTS] Defense policy improved solution: "
+                        f"{best_solution_cost:.3f} -> {cost:.3f}"
+                    )
                 best_solution = def_sol
                 best_solution_cost = cost
                 stats["best_rollout_cost"] = best_solution_cost
@@ -662,7 +665,7 @@ def mcts_solver(
     start = time.time()
 
     # Run MCTS to get the best rollout
-    _, best_leaf, sol, info = _run_mcts(
+    _, _best_leaf, sol, info = _run_mcts(
         problem=problem,
         partial=partial,
         value_function=value_function,
@@ -683,14 +686,15 @@ def mcts_solver(
 
     # Relocate operator refinements
     if verbose:
-        print(f"[MCTS] Applying relocate operator to final solution...")
+        print("[MCTS] Applying relocate operator to final solution...")
     best_partial = PartialSolution.from_solution(sol)
     refined_partial, _, _ = relocate_operator(
         best_partial,
         mode='first',
         seed=None if seed is None else 4 * seed + 123
     )
-    sol = refined_partial.to_solution();  assert sol
+    sol = refined_partial.to_solution()
+    assert sol
     best_cost = sol.max_cost
     if verbose:
         print(

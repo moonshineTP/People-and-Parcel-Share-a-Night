@@ -4,14 +4,13 @@
     The final output is submission.py
 """
 import sys
-
 from share_a_ride.core.problem import ShareARideProblem
-from share_a_ride.solvers.algo.bnb import bnb_solver
-# from share_a_ride.solvers.algo.alns import alns_solver
+from share_a_ride.solvers.algo.greedy import iterative_greedy_solver
 # from share_a_ride.solvers.algo.astar import astar_solver
 # from share_a_ride.solvers.algo.aco import aco_solver
 # from share_a_ride.solvers.algo.mcts import mcts_solver
 # from share_a_ride.solvers.algo.beam import beam_solver
+
 
 
 def read_instance() -> ShareARideProblem:
@@ -29,47 +28,17 @@ def read_instance() -> ShareARideProblem:
     return ShareARideProblem(N, M, K, q, Q, D)
 
 
-
 def main(verbose: bool = False):
     """
     Main execution function.
     """
+
     problem: ShareARideProblem = read_instance()
-
-    # solution, _ = alns_solver(
-    #     problem,
-    #     decay=0.7,
-    #     time_limit=120.0,
-    #     seed=42,
-    #     verbose=verbose
-    # )
-    solution, _ = bnb_solver(problem, incumbent=660, time_limit=20000, verbose=verbose)
-
-    # n = problem.num_nodes
-    # if n <= 100:
-    #     n_partials, n_cutoff, iterations, width = 150, 25, 150, 6
-    # elif n <= 250:
-    #     n_partials, n_cutoff, iterations, width = 60, 15, 60, 5
-    # elif n <= 500:
-    #     n_partials, n_cutoff, iterations, width = 25, 10, 25, 4
-    # elif n <= 1000:
-    #     n_partials, n_cutoff, iterations, width = 12, 4, 8, 3
-    # else:
-    #     n_partials, n_cutoff, iterations, width = 6, 2, 3, 2
-
-    # solution, _ = aco_solver(
-    #     problem,
-    #     seed=42,
-    #     verbose=verbose,
-    #     n_partials=n_partials,
-    #     n_cutoff=n_cutoff,
-    #     iterations=iterations,
-    #     width=width,
-    #     time_limit=240.0
-    # )
-
-    assert solution
+    solution, _info = iterative_greedy_solver(problem, verbose=verbose)
+    assert solution is not None, "No solution found"
     solution.stdin_print(verbose=verbose)
+
+
 
 
 if __name__ == "__main__":

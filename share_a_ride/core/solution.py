@@ -681,7 +681,8 @@ class PartialSolution:
         if self.problem is not other.problem or self.num_actions != other.num_actions:
             return False
 
-        return sorted(tuple(r[:3]) for r in self.routes) == sorted(tuple(r[:3]) for r in other.routes)
+        return sorted(tuple(r[:3]) for r in self.routes) \
+            == sorted(tuple(r[:3]) for r in other.routes)
 
 
     def copy(self):

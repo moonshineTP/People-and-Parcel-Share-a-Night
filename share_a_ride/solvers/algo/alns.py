@@ -22,7 +22,6 @@ from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.core.solution import PartialSolution, Solution, PartialSolutionSwarm
 from share_a_ride.solvers.algo.greedy import iterative_greedy_solver
 from share_a_ride.solvers.algo.beam import beam_solver
-from share_a_ride.solvers.algo.greedy import iterative_greedy_solver
 from share_a_ride.solvers.algo.astar import astar_solver
 from share_a_ride.solvers.operator.destroy import destroy_operator
 

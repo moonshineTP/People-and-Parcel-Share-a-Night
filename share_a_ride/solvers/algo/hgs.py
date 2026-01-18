@@ -1,7 +1,6 @@
 """
 HGS Solver for Share-a-Ride Problem using PyVRP.
 """
-from random import Random
 import time
 from collections import Counter
 from typing import Tuple, Optional, Dict, Any, List

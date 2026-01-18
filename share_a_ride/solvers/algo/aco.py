@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, ParamSpec, Concat
 
 from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.core.solution import PartialSolution, PartialSolutionSwarm, Solution
-from share_a_ride.solvers.algo.greedy import greedy_solver, iterative_greedy_solver
+from share_a_ride.solvers.algo.greedy import iterative_greedy_solver
 from share_a_ride.solvers.algo.utils import enumerate_actions_greedily, apply_general_action, Action
 from share_a_ride.solvers.operator.relocate import relocate_operator
 from share_a_ride.solvers.utils.weighter import weighted, action_weight
@@ -361,7 +361,7 @@ class DesirabilityMatrix:
         # Formulate terms
         distance_term = (1 + weighted(kind, inc)) ** self.chi
         saving_term = self.saving_matrix[prev[1]][curr[0]]
-        people_term = 2 - int(kind == "pickP")
+        people_term = 2 - int(kind == "serveP")
         parcel_term = (1 + self.gamma * (Q - new_cap) / Q) * self.kappa
 
         return (saving_term / distance_term) * people_term * parcel_term
@@ -1145,23 +1145,24 @@ def _run_aco(
 
     # //// Relocate operator refinements
     if verbose:
-        print(f"[MCTS] Applying relocate operator to initial solution...")
+        print("[ACO] Applying relocate operator to initial solution...")
     init_partial = PartialSolution.from_solution(init_sol)
     refined_partial, _, _ = relocate_operator(
         init_partial,
         mode='first',
         seed=None if seed is None else 4 * seed + 123
     )
-    init_sol = refined_partial.to_solution(); assert init_sol
+    init_sol = refined_partial.to_solution()
+    assert init_sol
     init_cost = init_sol.max_cost
     if verbose:
         print(
-            f"[MCTS] After relocate, final solution cost: {init_cost}"
+            f"[ACO] After relocate, final solution cost: {init_cost}"
         )
     if verbose:
         print(f"[ACO] [Init] Initial solution cost: {init_cost:.3f}")
     assert init_sol, "[ACO] [Init] Initial solver failed to find a solution."
-    
+
 
     # //// Initialize caches for nearest expansion
     if verbose:
@@ -1247,8 +1248,9 @@ def _run_aco(
     if lfunc.best_solution:
         tracker.finals.append(lfunc.best_solution)
         tracker.finals.sort(key=lambda s: s.max_cost)
+
         if n_cutoff and len(tracker.finals) > n_cutoff:
-             tracker.finals = tracker.finals[:n_cutoff]
+            tracker.finals = tracker.finals[:n_cutoff]
 
     # Summary info
     elapsed = time.time() - start

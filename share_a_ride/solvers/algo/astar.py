@@ -172,7 +172,7 @@ def _default_weight_function(partial: PartialSolution) -> float:
 
 def _default_defense_policy(
         partial: PartialSolution,
-        time_limit: float = 20.0,
+        time_limit: float = 20.0,   # pylint: disable=unused-argument
         seed: Optional[int] = None,
         verbose: bool = False
     ) -> Optional[Solution]:
@@ -611,14 +611,15 @@ def astar_solver(
 
     # Relocate operator refinements
     if verbose:
-        print(f"[A*] Applying relocate operator to final solution...")
+        print("[A*] Applying relocate operator to final solution...")
     best_partial = PartialSolution.from_solution(best_solution)
     refined_partial, _, _ = relocate_operator(
         best_partial,
         mode='first',
         seed=None if seed is None else 4 * seed + 123
     )
-    best_solution = refined_partial.to_solution();  assert best_solution
+    best_solution = refined_partial.to_solution()
+    assert best_solution
     best_cost = best_solution.max_cost
     if verbose:
         print(

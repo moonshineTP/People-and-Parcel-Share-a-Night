@@ -10,21 +10,23 @@ import os
 sys.path.insert(0, os.getcwd())
 
 # This is file to start from (can be overridden by argv[1]).
-starting_file = 'oj.py'
+STARTING_FILE = 'oj.py'
 
 # Local source folders considered for inlining
 LOCAL_SOURCE_FOLDERS = ['share_a_ride']
 
-# ----------------------------------
-
+# Container for tracked modules and imports
 modules = []
 imports = []
 
-# Write inlined code to stdout so callers can redirect it.
+# Output file (stdout by default)
 out_file = sys.stdout
 
 
 def count_from_start(string, char):
+    """
+    Count occurrences of char from the start of string.
+    """
     c = 0
     for e in string:
         if e == char:
@@ -35,6 +37,9 @@ def count_from_start(string, char):
 
 
 def normalize_import(rel, base='./'):
+    """
+    Normalize relative import to absolute file path.
+    """
     dots_from_start = count_from_start(rel, '.')
     down_path = rel[dots_from_start:].split('.')
 
@@ -62,12 +67,19 @@ def normalize_import(rel, base='./'):
 
 
 def emit_line(line):
+    """
+    Emit line to output file.
+    """
     out_file.write(line)
 
 
 def inline_file(file, base):
+    """
+    Main recursive inlining function.
+    """
     original_file_path = file
 
+    # Resolve relative imports
     if not os.path.isfile(file):
         print(f"WARNING: File not found: {original_file_path}!", file=sys.stderr)
         emit_line(f"# ----- file {original_file_path} begin -----\n")
@@ -77,13 +89,15 @@ def inline_file(file, base):
 
     print(f"Inlining file: {file}", file=sys.stderr)
 
+    # Emit file begin marker
     emit_line(f"\n# ----- file {file} begin -----\n")
-    multiline_import = False
 
+    # Collect next imports to process
+    multiline_import = False    # Track multi-line imports
     with open(file, encoding='utf-8') as f:
         prev_line = ''
         for l in f:
-
+            # Handle multi-line imports
             if multiline_import:
                 # Comment out continued import lines in the output
                 emit_line('# ' + l)
@@ -92,21 +106,22 @@ def inline_file(file, base):
                 prev_line = l
                 continue
 
+            # Process normal lines
             stripped_line = l.strip()
-
             if stripped_line.startswith('import'):
                 module = stripped_line.split(' ')[1]
 
+                # Handle "import X as Y"
                 if ' as ' in stripped_line:
                     as_idx = stripped_line.split(' ').index('as')
                     module = stripped_line.split(' ')[as_idx + 1]
-
                 is_try_except_import = 'try:' in prev_line or 'except ImportError:' in prev_line
 
+                # Check if it's a local import (in our source folders)
                 if module not in imports or is_try_except_import:
                     emit_line(l)
                     imports.append(module)
-                else:
+                else:   # It's already imported, comment it out
                     emit_line('# ' + l)
 
             elif stripped_line.startswith('from'):
@@ -131,8 +146,10 @@ def inline_file(file, base):
                     new_file = module_path.replace('.', '/') + '.py'
                     new_folder = '/'.join(new_file.split('/')[:-1]) + '/'
                 else:
+                    new_file = None
                     new_folder = None
 
+                # Inline local imports
                 if is_local:
                     if new_file not in modules:
                         modules.append(new_file)
@@ -142,12 +159,19 @@ def inline_file(file, base):
 
                     if '(' in l and ')' not in l:
                         multiline_import = True
-                else:  # It's a standard/third-party library import
+                else:  # Third party or standard library import
                     emit_line(l)
+            # Normal line, just emit
             else:
                 emit_line(l)
+
+            # Track previous line for try-except import detection
             prev_line = l
+
+    # Emit file end marker
     emit_line(f"\n# ----- file {file} end -----\n")
+
+
 
 
 # --- SCRIPT START ---
@@ -155,20 +179,24 @@ def _main():
     print("Starting inliner...", file=sys.stderr)
 
     # Allow overriding starting file via CLI: `pypy3 -m inliner my_start.py > submission`
-    global starting_file
+    global STARTING_FILE        # pylint: disable=global-statement
     if len(sys.argv) >= 2 and sys.argv[1]:
-        starting_file = sys.argv[1]
+        STARTING_FILE = sys.argv[1]
 
     # Check if starting file exists
-    if not os.path.isfile(starting_file):
-        print(f"FATAL ERROR: Starting file '{starting_file}' not found. Please set it or pass it as argv[1].",
-              file=sys.stderr)
+    if not os.path.isfile(STARTING_FILE):
+        print(
+            f"FATAL ERROR: Starting file '{STARTING_FILE}' not found.\n"
+            f"Please set it or pass it as argv[1].", file=sys.stderr
+        )
         return 2
     else:
-        inline_file(starting_file, './')
+        inline_file(STARTING_FILE, './')
         out_file.flush()
         print("Inlining complete.", file=sys.stderr)
         return 0
+
+
 
 
 if __name__ == "__main__":

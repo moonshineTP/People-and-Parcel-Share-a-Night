@@ -10,7 +10,7 @@
     - seed: random seed used for the attempt
     - time_limit: time limit set for the attempt (in seconds)
     - hyperparams: JSON string of hyperparameters used (or empty if none)
-    - status: "done" or "timeout" or "error"
+    - status: "done" or "overtime" or "error"
     - elapsed_time: total time taken for the attempt (in seconds)
     - cost: cost of the best solution found (or None if no solution)
     - info: JSON string of additional statistics from the solver (or empty if none)
@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.core.solution import Solution
 from share_a_ride.data.classes import Dataset, ATTEMPT_COLUMNS
-from share_a_ride.data.parser import parse_dataset
+from share_a_ride.data.extractor import extract_dataset
 from share_a_ride.data.router import path_router
 from share_a_ride.solvers.classes import Solver, SolverName, SolverMode, SolverParams
 
@@ -40,7 +40,6 @@ def attempt_dataset(
         note: str = "",
         seed: Optional[int] = None,
         verbose: bool = False,
-        incumbent: bool = False,
         **solver_kwargs
     ) -> Tuple[Dict[str, Optional[Solution]], Dict[str, float]]:
     """
@@ -61,7 +60,7 @@ def attempt_dataset(
     """
 
     # Get all instance files in the dataset directory
-    instances_dict = parse_dataset(dataset)
+    instances_dict: dict[str, ShareARideProblem] = extract_dataset(dataset)
     n_instances = len(instances_dict)
 
     if verbose:
@@ -263,7 +262,7 @@ def try_instance(
 
         return sol, gap_percentage
 
-    except Exception as e:
+    except Exception as e:      # pylint: disable=broad-except
         if verbose:
             print(f"Error solving instance: {e}")
             print("-------------------------------")
@@ -278,35 +277,35 @@ def try_instance(
 # ================ Playground ================
 if __name__ == "__main__":
     solvernames = [
-        SolverName.BEAM,
+        # SolverName.BEAM,
         # SolverName.GREEDY,
         # SolverName.HGS,
-        # SolverName.ACO,
+        SolverName.ACO,
         # SolverName.ASTAR,
         # SolverName.MCTS,
         # SolverName.ALNS,
     ]
     dts = Dataset.LI
 
-    for solver in solvernames:
+    for slvr in solvernames:
         attempt_dataset(
             dataset=dts,
-            solver_name=solver,
+            solver_name=slvr,
             solver_mode=SolverMode.INTENSIVE,
             note="Testing executor",
             verbose=True,
             time_limit=1000.0
         )
 
-    # instancenames = ['X-n819-k171', 'X-n837-k142', 'X-n856-k95', 'X-n876-k59', 'X-n895-k37', 'X-n916-k207', 'X-n936-k151', 'X-n957-k87', 'X-n979-k58', 'X-n1001-k43']
+    # instancenames = []
     # instances = parse_dataset(dts)
-    # for solver in solvernames:
+    # for slvr in solvernames:
     #     for name in instancenames:
     #         try_instance(
     #             dataset=dts,
     #             inst_name=name,
     #             problem=instances[name],
-    #             solver_name=solver,
+    #             solver_name=slvr,
     #             solver_mode=SolverMode.INTENSIVE,
     #             note="",
     #             verbose=True,

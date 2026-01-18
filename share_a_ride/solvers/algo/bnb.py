@@ -10,7 +10,7 @@ while avoiding duplicate states and ensuring valid solutions.
 """
 import time
 import heapq
-from typing import List, Optional, Tuple, Dict, Any, Union, Iterator, Callable, Set
+from typing import List, Optional, Tuple, Dict, Any, Union, Iterator, Set
 from concurrent.futures import ThreadPoolExecutor
 
 from share_a_ride.core.problem import ShareARideProblem
@@ -459,7 +459,7 @@ def bnb_enumerator(
         incumbent: Optional[int] = None,
         threads: int = 5,
         time_limit: float = 30.0,
-        seed: Optional[int] = None,
+        seed: Optional[int] = None,     # pylint: disable=unused-argument
         verbose: bool = False
     ) -> Tuple[List[Solution], Dict[str, Any]]:
     """
@@ -607,7 +607,7 @@ def bnb_solver(
         incumbent: Optional[int] = None,
         threads: int = 8,
         time_limit: float = 30.0,
-        seed: Optional[int] = None,
+        seed: Optional[int] = None,     # pylint: disable=unused-argument
         verbose: bool = False
     ) -> Tuple[Optional[Solution], Dict[str, Any]]:
     """
