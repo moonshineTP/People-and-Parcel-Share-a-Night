@@ -4,7 +4,6 @@ Mixed Integer Linear Programming (MILP) solver for the Share-a-Ride Problem.
 This module provides exact optimization using pluggable solver backends via a common model interface.
 Currently supports Gurobi backend.
 """
-# pylint: disable=fixme
 
 from typing import Dict, Any, Optional, Tuple
 from abc import ABC, abstractmethod
@@ -223,6 +222,23 @@ def _create_model(solver_name: str, name: str = "SARP") -> Model:
         )
 
 
+def _build_arc_caches(n, m):
+    num_nodes = n + 2 * m + 2
+    arcs = {
+        (i, j)
+        for i in range(0, num_nodes - 1)
+        for j in range(1, num_nodes)
+        if i not in (j, j + m)
+    }
+    nodes_from = {
+        i: [j for j in range(num_nodes) if (i, j) in arcs] for i in range(num_nodes)
+    }
+    nodes_to = {
+        j: [i for i in range(num_nodes) if (i, j) in arcs] for j in range(num_nodes)
+    }
+    return (arcs, nodes_from, nodes_to, num_nodes)
+
+
 def _extract_routes_from_model(x: Dict, num_nodes: int, k: int, n: int, m: int) -> list:
     """
     Extract routes from solved model X variables.
@@ -244,6 +260,7 @@ def _extract_routes_from_model(x: Dict, num_nodes: int, k: int, n: int, m: int) 
     """
     routes = []
     end_depot = num_nodes - 1
+    arcs, nodes_from, nodes_to, _ = _build_arc_caches(n, m)
 
     for k_idx in range(k):
         route_transformed = [0]  # Start at depot 0
@@ -253,7 +270,7 @@ def _extract_routes_from_model(x: Dict, num_nodes: int, k: int, n: int, m: int) 
         while current != end_depot:
             # Find next node
             next_node = None
-            for j in range(num_nodes):
+            for j in nodes_from[current]:
                 if x[current, j, k_idx].X > 0.5:  # X variable is binary, ~1 if arc used
                     next_node = j
                     break
@@ -419,7 +436,7 @@ def _preprocess(problem: ShareARideProblem) -> Dict[str, Any]:
     # Compute linearization constants
     # M_tau = 2 * max distance, m_tau = min non-zero distance
     max_dist = np.max(d_transformed)
-    max_tau = 2.0 * max_dist
+    max_tau = max_dist
 
     min_dist_nonzero = (
         np.min(d_transformed[d_transformed > 0]) if np.any(d_transformed > 0) else 1.0
@@ -495,11 +512,11 @@ def milp(
     d_transformed = preproc["D_transformed"]
     max_tau = preproc["M_tau"]
     w_ki = preproc["W_ki"]
-    m = preproc["M"]
-    n = preproc["N"]
-    k = preproc["K"]
+    m: int = preproc["M"]
+    n: int = preproc["N"]
+    k: int = preproc["K"]
 
-    num_nodes = n + 2 * m + 2
+    arcs, nodes_from, nodes_to, num_nodes = _build_arc_caches(n, m)
 
     # ============================================================================
     # Phase 2: Model Creation (Solver Selection)
@@ -521,10 +538,10 @@ def milp(
     # Binary variables: X[i,j,k] = vehicle k travels from node i to node j
     x = {}
     for k_idx in range(k):
-        for i in range(num_nodes):
-            for j in range(num_nodes):
+        for i, j in arcs:
+            # No self-loops and no parcel drop to pickup arcs
+            if i not in (j, j + m):
                 x[i, j, k_idx] = model.createVar(vtype="B", name=f"X_{i}_{j}_{k_idx}")
-            model.addConstr(x[i, i, k_idx] == 0, name=f"no_self_loop_{k_idx}_{i}")
 
     # Continuous variables: tau[k,i] = timestamp of vehicle k at node i
     tau = {}
@@ -533,6 +550,7 @@ def milp(
             tau[k_idx, i] = model.createVar(
                 lb=0.0, ub=max_tau, vtype="C", name=f"tau_{k_idx}_{i}"
             )
+        model.addConstr(tau[k_idx, 0] == 0.0, name=f"tau_start_depot_{k_idx}")
 
     # Continuous variables: w[k,i] = parcel load on vehicle k after visiting node i
     w = {}
@@ -541,6 +559,7 @@ def milp(
             w[k_idx, i] = model.createVar(
                 lb=0.0, ub=w_ki[k_idx, i], vtype="C", name=f"w_{k_idx}_{i}"
             )
+        model.addConstr(w[k_idx, 0] == 0.0, name=f"w_start_depot_{k_idx}")
 
     # Continuous variable: z = maximum route cost (objective)
     z = model.createVar(lb=0.0, vtype="C", name="z")
@@ -560,8 +579,7 @@ def milp(
     # each passenger pickup and parcel pickup served exactly once
     for i in preproc["V_p_indices"] + preproc["V_l_indices"]:
         model.addConstr(
-            model.quicksum(x[i, j, ik] for j in range(num_nodes) for ik in range(k))
-            == 1,
+            model.quicksum(x[i, j, ik] for j in nodes_from[i] for ik in range(k)) == 1,
             name=f"cov_{i}",
         )
 
@@ -570,8 +588,8 @@ def milp(
         j_drop = preproc["V_lp_indices"][j_idx]
         for k_idx in range(k):
             model.addConstr(
-                model.quicksum(x[i, j, k_idx] for i in range(num_nodes))
-                == model.quicksum(x[i, j_drop, k_idx] for i in range(num_nodes)),
+                model.quicksum(x[i, j, k_idx] for i in nodes_to[j])
+                == model.quicksum(x[i, j_drop, k_idx] for i in nodes_to[j_drop]),
                 name=f"pair_{j}_{j_drop}_{k_idx}",
             )
 
@@ -580,43 +598,39 @@ def milp(
     end_depot = num_nodes - 1
     for k_idx in range(k):
         model.addConstr(
-            model.quicksum(x[0, i, k_idx] for i in range(num_nodes)) == 1,
+            model.quicksum(x[0, i, k_idx] for i in nodes_from[0]) == 1,
             name=f"start_{k_idx}",
         )
         model.addConstr(
-            model.quicksum(x[i, end_depot, k_idx] for i in range(num_nodes)) == 1,
+            model.quicksum(x[i, end_depot, k_idx] for i in nodes_to[end_depot]) == 1,
             name=f"end_{k_idx}",
         )
 
     # Formulation Constraint (4): No entry to start depot and no exit from end depot
-    for k_idx in range(k):
-        model.addConstr(
-            model.quicksum(x[i, 0, k_idx] for i in range(num_nodes)) == 0,
-            name=f"no_entry_{k_idx}",
-        )
-        model.addConstr(
-            model.quicksum(x[end_depot, i, k_idx] for i in range(num_nodes)) == 0,
-            name=f"no_exit_{k_idx}",
-        )
+    # This constraint is optimized out since arcs do not include these transitions
+    # for k_idx in range(k):
+    #     model.addConstr(
+    #         model.quicksum(x[i, 0, k_idx] for i in nodes_to[0]) == 0,
+    #         name=f"no_entry_{k_idx}",
+    #     )
+    #     model.addConstr(
+    #         model.quicksum(x[end_depot, i, k_idx] for i in nodes_from[end_depot]) == 0,
+    #         name=f"no_exit_{k_idx}",
+    #     )
 
     # Formulation Constraint (5): Flow conservation - for each non-depot node
     for i in range(1, num_nodes - 1):
         for k_idx in range(k):
             model.addConstr(
-                model.quicksum(x[i, j, k_idx] for j in range(num_nodes))
-                == model.quicksum(x[j, i, k_idx] for j in range(num_nodes)),
+                model.quicksum(x[i, j, k_idx] for j in nodes_from[i])
+                == model.quicksum(x[j, i, k_idx] for j in nodes_to[i]),
                 name=f"flow_{i}_{k_idx}",
             )
 
     # Objective definition: z >= cost of each vehicle's route
     for k_idx in range(k):
         model.addConstr(
-            z
-            >= model.quicksum(
-                d_transformed[i, j] * x[i, j, k_idx]
-                for i in range(num_nodes)
-                for j in range(num_nodes)
-            ),
+            z >= model.quicksum(d_transformed[i, j] * x[i, j, k_idx] for i, j in arcs),
             name=f"maxcost_{k_idx}",
         )
 
@@ -646,29 +660,35 @@ def milp(
             )
 
     # Formulation Constraint (10): Linearized timestamp ordering ensures increasing order
+    # First, we used linearization with M_tau and m_tau, but now we use indicator constraints
     m_tau = preproc["m_tau"]
-    m_1 = preproc["M_1"]
+    # m_1 = preproc["M_1"]
+    # for k_idx in range(k):
+    #     for i, j in arcs:
+    #         model.addConstr(
+    #             tau[k_idx, j] + m_1 * (1 - x[i, j, k_idx]) >= m_tau + tau[k_idx, i],
+    #             name=f"tau_order_{k_idx}_{i}_{j}",
+    #         )
     for k_idx in range(k):
-        for i in range(num_nodes):
-            for j in range(num_nodes):
-                if i != j:  # No self-loops
-                    model.addConstr(
-                        tau[k_idx, j] + m_1 * (1 - x[i, j, k_idx])
-                        >= m_tau + tau[k_idx, i],
-                        name=f"tau_order_{k_idx}_{i}_{j}",
-                    )
+        for i, j in arcs:
+            model.addConstr(
+                (x[i, j, k_idx] == 1) >> (tau[k_idx, j] >= tau[k_idx, i] + m_tau)
+            )
 
     # Formulation Constraint (11): Linearized weight validity ensures weight accumulation
+    # Similarly, we use indicator constraints now
+    # for k_idx in range(k):
+    #     for i, j in arcs:
+    #         model.addConstr(
+    #             w[k_idx, j] - w[k_idx, i]
+    #             >= preproc["q"][i] + preproc["W_ki"][k_idx, i] * (x[i, j, k_idx] - 1),
+    #             name=f"w_flow_{k_idx}_{i}_{j}",
+    #         )
     for k_idx in range(k):
-        for i in range(num_nodes):
-            for j in range(num_nodes):
-                if i != j:  # No self-loops
-                    model.addConstr(
-                        w[k_idx, j] - w[k_idx, i]
-                        >= preproc["q"][i]
-                        + preproc["W_ki"][k_idx, i] * (x[i, j, k_idx] - 1),
-                        name=f"w_flow_{k_idx}_{i}_{j}",
-                    )
+        for i, j in arcs:
+            model.addConstr(
+                (x[i, j, k_idx] == 1) >> (w[k_idx, j] >= w[k_idx, i] + preproc["q"][i])
+            )
     model.update()
     # ============================================================================
     # Phase 6: Pre-Optimization Model Size Check
@@ -679,6 +699,7 @@ def milp(
     print(f"Total constraints: {model.NumConstrs}", flush=True)
 
     model.optimize()
+    print("Finishing optimizing")
     if verbose:
         # Debug output to stdout with flush
         print("=== SOLVER MODEL ===", flush=True)
@@ -771,13 +792,13 @@ if __name__ == "__main__":
     problems = exact_problems
     passed_tests = 0
     for prob in problems:
-        algo_solver = AlgoSolver(milp)
-        try:
-            sol, info = algo_solver.solve(prob)
-            if sol is None or not sol.is_valid():
-                print(f"Problem {prob.name} - No valid solution found. Info: {info}")
-            else:
-                passed_tests += 1
-        except Exception:
-            print(f"Problem {prob.name} - Exception during solving")
+        algo_solver = AlgoSolver(milp, {"time_limit": 600.0, "verbose": False})
+        # try:
+        sol, info = algo_solver.solve(prob)
+        if sol is None or not sol.is_valid(True):
+            print(f"Problem {prob.name} - No valid solution found. Info: {info}")
+        else:
+            passed_tests += 1
+        # except Exception as exc:
+        #     print(f"Problem {prob.name} - Exception during solving", exc)
     print(f"Passed {passed_tests} out of {len(problems)} tests.")
