@@ -1,21 +1,22 @@
 """
-    Executor for attempting a configured solver for a dataset (single instance or whole)
+Executor for attempting a configured solver for a dataset (single instance or whole)
 
-    The contents of the csv file should include:
-    - attempt_id: unique identifier for the attempt (incremental integer)
-    - timestamp: time of the attempt (ISO 8601 format with +0 timezone and no microseconds)
-    - dataset: name of the dataset
-    - instance: name of the instance file
-    - solver: name of the solver used
-    - seed: random seed used for the attempt
-    - time_limit: time limit set for the attempt (in seconds)
-    - hyperparams: JSON string of hyperparameters used (or empty if none)
-    - status: "done" or "timeout" or "error"
-    - elapsed_time: total time taken for the attempt (in seconds)
-    - cost: cost of the best solution found (or None if no solution)
-    - info: JSON string of additional statistics from the solver (or empty if none)
-    - note: any additional notes or comments (or empty if none)
+The contents of the csv file should include:
+- attempt_id: unique identifier for the attempt (incremental integer)
+- timestamp: time of the attempt (ISO 8601 format with +0 timezone and no microseconds)
+- dataset: name of the dataset
+- instance: name of the instance file
+- solver: name of the solver used
+- seed: random seed used for the attempt
+- time_limit: time limit set for the attempt (in seconds)
+- hyperparams: JSON string of hyperparameters used (or empty if none)
+- status: "done" or "timeout" or "error"
+- elapsed_time: total time taken for the attempt (in seconds)
+- cost: cost of the best solution found (or None if no solution)
+- info: JSON string of additional statistics from the solver (or empty if none)
+- note: any additional notes or comments (or empty if none)
 """
+
 import os
 import csv
 import json
@@ -248,7 +249,7 @@ def try_instance(
         info_json = json.dumps(info_copy) if info_copy else "{}"
 
         # Write to CSV
-        with open(csv_path, 'a', newline='', encoding='utf-8') as f:
+        with open(csv_path, "a", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow([
                 attempt_id, timestamp, dataset.value.name, inst_name, solver_name.name,

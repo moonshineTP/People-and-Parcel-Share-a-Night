@@ -17,6 +17,7 @@ except ImportError:
     from share_a_ride.app.visualizer import ShareARideSolutionVisualizer
 
 
+
 class ShareARideApp:
     """Main application shell with top-level navigation."""
 
@@ -66,7 +67,6 @@ class ShareARideApp:
             
         elif selected_view == "Visualizer":
             self._render_visualizer_view()
-
 
 if __name__ == "__main__":
     app = ShareARideApp()
