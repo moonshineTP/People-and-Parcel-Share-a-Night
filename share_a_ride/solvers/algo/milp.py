@@ -21,6 +21,7 @@ except ImportError as exc:
 from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.core.solution import Solution
 from share_a_ride.solvers.algo.Algo import AlgoSolver
+from share_a_ride.solvers.algo.exhaust import exhaust_solver as ref_solver
 from share_a_ride.solvers.algo.utils import exact_problems
 
 
@@ -260,7 +261,7 @@ def _extract_routes_from_model(x: Dict, num_nodes: int, k: int, n: int, m: int) 
     """
     routes = []
     end_depot = num_nodes - 1
-    arcs, nodes_from, nodes_to, _ = _build_arc_caches(n, m)
+    _arcs, nodes_from, _nodes_to, _ = _build_arc_caches(n, m)
 
     for k_idx in range(k):
         route_transformed = [0]  # Start at depot 0
@@ -546,20 +547,33 @@ def milp(
     # Continuous variables: tau[k,i] = timestamp of vehicle k at node i
     tau = {}
     for k_idx in range(k):
-        for i in range(num_nodes):
+        tau[k_idx, 0] = 0.0
+        for i in range(1, num_nodes):
             tau[k_idx, i] = model.createVar(
                 lb=0.0, ub=max_tau, vtype="C", name=f"tau_{k_idx}_{i}"
             )
-        model.addConstr(tau[k_idx, 0] == 0.0, name=f"tau_start_depot_{k_idx}")
 
     # Continuous variables: w[k,i] = parcel load on vehicle k after visiting node i
     w = {}
     for k_idx in range(k):
-        for i in range(num_nodes):
+        w[k_idx, 0] = 0.0
+        for i in range(1, num_nodes):
             w[k_idx, i] = model.createVar(
                 lb=0.0, ub=w_ki[k_idx, i], vtype="C", name=f"w_{k_idx}_{i}"
             )
-        model.addConstr(w[k_idx, 0] == 0.0, name=f"w_start_depot_{k_idx}")
+
+    # Total in arc for better reuse
+    sum_inarc = {}
+    for k_idx in range(k):
+        sum_inarc[k_idx, 0] = 0.0
+        for i in range(1, num_nodes):
+            sum_inarc[k_idx, i] = model.createVar(
+                lb=0.0, ub=1.0, vtype="B", name=f"sum_inarc_{k_idx}_{i}"
+            )
+            model.addConstr(
+                sum_inarc[k_idx, i]
+                == model.quicksum(x[j, i, k_idx] for j in nodes_to[i])
+            )
 
     # Continuous variable: z = maximum route cost (objective)
     z = model.createVar(lb=0.0, vtype="C", name="z")
@@ -584,12 +598,10 @@ def milp(
         )
 
     # Formulation Constraint (2): Parcel pairing - pickup j and drop j+M paired for each vehicle
-    for j_idx, j in enumerate(preproc["V_l_indices"]):
-        j_drop = preproc["V_lp_indices"][j_idx]
+    for j, j_drop in zip(preproc["V_l_indices"], preproc["V_lp_indices"]):
         for k_idx in range(k):
             model.addConstr(
-                model.quicksum(x[i, j, k_idx] for i in nodes_to[j])
-                == model.quicksum(x[i, j_drop, k_idx] for i in nodes_to[j_drop]),
+                sum_inarc[k_idx, j] == sum_inarc[k_idx, j_drop],
                 name=f"pair_{j}_{j_drop}_{k_idx}",
             )
 
@@ -602,7 +614,7 @@ def milp(
             name=f"start_{k_idx}",
         )
         model.addConstr(
-            model.quicksum(x[i, end_depot, k_idx] for i in nodes_to[end_depot]) == 1,
+            sum_inarc[k_idx, end_depot] == 1,
             name=f"end_{k_idx}",
         )
 
@@ -623,7 +635,7 @@ def milp(
         for k_idx in range(k):
             model.addConstr(
                 model.quicksum(x[i, j, k_idx] for j in nodes_from[i])
-                == model.quicksum(x[j, i, k_idx] for j in nodes_to[i]),
+                == sum_inarc[k_idx, i],
                 name=f"flow_{i}_{k_idx}",
             )
 
@@ -635,18 +647,19 @@ def milp(
         )
 
     # Formulation Constraint (8): Weight bounds per vehicle per node
+    # Update: This constraint only holds when vehicle k actually passes i
     for k_idx in range(k):
-        for i in range(num_nodes):
+        for i in range(1, num_nodes):
             lower_bound = max(0.0, preproc["q"][i])
             upper_bound = min(
                 float(problem.Q[k_idx]), float(problem.Q[k_idx]) + preproc["q"][i]
             )
             model.addConstr(
-                w[k_idx, i] >= lower_bound,
+                (sum_inarc[k_idx, i] == 1.0) >> (w[k_idx, i] >= lower_bound),
                 name=f"w_lower_{k_idx}_{i}",
             )
             model.addConstr(
-                w[k_idx, i] <= upper_bound,
+                (sum_inarc[k_idx, i] == 1.0) >> (w[k_idx, i] <= upper_bound),
                 name=f"w_upper_{k_idx}_{i}",
             )
 
@@ -687,16 +700,17 @@ def milp(
     for k_idx in range(k):
         for i, j in arcs:
             model.addConstr(
-                (x[i, j, k_idx] == 1) >> (w[k_idx, j] >= w[k_idx, i] + preproc["q"][i])
+                (x[i, j, k_idx] == 1) >> (w[k_idx, j] >= w[k_idx, i] + preproc["q"][j])
             )
     model.update()
     # ============================================================================
     # Phase 6: Pre-Optimization Model Size Check
     # ============================================================================
 
-    print("\n=== PRE-OPTIMIZATION MODEL SIZE ===", flush=True)
-    print(f"Total variables: {model.NumVars}", flush=True)
-    print(f"Total constraints: {model.NumConstrs}", flush=True)
+    if verbose:
+        print("\n=== PRE-OPTIMIZATION MODEL SIZE ===", flush=True)
+        print(f"Total variables: {model.NumVars}", flush=True)
+        print(f"Total constraints: {model.NumConstrs}", flush=True)
 
     model.optimize()
     print("Finishing optimizing")
@@ -791,14 +805,23 @@ if __name__ == "__main__":
     # summarize_dataset("H", verbose=True)
     problems = exact_problems
     passed_tests = 0
-    for prob in problems:
+    for id, prob in enumerate(problems):
+        # prob.pretty_print()
+        # print(prob.D)
+        # ref_sol, ref_info = ref_solver(prob, time_limit=600.0, verbose=False)
+        # if ref_sol is None or not ref_sol.is_valid():
+        #     print(f"Problem {prob.name} - Reference solver failed. Skipping MILP test.")
+        #     continue
+        # print("Reference solution:")
+        # ref_sol.stdin_print()
+        print(f"Problem {id + 1}/{len(problems)}")
         algo_solver = AlgoSolver(milp, {"time_limit": 600.0, "verbose": False})
-        # try:
-        sol, info = algo_solver.solve(prob)
-        if sol is None or not sol.is_valid(True):
-            print(f"Problem {prob.name} - No valid solution found. Info: {info}")
-        else:
-            passed_tests += 1
-        # except Exception as exc:
-        #     print(f"Problem {prob.name} - Exception during solving", exc)
+        try:
+            sol, info = algo_solver.solve(prob)
+            if sol is None or not sol.is_valid(False):
+                print(f"Problem {prob.name} - No valid solution found. Info: {info}")
+            else:
+                passed_tests += 1
+        except Exception as exc:
+            print(f"Problem {prob.name} - Exception during solving", exc)
     print(f"Passed {passed_tests} out of {len(problems)} tests.")
