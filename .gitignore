@@ -2,11 +2,13 @@ venv/
 .venv/
 .vscode/
 __pycache__/
-*.pyc
+.pyc/
 .VSCodeCounter/
 .idea/
 *.prof
 
+.prof/
+report/
 # Misc
 test_milp.py
 sarp_model.lp

@@ -33,6 +33,16 @@ class ShareARideProblem:
         ):
         """
         Initialize a Share-a-Ride Problem instance.
+
+        Here we introduce the indexing conventions:
+        - 0 is the depot
+        - pid is 1-based index for passenger requests (1 to N)
+        - lid is 1-based index for parcel requests (1 to M)
+        - nodeid is 0-based index for nodes in distance matrix D (0 to 2N + 2M)
+          - passenger pickup nodes: 1 to N
+          - parcel pickup nodes: N+1 to N+M
+          - passenger dropoff nodes: N+M+1 to 2N+M
+          - parcel dropoff nodes: 2N+M+1 to 2N+2M
         """
 
         # //// Basic parameters
@@ -197,7 +207,7 @@ class ShareARideProblem:
         pair_id = 1
         for i in range(1, self.N + 1):
             pickup, drop = self.pserve(i)
-            lines.append(f"{pair_id} {pickup} P {drop}")
+            lines.append(f"{pair_id} {pickup + 1} P {drop + 1}")
             pair_id += 1
         for j in range(1, self.M + 1):
             pickup = self.lpick(j) + 1

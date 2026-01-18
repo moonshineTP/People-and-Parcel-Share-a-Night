@@ -6,14 +6,13 @@
 import sys
 
 from share_a_ride.core.problem import ShareARideProblem
-from share_a_ride.solvers.algo.aco import aco_solver
+from share_a_ride.solvers.algo.bnb import bnb_solver
 
 
 def read_instance() -> ShareARideProblem:
     """
     Read instance from standard input.
     """
-
     N, M, K = map(int, sys.stdin.readline().strip().split())
     q = list(map(int, sys.stdin.readline().split()))
     Q = list(map(int, sys.stdin.readline().split()))
@@ -30,42 +29,35 @@ def main(verbose: bool = False):
     """
     Main execution function.
     """
-    prob: ShareARideProblem = read_instance()
+    problem: ShareARideProblem = read_instance()
 
-    # //////// Initial solution ////////
-    sol, _ = aco_solver(
-        prob,
-        cutoff=10,
-        num_ants=(
-            500 if prob.num_nodes <= 100
-            else 150 if prob.num_nodes <= 250
-            else 50 if prob.num_nodes <= 500
-            else 25 if prob.num_nodes <= 1000
-            else 10
-        ),
-        runs=(
-            100 if prob.num_nodes <= 100
-            else 75 if prob.num_nodes <= 250
-            else 50 if prob.num_nodes <= 500
-            else 20 if prob.num_nodes <= 1000
-            else 10
-        ),
-        width=(
-            10 if prob.num_nodes <= 100
-            else 8 if prob.num_nodes <= 250
-            else 6 if prob.num_nodes <= 500
-            else 4 if prob.num_nodes <= 1000
-            else 2
-        ),
+    solution, _ = bnb_solver(problem, incumbent=734, time_limit=290.0, verbose=verbose)
 
-        seed=42,
-        time_limit=250.0,
-        verbose=verbose,
-    )
+    # n = problem.num_nodes
+    # if n <= 100:
+    #     n_partials, n_cutoff, iterations, width = 150, 25, 150, 6
+    # elif n <= 250:
+    #     n_partials, n_cutoff, iterations, width = 60, 15, 60, 5
+    # elif n <= 500:
+    #     n_partials, n_cutoff, iterations, width = 25, 10, 25, 4
+    # elif n <= 1000:
+    #     n_partials, n_cutoff, iterations, width = 12, 4, 8, 3
+    # else:
+    #     n_partials, n_cutoff, iterations, width = 6, 2, 3, 2
 
-    assert sol, "No solution found by ACO."
+    # solution, _ = aco_solver(
+    #     problem,
+    #     seed=42,
+    #     verbose=verbose,
+    #     n_partials=n_partials,
+    #     n_cutoff=n_cutoff,
+    #     iterations=iterations,
+    #     width=width,
+    #     time_limit=240.0
+    # )
 
-    sol.stdin_print(verbose=verbose)
+    assert solution
+    solution.stdin_print(verbose=verbose)
 
 
 if __name__ == "__main__":

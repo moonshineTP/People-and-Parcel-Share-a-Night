@@ -1,106 +1,73 @@
 """
 Main application shell for Share-a-Ride problem manager.
-Provides top-level navigation between main views.
+Provides top-level navigation between main views using Streamlit.
+Run this file to start the app:
+    streamlit run share_a_ride/app/app.py
 """
+import streamlit as st
 
-from __future__ import annotations
+try:
+    from share_a_ride.app.dashboard import ShareARideDashboard
+    from share_a_ride.app.visualizer import ShareARideSolutionVisualizer
+except ImportError:
+    import sys
+    import os
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+    from share_a_ride.app.dashboard import ShareARideDashboard
+    from share_a_ride.app.visualizer import ShareARideSolutionVisualizer
 
-import tkinter as tk
-from tkinter import ttk, messagebox
-
-from share_a_ride.app.dashboard import ShareARideDashboard
-from share_a_ride.app.visualizer import ShareARideSolutionVisualizer
 
 
 class ShareARideApp:
     """Main application shell with top-level navigation."""
 
-    def __init__(self, master: tk.Tk | None = None) -> None:
-        self.root = master or tk.Tk()
-        self.root.title("Share-a-Ride Manager")
-        self.root.geometry("900x600")
-
-        self.views: dict[str, ttk.Frame] = {}
-        self._build_header()
-        self._build_views()
-        self.show_view("dashboard")
-
-    def _build_header(self) -> None:
-        # Build the application header with title and navigation buttons.
-        header = ttk.Frame(self.root)
-        header.pack(fill=tk.X)
-
-        title = ttk.Label(
-            header, text="Share-a-Ride Problem Manager", font=("Segoe UI", 30, "bold")
+    def __init__(self) -> None:
+        # Page config must be the first Streamlit command
+        st.set_page_config(
+            page_title="Share-a-Ride Manager",
+            layout="wide",
+            initial_sidebar_state="expanded"
         )
-        title.pack(side=tk.LEFT, padx=16, pady=12)
+        
+        self.dashboard = ShareARideDashboard()
+        self.visualizer = ShareARideSolutionVisualizer()
 
-        nav = ttk.Frame(header)
-        nav.pack(side=tk.RIGHT, padx=16)
+    def _render_sidebar(self) -> str:
+        """Render the sidebar navigation."""
+        st.sidebar.title("Navigation")
+        return st.sidebar.radio("Go to", ["Dashboard", "Visualizer"])
 
-        buttons = {
-            "Dashboard": lambda: self.show_view("dashboard"),
-            "Visualizer": lambda: self.show_view("visualizer"),
-        }
-        for label, action in buttons.items():
-            ttk.Button(nav, text=label, command=action).pack(side=tk.LEFT, padx=4)
+    def _render_visualizer_view(self):
+        """Render the visualizer view with inputs."""
+        st.header("Solution Visualizer")
+        st.write("Paste your Instance (SARP format) and Solution content below to visualize.")
 
-    def _build_views(self) -> None:
-        """
-        Build the main application views: dashboard and visualizer.
-        """
-        container = ttk.Frame(self.root)
-        container.pack(fill=tk.BOTH, expand=True)
+        col1, col2 = st.columns(2)
+        with col1:
+            instance_input = st.text_area("Instance Content", height=300, help="Paste content of .sarp file here")
+        with col2:
+            solution_input = st.text_area("Solution Content", height=300, help="Paste solution route text here")
 
-        # Enable a lightweight solver config dashboard to test data loading
-        dashboard = ShareARideDashboard(container)
-        self.views["dashboard"] = dashboard.frame
-
-        # Keep visualizer placeholder as-is
-        visualizer = ShareARideSolutionVisualizer(container)
-        self.views["visualizer"] = visualizer.frame
-
-    def _make_placeholder(
-        self, parent: tk.Widget, title: str, subtitle: str = ""
-    ) -> ttk.Frame:
-        """
-        Create a simple placeholder frame with a title and optional subtitle.
-        """
-        frame = ttk.Frame(parent)
-
-        # Title
-        ttk.Label(frame, text=title, font=("Segoe UI", 16, "bold")).pack(pady=(24, 8))
-
-        # Subtitle
-        if subtitle:
-            ttk.Label(frame, text=subtitle, justify=tk.CENTER).pack(pady=(0, 12))
-
-        # Instruction
-        ttk.Label(frame, text="Use the navigation to switch views.").pack()
-
-        return frame
-
-    def show_view(self, key: str) -> None:
-        """
-        Show the specified view by key, hiding others.
-        """
-        # Forget all past views
-        for frame in self.views.values():
-            frame.pack_forget()
-
-        # Show the requested view
-        view = self.views.get(key)
-        if view is None:
-            messagebox.showerror("Navigation Error", f"Unknown view: {key}")
-            return
-        view.pack(fill=tk.BOTH, expand=True)
+        if st.button("Visualize", type="primary"):
+            if instance_input:
+                self.visualizer.render(instance_input, solution_input)
+            else:
+                st.error("Instance content is required.")
 
     def run(self) -> None:
-        """
-        Launch the main application loop.
-        """
-        self.root.mainloop()
+        """Launch the main application loop."""
+        selected_view = self._render_sidebar()
 
+        if selected_view == "Dashboard":
+            # The dashboard class handles its own title and layout, 
+            # but we can wrap it if needed.
+            # Note: Dashboard.run() sets page config too, but Streamlit ignores subsequent calls.
+            # We call the internal run method of the dashboard.
+            self.dashboard.run()
+            
+        elif selected_view == "Visualizer":
+            self._render_visualizer_view()
 
 if __name__ == "__main__":
-    ShareARideApp().run()
+    app = ShareARideApp()
+    app.run()

@@ -2,27 +2,58 @@
 Beam search module for the Share-a-Ride problem.
 """
 import time
-from typing import Any, List, Optional, Tuple, Dict
+from typing import Any, List, Optional, Tuple, Dict, Callable, Concatenate, ParamSpec
 
 from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.core.solution import PartialSolution, Solution, PartialSolutionSwarm
 from share_a_ride.solvers.operator.swap import intra_swap_operator, inter_swap_operator
+from share_a_ride.solvers.operator.relocate import relocate_operator
 from share_a_ride.solvers.algo.utils import (
     balanced_scorer, enumerate_actions_greedily, apply_general_action
 )
+from share_a_ride.solvers.algo.greedy import iterative_greedy_solver
+
+# Type alias for defense policy function
+Params = ParamSpec("Params")
+DefensePolicy = Callable[Concatenate[PartialSolution, Params], Optional[Solution]]
 
 
 
 
+# ================ Default Defense Policy ================
+def _default_defense_policy(
+        partial: PartialSolution,
+        seed: Optional[int] = None,
+        verbose: bool = False
+    ) -> Optional[Solution]:
+    """
+    Defense policy: complete a promising partial with beam search.
+    This mirrors the default defense strategy used in ``mcts.py``.
+    """
+
+    best, _ = iterative_greedy_solver(
+        partial.problem,
+        partial,
+        iterations=1000,
+        seed=113*seed if seed is not None else None,
+        verbose=verbose,
+    )
+    return best
+
+
+
+
+# ================ Beam Search Solver =================
 def beam_enumerator(
         problem: ShareARideProblem,
-        cost_function: Any = balanced_scorer,
-        initial: Optional[PartialSolutionSwarm] = None,
-        width: int = 10,
-        r_intra: float = 0.75,
-        r_inter: float = 0.90,
+        swarm: Optional[PartialSolutionSwarm] = None,
+        n_partials: int = 20,
+        n_return: int = 10,
+        r_intra: float = 0.55,
+        r_inter: float = 0.75,
         f_intra: float = 0.10,
         f_inter: float = 0.10,
+        cost_function: Any = balanced_scorer,
         time_limit: float = 30.0,
         seed: Optional[int] = None,
         verbose: bool = False
@@ -33,7 +64,7 @@ def beam_enumerator(
     This should work as follows:
     - At each depth step, maintains a beam of the best partial solutions with the
     number of actions equal to the depth. Note that the first few steps may have
-    less than ``width`` solutions if not enough distinct partial solutions exist.
+    less than ``n_partials`` solutions if not enough distinct partial solutions exist.
     - In the expansion phase, expands each partial solution by evaluating every
     possible next actions / next states and filtering to the best (step + 1) ones.
     - Selects the top N partial solutions based on a cost function.
@@ -50,11 +81,10 @@ def beam_enumerator(
     horizon respectively, enabling adaptive late-stage refinement without
     dominating runtime.
     """
-    # Initialize timing, parameters and RNG for deterministic behavior when seed is provided.
     start = time.time()
     total_actions = problem.num_actions
-    if initial is None:
-        initial = PartialSolutionSwarm(
+    if swarm is None:
+        swarm = PartialSolutionSwarm(
             solutions=[PartialSolution(problem=problem, routes=[])]
         )
 
@@ -153,19 +183,21 @@ def beam_enumerator(
 
         # Sort candidates by cost function and return top width
         beam_sort(candidates)
-        candidates = candidates[:width]
-        return candidates[:width]
+        candidates = candidates[:n_partials]
+        return candidates[:n_partials]
 
 
     # //////// Main loop ////////
-    beam = initial.partial_lists
+    beam = swarm.partial_lists
     beam_sort(beam)
-    depth = initial.partial_lists[0].num_actions  # should be 0 initially
+    depth = swarm.partial_lists[0].num_actions  # should be 0 initially
     iterations = 0
+    status = "done"
 
     while beam:
         # //// Validation checks for termination.
         if time.time() - start >= time_limit:
+            status = "overtime"
             if verbose:
                 print(
                     f"[BeamSearch] Time limit ({time_limit:.2f}s) reached at depth {depth}. "
@@ -208,7 +240,7 @@ def beam_enumerator(
         next_beam = expand(beam, aggressive=True)
         if not next_beam:
             raise RuntimeError("Beam search stalled: no candidates generated.")
-        if len(next_beam) < width:
+        if len(next_beam) < n_partials:
             next_beam = expand(beam, aggressive=False)
         # Update
         beam = next_beam
@@ -224,25 +256,30 @@ def beam_enumerator(
                 print(
                     f"[BeamSearch] Depth {depth}. Max_cost range: "
                     f"{min(max_costs)} - {max(max_costs)}. "
-                    f"Avg max_cost: {sum(max_costs) / len(max_costs):.1f}"
+                    f"Average max cost: {sum(max_costs) / len(max_costs):.2f}. "
+                    f"Time elapsed: {time.time() - start:.2f}s."
                 )
 
 
     # Sort final beam and return best solution swarm.
     beam_sort(beam)
+    beam = beam[:n_return]
+
+    # Info
     swarm = PartialSolutionSwarm(solutions=beam)
     search_info = {
         "iterations": iterations,
         "time": time.time() - start,
+        "status": status,
     }
 
-    # Summary logging.
+    # Logging.
     if verbose:
         print()
         print(f"[BeamSearch] Completed. Final beam size {len(beam)}")
         print(f"[BeamSearch] Beam depth reached: {depth}")
-        print(f"[BeamSearch] Beam max_cost range: {swarm.min_cost} - {swarm.max_cost}")
-        print(f"[BeamSearch] Avg max_cost: {swarm.avg_cost}")
+        print(f"[BeamSearch] Beam cost range: {swarm.min_cost} - {swarm.max_cost}")
+        print(f"[BeamSearch] Average max cost: {swarm.avg_cost}")
         print(f"[BeamSearch] Time taken: {search_info['time']:.4f} seconds")
         print("------------------------------")
         print()
@@ -254,13 +291,15 @@ def beam_enumerator(
 
 def beam_solver(
         problem: ShareARideProblem,
-        cost_function: Any = balanced_scorer,
-        initial: Optional[PartialSolutionSwarm] = None,
-        width: int = 10,
-        r_intra: float = 0.75,
-        r_inter: float = 0.90,
+        swarm: Optional[PartialSolutionSwarm] = None,
+        n_partials: int = 20,
+        n_returns: int = 10,
+        r_intra: float = 0.55,
+        r_inter: float = 0.75,
         f_intra: float = 0.05,
         f_inter: float = 0.10,
+        cost_function: Any = balanced_scorer,
+        defense_policy: DefensePolicy = _default_defense_policy,
         time_limit: float = 30.0,
         seed: Optional[int] = None,
         verbose: bool = False
@@ -284,11 +323,68 @@ def beam_solver(
     - f_intra / f_inter control operator repetition frequency as depth fractions
     """
     solswarm, msg = beam_enumerator(
-        problem, cost_function, initial, width,
-        r_intra, r_inter, f_intra, f_inter, time_limit, seed, verbose
+        problem=problem,
+        swarm=swarm,
+        n_partials=n_partials,
+        n_return=n_returns,
+        r_intra=r_intra,
+        r_inter=r_inter,
+        f_intra=f_intra,
+        f_inter=f_inter,
+        cost_function=cost_function,
+        time_limit=time_limit,
+        seed=seed,
+        verbose=verbose
     )
 
+    # Apply defense policy to complete any pending partial solutions (e.g. if timed out).
+    # This ensures we have complete solutions before refinement.
+    for idx, partial in enumerate(solswarm.partial_lists):
+        if partial.is_pending():
+            completed_sol = defense_policy(
+                partial,
+                seed=seed,
+                verbose=False
+            )
+            if completed_sol is not None:
+                solswarm.partial_lists[idx] = PartialSolution.from_solution(completed_sol)
+
+    # Apply relocate operator to final beam for refinement.
+    for idx, partial in enumerate(solswarm.partial_lists):
+        refined_partial, _, _ = relocate_operator(
+            partial,
+            steps=None,
+            mode='first',
+            uplift=1,
+            seed=seed,
+            verbose=False
+        )
+        solswarm.partial_lists[idx] = refined_partial
+
     best_sol: Optional[Solution] = solswarm.opt()
+    if best_sol is None:
+        if verbose:
+            print("[BeamSolver] No complete solution found in beam swarm.")
+            print("[BeamSolver] Attempting defense policy to complete best partial...")
+
+        # Apply defense policy to complete best partial solution.
+        best_partial = min(solswarm.partial_lists, key=lambda ps: ps.max_cost)
+        best_sol = defense_policy(
+            best_partial,
+            seed=seed,
+            verbose=verbose
+        )
+    
+    if verbose:
+        print()
+        if best_sol is not None:
+            print(
+                f"[BeamSolver] Best solution found with max_cost: {best_sol.max_cost}."
+            )
+        else:
+            print("[BeamSolver] No valid solution could be constructed.")
+        print("------------------------------")
+        print()
 
     return best_sol, msg
 
@@ -297,11 +393,12 @@ def beam_solver(
 
 # ================ Playground ================
 if __name__ == "__main__":
-    from share_a_ride.solvers.algo.utils import test_problem
+    from share_a_ride.solvers.algo.utils import relay_problems
 
+    test_problem = relay_problems[-1]
     sol, info = beam_solver(
         test_problem,
-        time_limit=10.0,
+        time_limit=60.0,
         seed=42,
         verbose=True
     )

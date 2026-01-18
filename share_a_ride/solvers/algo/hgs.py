@@ -1,6 +1,7 @@
 """
 HGS Solver for Share-a-Ride Problem using PyVRP.
 """
+from random import Random
 import time
 from collections import Counter
 from typing import Tuple, Optional, Dict, Any, List
@@ -14,7 +15,7 @@ from pyvrp.diversity import broken_pairs_distance
 from pyvrp.crossover import selective_route_exchange
 
 from share_a_ride.core.problem import ShareARideProblem
-from share_a_ride.core.solution import Solution
+from share_a_ride.core.solution import Solution, PartialSolutionSwarm
 from share_a_ride.solvers.algo.beam import beam_enumerator
 
 
@@ -22,8 +23,9 @@ from share_a_ride.solvers.algo.beam import beam_enumerator
 
 def hgs_solver(
         problem: ShareARideProblem,
-        iterations: int = 20,
-        n_populations: int = 50,
+        swarm: Optional[PartialSolutionSwarm] = None,
+        iterations: int = 8,
+        n_partials: int = 40,
         time_limit: float = 30.0,
         seed: Optional[int] = None,
         verbose: bool = False
@@ -102,7 +104,8 @@ def hgs_solver(
     def solve_instance(
             max_dist_limit: int,
             run_time: float,
-            initial_data: Optional[List[List[Tuple[int, List[int]]]]] = None
+            initial_data: Optional[List[List[Tuple[int, List[int]]]]] = None,
+            seed_inner: Optional[int] = None
         ) -> Result:
 
         # Initialize PyVRP Model and Data
@@ -193,7 +196,7 @@ def hgs_solver(
 
         # Prepare GA components
         data = model.data()
-        rng = RandomNumberGenerator(seed=seed if seed else 42)
+        rng = RandomNumberGenerator(seed=seed_inner if seed_inner else 42)
         pm = PenaltyManager(([100], 100, 100))
         pop = Population(broken_pairs_distance)
         neighbours = compute_neighbours(data)
@@ -237,7 +240,7 @@ def hgs_solver(
             population=pop,
             search_method=ls,
             crossover_op=selective_route_exchange,
-            initial_solutions=init_pyvrpsols
+            initial_solutions=init_pyvrpsols,
         )
         res = ga.run(stop=MaxRuntime(run_time))
 
@@ -254,23 +257,25 @@ def hgs_solver(
 
     # //// Initial Solution Sampling
     if verbose:
-        print("[HGS] Generating initial greedy solutions...")
+        print("[HGS] Generating initial solution population")
 
-    # [Insert code to generate initial solutions]
-    init_swarm, _ = beam_enumerator(
-        problem,
-        width=n_populations,
-        time_limit=10**9,   # Effectively no limit
-        seed=11*seed if seed is not None else None,
-        verbose=verbose,
-    )
-    init_best_sol: Optional[Solution] = None
-    init_best_cost = 10**18
-    if init_swarm:
-        # Extract best complete solution from the swarm
-        init_best_sol = init_swarm.opt()
-        assert init_best_sol is not None
-        init_best_cost = init_best_sol.max_cost
+    # Generate initial swarm if not provided
+    if swarm is not None:
+        init_swarm = swarm
+    else:
+        init_swarm, _ = beam_enumerator(
+            problem,
+            n_partials=n_partials,
+            r_intra=0.75,
+            f_intra=0.2,
+            r_inter=1.2,
+            time_limit=10**9,   # Effectively no limit
+            seed=11*seed if seed is not None else None,
+            verbose=verbose,
+        )
+
+    init_best_sol = init_swarm.opt()
+    init_best_cost = init_best_sol.max_cost if init_best_sol else 10**18
     # [End of initial solution generation]
 
     if verbose:
@@ -295,7 +300,7 @@ def hgs_solver(
             initial_sol_data.append(sol_routes)
 
     if verbose:
-        print(f"[HGS] Extracted {len(initial_sol_data)} greedy solutions for seeding.")
+        print(f"[HGS] Extracted {len(initial_sol_data)} solutions for seeding.")
 
 
     # //// Phase 1: Initial Feasible Solution
@@ -314,20 +319,30 @@ def hgs_solver(
         if init_best_cost < 10**18:
             if verbose:
                 print("[HGS] Falling back to Greedy solution.")
-            return init_best_sol, {"method": "greedy", "cost": init_best_cost}
+            return init_best_sol, {"method": "greedy", "cost": init_best_cost, "status": "done"}
 
-        return None, {"error": "Infeasible"}
+        return None, {"error": "Infeasible", "status": "error"}
 
-    # Calculate current max cost
-    current_max = max((r.distance() for r in res.best.routes()), default=0)
+    # Calculate current max cost (distance + service_duration for passenger inner trips)
+    def get_route_cost(route) -> int:
+        """Calculate full route cost including passenger inner trips."""
+        return route.distance() + route.service_duration()
+
+    current_max = max((get_route_cost(r) for r in res.best.routes()), default=0)
     if verbose:
         print(f"[HGS] Initial Feasible Max Cost: {current_max}")
+
+    # Track the best HGS solution from Phase 1
+    best_hgs_res = res
+    best_hgs_max_cost = current_max
 
 
     # //// Phase 2: Binary Search
     best_res = res
-    low: int = current_max // 2             # Christian's suggestion
-    high: int = current_max * 120 // 100    # 1.2 times slack
+    best_max_cost = current_max
+    low: int = int(current_max / 1.2)       # Christian's suggestion
+    high: int = current_max                 # We want to improve, not loosen
+    # Note: best_hgs_res/best_hgs_max_cost track the overall best HGS solution (Phase 1 + 2)
     remaining_time = time_limit - (time.time() - start)
     time_per_iter = max(0, remaining_time - 2.0) / iterations \
         if iterations > 0 else 0
@@ -352,23 +367,29 @@ def hgs_solver(
 
         # Solve with current mid as max distance limit
         res_iter = solve_instance(
-            mid, time_per_iter, initial_sol_data
+            mid, time_per_iter, initial_sol_data,
+            seed_inner=seed + 101*i + i * i if seed else None
         )
 
         # Analyze result
         if res_iter.is_feasible():      # Mid is feasible, new best
-            # Extract actual max cost
-            actual_max = 0
-            for route in res_iter.best.routes():
-                actual_max = max(actual_max, route.distance())
+            # Extract actual max cost (distance + service_duration)
+            actual_max = max((get_route_cost(r) for r in res_iter.best.routes()), default=0)
 
-            # Update
-            best_res = res_iter
+            # Update binary search bounds
+            if actual_max < best_max_cost:
+                best_res = res_iter
+                best_max_cost = actual_max
             high = min(mid, actual_max)
+
+            # Update overall best HGS solution
+            if actual_max < best_hgs_max_cost:
+                best_hgs_res = res_iter
+                best_hgs_max_cost = actual_max
 
             # Logging
             if verbose:
-                print(f"  -> Feasible. Max Cost: {actual_max}")
+                print(f"  -> Feasible. Max cost found: {actual_max}")
 
         else:                           # Mid is infeasible, loosen limit
             low = int(1.01 * mid) + 1
@@ -379,10 +400,13 @@ def hgs_solver(
 
 
     # //// Reconstruction
-    # Extract results
-    res = best_res
+    # Use the best HGS solution found (from Phase 1 or Phase 2)
+    res = best_hgs_res
     if not res.is_feasible():
-        return None, {"error": "Infeasible"}
+        return None, {"error": "Infeasible", "status": "error"}
+
+    if verbose:
+        print(f"[HGS] Best HGS Max Cost: {best_hgs_max_cost}")
     used_routes: List[Route] = res.best.routes()
     routes_by_cap: Dict[int, List[List[int]]] = {}
 
@@ -423,14 +447,22 @@ def hgs_solver(
 
 
     # //// Finalization
-    # Compare with Initial solution
-    if sol.max_cost == 0 or init_best_cost < sol.max_cost:
+    # Compare HGS solution with Initial beam search solution
+    # Select the best among: beam search (init_best_sol), and HGS result (sol)
+    hgs_max_cost = sol.max_cost if sol.is_valid() else 10**18
+
+    if verbose:
+        print(f"[HGS] Beam search best: {init_best_cost}, HGS best: {hgs_max_cost}")
+
+    # Choose the better solution
+    if sol.max_cost == 0 or not sol.is_valid() or init_best_cost < hgs_max_cost:
         if verbose:
             print(
-                f"[HGS] Initial {init_best_cost} better than HGS {sol.max_cost}. "
-                "Returning Initial solution."
+                f"[HGS] Beam search {init_best_cost} better than HGS {hgs_max_cost}. "
+                "Returning Beam search solution."
             )
         sol = init_best_sol
+
     assert sol is not None and sol.is_valid()
 
     # Summary
@@ -438,15 +470,19 @@ def hgs_solver(
         "cost": res.cost(),
         "runtime": res.runtime,
         "iterations": iterations,
-        "best_max_cost": sol.max_cost
+        "best_max_cost": sol.max_cost,
+        "status": "done" if time.time() - start < time_limit else "overtime"
     }
 
     # Logging
     if verbose:
+        print()
         print(
             "[HGS] Finished. "
             f"Final Max Cost: {sol.max_cost}."
         )
+        print("------------------------------")
+        print()
 
     # Return
     return sol, stats

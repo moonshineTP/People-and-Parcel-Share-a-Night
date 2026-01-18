@@ -2,13 +2,13 @@
 Module using an Adaptive Large Neighborhood Search (ALNS) algorithm
 This is the baseline, so we use the alns package and not our own implementation.
 """
-
+import time
 from typing import Optional, List, Dict, Any, Tuple
 
-
-import numpy.random as rnd
+from numpy import random as rnd
+from numpy import flip
 try:
-    from alns import ALNS
+    from alns.ALNS import ALNS
     from alns.accept import HillClimbing
     from alns.select import RouletteWheel
     from alns.stop import MaxRuntime
@@ -19,12 +19,10 @@ except ImportError:
     from alns.stop import MaxRuntime
 
 from share_a_ride.core.problem import ShareARideProblem
-from share_a_ride.core.solution import PartialSolution, Solution
-from share_a_ride.solvers.algo.greedy import (
-    greedy_solver
-)
-from share_a_ride.solvers.algo.astar import astar_solver
-from share_a_ride.solvers.algo.mcts import mcts_solver
+from share_a_ride.core.solution import PartialSolution, Solution, PartialSolutionSwarm
+from share_a_ride.solvers.algo.greedy import iterative_greedy_solver
+from share_a_ride.solvers.algo.beam import beam_solver
+from share_a_ride.solvers.algo.greedy import iterative_greedy_solver
 from share_a_ride.solvers.operator.destroy import destroy_operator
 
 
@@ -118,12 +116,15 @@ def _repair_1(
     working = state.copy()
     partial = working.partial
 
-    repaired_sol, _info = astar_solver(
+    repaired_sol, _info = beam_solver(
         partial.problem,
-        partial,
+        PartialSolutionSwarm([partial]),
+        r_intra=0.95,
+        f_intra=0.1,
+        r_inter=0.99,
         seed=int(rng.integers(0, 1000000))
     )
-    assert repaired_sol is not None
+    assert repaired_sol
     repaired_partial = PartialSolution.from_solution(repaired_sol)
 
     return ALNSPartialSolution(repaired_partial)
@@ -136,12 +137,14 @@ def _repair_2(
     working = state.copy()
     partial = working.partial
 
-    repaired_sol, _info = mcts_solver(
+    repaired_sol, _info = iterative_greedy_solver(
         partial.problem,
         partial,
+        iterations=3000,
+        time_limit=3.0,
         seed=int(rng.integers(0, 1000000))
     )
-    assert repaired_sol is not None
+    assert repaired_sol
     repaired_partial = PartialSolution.from_solution(repaired_sol)
 
     return ALNSPartialSolution(repaired_partial)
@@ -152,35 +155,38 @@ def _repair_2(
 # ================ ALNS Execution Function ================
 def alns_solver(        # pylint: disable=W0102
         problem: ShareARideProblem,
-        initial_solution: Optional[PartialSolution] = None,
-        scores: List[float] = [10, 4, 1, 0],
+        partial: Optional[PartialSolution] = None,
+        scores: Optional[List[float]] = None,
         decay: float = 0.8,
 
         time_limit: float = 30.0,
         seed: Optional[int] = None,
         verbose: bool = False
     ) -> Tuple[Optional[Solution], Dict[str, Any]]:
-
     """
     Adaptive Large Neighborhood Search (ALNS) solver for the Share-a-Ride problem.
     """
+    start = time.time()
+
+    if scores is None:
+        scores = [10, 4, 1, 0]
 
     # //// Generate initial solution
-    if initial_solution is None:
+    if partial is None:
         if verbose:
             print("Generating initial solution...")
 
-        sol, solver_stats = greedy_solver(
+        sol, solver_stats = iterative_greedy_solver(
             problem,
-            # iterations=1000,
-            # time_limit=5.0,
-            # seed=28*seed if seed is not None else None,
+            iterations=3000,
+            time_limit=3.0,
+            seed=seed,
         )
         assert sol is not None and sol.is_valid(), "Initial solution is not valid."
-        initial_solution  = PartialSolution.from_solution(sol)
+        partial  = PartialSolution.from_solution(sol)
 
-    init_cost = initial_solution.max_cost
-    init_sol = ALNSPartialSolution(initial_solution)
+    init_cost = partial.max_cost
+    init_sol = ALNSPartialSolution(partial)
 
     if verbose:
         print("Initial max cost:", init_cost)
@@ -201,7 +207,7 @@ def alns_solver(        # pylint: disable=W0102
     # Configure alns components
     select = RouletteWheel(scores, decay=decay, num_destroy=3, num_repair=2)
     accept = HillClimbing()
-    stop = MaxRuntime(time_limit)
+    stop = MaxRuntime(min(time_limit * 0.9, time_limit - 10))
 
 
     # ///////// Run ALNS ////////
@@ -218,27 +224,30 @@ def alns_solver(        # pylint: disable=W0102
     sol = best.partial.to_solution()
     assert sol is not None and sol.is_valid(), "Final solution is not valid."
 
-    if verbose:
-        print()
-        print("Final solution:")
-        sol.stdin_print(verbose=True)
-        print()
-
     # Retrieve statistics
     alns_stats = result.statistics
+    status = "done"
+    if alns_stats.total_runtime >= time_limit:
+        status = "overtime"
+
+    # Build solver stats
+    elapsed = time.time() - start
+
     solver_stats: Dict[str, Any] = {
         "destroy_operator_counts": dict(alns_stats.destroy_operator_counts),
         "repair_operator_counts": dict(alns_stats.repair_operator_counts),
         "total_runtime": alns_stats.total_runtime,
-        "objectives": alns_stats.objectives,
+        "objectives": flip(alns_stats.objectives).tolist()[:5],
+        "status": status,
+        "time": elapsed
     }
 
     # Logging
     if verbose:
         print()
         print("[ALNS] Completed")
-        print("ALNS Statistics:")
-        print(solver_stats)
+        for key, value in solver_stats.items():
+            print(f" - {key}: {value}")
         print("------------------------------")
         print()
 
@@ -251,52 +260,9 @@ def alns_solver(        # pylint: disable=W0102
 if __name__ == "__main__":
     from share_a_ride.solvers.algo.utils import test_problem
 
-    # def objective(trial: optuna.Trial) -> float:
-    #     """
-    #     Objective function for Optuna hyperparameter tuning.
-    #     Runs ACO with suggested hyperparameters and returns average cost
-    #     over multiple runs.
-    #     """
-    #     # ACO hyperparameters tuning
-    #     scores = [
-    #         trial.suggest_float("score_1", 8.0, 16.0, step = 0.5),
-    #         trial.suggest_float("score_2", 2.0, 4.0, step=0.2),
-    #         trial.suggest_float("score_3", 0.5, 2.0, step=0.1),
-    #         0.0
-    #     ]
-    #     decay = trial.suggest_float("decay", 0.7, 0.95, step=0.05)
-
-    #     costs = []
-    #     for i in range(3):
-    #         sol, _info = alns_solver(
-    #             main_prob,
-    #             scores=scores,
-    #             decay=decay,
-    #             time_limit=40.0,
-    #             seed=123 + 321 * i,
-    #             verbose=False,
-    #         )
-    #         assert sol is not None and sol.is_valid(), "Obtained solution is not valid."
-
-    #         costs.append(sol.max_cost)
-
-    #     return sum(costs) / len(costs) if costs else float("inf")
-
-
-    # study = optuna.create_study(direction="minimize")
-    # study.optimize(objective, n_trials=30)
-
-    # print("Best trial:")
-    # best = study.best_trial
-    # print(f"  Value: {best.value}")
-    # print("  Params: ")
-    # for key, value in best.params.items():
-    #     print(f"    {key}: {value}")
-
-    # Solve with ALNS
     solution, info = alns_solver(
         test_problem,
-        time_limit=60.0,
+        time_limit=60,
         seed=42,
         verbose=True,
     )

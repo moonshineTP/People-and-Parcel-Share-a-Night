@@ -16,9 +16,6 @@ It serves for 3 main business domains:
 - Provide per-solver and per-instance performance tracking and summaries.
 - Tracking solver configurations over time.
 """
-
-from __future__ import annotations
-
 import os
 import json
 import ast
@@ -28,8 +25,7 @@ from functools import lru_cache
 import pandas as pd
 
 from share_a_ride.data.router import path_router
-from share_a_ride.data.router import DATASET_TO_PURPOSE
-
+from share_a_ride.data.classes import Dataset
 
 
 
@@ -76,35 +72,17 @@ def _parse_json_like(value) -> dict | list | None:
     if not text:
         return {}
 
-    # 1) Try strict JSON first
+    # Try standard JSON first
     try:
         return json.loads(text)
-    except Exception:
+    except (json.JSONDecodeError, ValueError):
         pass
 
-    # 2) Try Python literal evaluation (commonly used in logs)
+    # Fallback to Python literal (ast.literal_eval) for single-quoted strings
     try:
-        lit = ast.literal_eval(text)
-        if isinstance(lit, dict):
-            return lit
-        if isinstance(lit, list):
-            return lit
-        if isinstance(lit, tuple):
-            return list(lit)
-    except Exception:
-        pass
-
-    # 3) Heuristic normalization: single quotes and Python bool/None
-    normalized = (
-        text
-        .replace("'", '"')
-        .replace(" True", " true").replace(" False", " false").replace(" None", " null")
-        .replace(": True", ": true").replace(": False", ": false").replace(": None", ": null")
-    )
-    try:
-        return json.loads(normalized)
-    except Exception:
-        # Final fallback: return empty dict to preserve type contract
+        return ast.literal_eval(text)
+    except (ValueError, SyntaxError, MemoryError):
+        # Final fallback: return empty dict if both fail
         return {}
 
 
@@ -155,7 +133,8 @@ def _build_dataset_catalog() -> pd.DataFrame:
     rows: list[dict[str, str]] = []
 
     for ds_name, purpose in sorted(
-        DATASET_TO_PURPOSE.items(), key=lambda item: (item[1], item[0])
+        [(d.value.name, d.value.purpose.value) for d in Dataset],
+        key=lambda item: (item[1], item[0])
     ):
         # Resolve the dataset root folder once
         dataset_root = path_router(ds_name, "readall")
@@ -189,9 +168,9 @@ def _build_dataset_catalog() -> pd.DataFrame:
 
 
 # =============== Domain 2: Processing experiments data ================
-def _normalise_attempts(df: pd.DataFrame) -> pd.DataFrame:
+def normalize_attempts(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Normalise data types in attempts dataframe.
+    Normalize data types in attempts dataframe.
     """
     if df.empty:
         return df
@@ -214,15 +193,14 @@ def _normalise_attempts(df: pd.DataFrame) -> pd.DataFrame:
     if "info" in df.columns:
         df["info"] = df["info"].apply(_parse_json_like)
     if "status" in df.columns:
-        df["status"] = df["status"].astype(str)
+        df['status'] = df['status'].astype(str)
     return df
 
 
-
-def _normalise_scoreboard(df: pd.DataFrame) -> pd.DataFrame:
+def normalize_scoreboard(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Normalise data types in scoreboard dataframe.
-    Return the normalised dataframe with the following renam
+    Normalize data types in scoreboard dataframe.
+    Return the normalized dataframe.
     """
     if df.empty:
         return df
@@ -253,7 +231,7 @@ def _build_top_best_attempts(att_df: pd.DataFrame, n: int = 3) -> pd.DataFrame:
     """
     Return dataframe of the best -successful- `n` attempts across 
     **each** instances in `one` dataset.
-    The att_df is taken from _normalise_attempts.
+    The att_df is taken from normalize_attempts.
     n is the number of best attempts to return.
     """
 
@@ -271,7 +249,7 @@ def _build_top_best_attempts(att_df: pd.DataFrame, n: int = 3) -> pd.DataFrame:
     # Retrieve successful attempts
     if att_df.empty:
         return _empty_df(columns)
-    work: pd.DataFrame = att_df.loc[att_df["status"].str.lower() == "done"].copy()
+    work: pd.DataFrame = att_df.loc[att_df['status'].str.lower() == "done"].copy()
     if work.empty:
         return _empty_df(columns)
 
@@ -293,11 +271,10 @@ def _build_top_best_attempts(att_df: pd.DataFrame, n: int = 3) -> pd.DataFrame:
     return best_df
 
 
-
 def _build_top_recent_attempts(inst: str, att_df: pd.DataFrame, n: int = 3) -> pd.DataFrame:
     """
     Return dataframe of the most recent -successful- `n` attempts across **one** instance.
-    The att_df is taken from _normalise_attempts.
+    The att_df is taken from normalize_attempts.
     n is the number of recent successful attempts to return.
     """
 
@@ -318,7 +295,7 @@ def _build_top_recent_attempts(inst: str, att_df: pd.DataFrame, n: int = 3) -> p
     # Filter by instance and successful status (case-insensitive)
     mask = (
         (att_df["instance"] == inst)
-        & (att_df["status"].astype(str).str.lower() == "done")
+        & (att_df['status'].astype(str).str.lower() == "done")
     )
     work: pd.DataFrame = att_df.loc[mask, columns].copy()
     if work.empty:
@@ -336,7 +313,6 @@ def _build_top_recent_attempts(inst: str, att_df: pd.DataFrame, n: int = 3) -> p
     )
 
     return recent_df
-
 
 
 def _build_recent_vs_best_attempts(
@@ -427,7 +403,6 @@ def _build_recent_vs_best_attempts(
     return vs_df.reindex(columns=columns)
 
 
-
 def _build_attempts_summary(
         att_df: pd.DataFrame,
         n: int = 10
@@ -460,7 +435,6 @@ def _build_attempts_summary(
         .copy()
     )
     return recent_attempts
-
 
 
 def _build_solvers_summary(att_df: pd.DataFrame) -> pd.DataFrame:
@@ -502,7 +476,7 @@ def _build_solvers_summary(att_df: pd.DataFrame) -> pd.DataFrame:
     # Retrieve attempt stats
     stats = (
         work
-        .groupby("solver", dropna=False)["status"]
+        .groupby("solver", dropna=False)['status']
         .agg(
             num_attempts="size",
             successes=lambda s: (s.str.lower() == "done").sum(),
@@ -545,7 +519,6 @@ def _build_solvers_summary(att_df: pd.DataFrame) -> pd.DataFrame:
     return summary
 
 
-
 def _build_solver_leaderboard(score_df: pd.DataFrame) -> pd.DataFrame:
     """
     Compute solver leadership counts of the current dataset from the scoreboard dataframe.
@@ -575,6 +548,7 @@ def _build_solver_leaderboard(score_df: pd.DataFrame) -> pd.DataFrame:
     return leaderboard.sort_values(
         by=["num_instances", "solver"], ascending=[False, True]
     ).reset_index(drop=True)
+
 
 
 
@@ -614,6 +588,7 @@ def _build_solver_config(att_df: pd.DataFrame, limit: int = 10) -> pd.DataFrame:
 
 
 
+
 # ================ Main data loader class ================
 class DataLoader:
     """
@@ -629,8 +604,8 @@ class DataLoader:
     - Instance-scoped data loading for charts that require selection.
     """
 
-    _catalog_cache: pd.DataFrame | None = None
-    _ATTEMPT_FALLBACK_COLUMNS = [
+    catalog_cache: pd.DataFrame | None = None
+    ATTEMPT_DF_COLUMNS = [
         "instance",
         "attempt_id",
         "timestamp",
@@ -644,7 +619,7 @@ class DataLoader:
         "info",
         "note",
     ]
-    _SCOREBOARD_FALLBACK_COLUMNS = [
+    SCOREBOARD_DF_COLUMNS = [
         "dataset",
         "instance",
         "num_attempts",
@@ -665,18 +640,18 @@ class DataLoader:
     # ---------- Internal cached loaders ----------
     @staticmethod
     @lru_cache(maxsize=16)
-    def _load_normalised_frames(dataset: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-        attempts_path = path_router(dataset, "attempt")
+    def _load_normalized_frames(dataset: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+        attempts_path = path_router(dataset, "record")
         scoreboard_path = path_router(dataset, "summarize")
 
-        attempts_df = _normalise_attempts(
+        attempts_df = normalize_attempts(
             _read_pd_from_csv_file(
-                attempts_path, DataLoader._ATTEMPT_FALLBACK_COLUMNS
+                attempts_path, DataLoader.ATTEMPT_DF_COLUMNS
             )
         )
-        scoreboard_df = _normalise_scoreboard(
+        scoreboard_df = normalize_scoreboard(
             _read_pd_from_csv_file(
-                scoreboard_path, DataLoader._SCOREBOARD_FALLBACK_COLUMNS
+                scoreboard_path, DataLoader.SCOREBOARD_DF_COLUMNS
             )
         )
         return attempts_df, scoreboard_df
@@ -689,9 +664,9 @@ class DataLoader:
         Load and return catalog dataframe:
         columns: ['purpose', 'dataset', 'instance']
         """
-        if force_refresh or cls._catalog_cache is None:
-            cls._catalog_cache = _build_dataset_catalog()
-        return cls._catalog_cache.copy()
+        if force_refresh or cls.catalog_cache is None:
+            cls.catalog_cache = _build_dataset_catalog()
+        return cls.catalog_cache.copy()
 
 
     @classmethod
@@ -776,7 +751,7 @@ class DataLoader:
         Further instance-scoped charts can be built via instance-scoped APIs.
         """
         try:
-            attempts_df, scoreboard_df = cls._load_normalised_frames(dataset)
+            attempts_df, scoreboard_df = cls._load_normalized_frames(dataset)
         except KeyError as exc:
             raise ValueError(f"Unknown dataset '{dataset}'") from exc
 
@@ -811,7 +786,7 @@ class DataLoader:
         Return most recent successful attempts for a given instance:
         _build_top_recent_attempts(instance, attempts, n)
         """
-        attempts_df, _ = cls._load_normalised_frames(dataset)
+        attempts_df, _ = cls._load_normalized_frames(dataset)
         return _build_top_recent_attempts(instance, attempts_df, n=n)
 
 
@@ -823,7 +798,7 @@ class DataLoader:
         Return recent vs best attempts for a given instance:
         """
 
-        attempts_df, scoreboard_df = cls._load_normalised_frames(dataset)
+        attempts_df, scoreboard_df = cls._load_normalized_frames(dataset)
         recent_df = _build_top_recent_attempts(instance, attempts_df, n=n)
         return _build_recent_vs_best_attempts(instance, recent_df, scoreboard_df, n=n)
 
@@ -839,7 +814,7 @@ class DataLoader:
         - instance_recent_vs_best: _build_recent_vs_best_attempts(
             instance, instance_recent, scoreboard, n)
         """
-        attempts_df, scoreboard_df = cls._load_normalised_frames(dataset)
+        attempts_df, scoreboard_df = cls._load_normalized_frames(dataset)
         instance_recent = _build_top_recent_attempts(instance, attempts_df, n=n)
         instance_recent_vs_best = _build_recent_vs_best_attempts(
             instance, instance_recent, scoreboard_df, n=n
@@ -855,23 +830,23 @@ class DataLoader:
     @classmethod
     def load_solver_leaderboard(cls, dataset: str) -> pd.DataFrame:
         """Convenience: leaderboard only."""
-        _, scoreboard_df = cls._load_normalised_frames(dataset)
+        _, scoreboard_df = cls._load_normalized_frames(dataset)
         return _build_solver_leaderboard(scoreboard_df)
 
 
     @classmethod
     def load_solver_recent_config(cls, dataset: str, limit: int = 3) -> pd.DataFrame:
         """Convenience: recent solver configs only."""
-        attempts_df, _ = cls._load_normalised_frames(dataset)
+        attempts_df, _ = cls._load_normalized_frames(dataset)
         return _build_solver_config(attempts_df, limit=limit)
 
 
     @classmethod
     def invalidate_caches(cls) -> None:
         """Clear cached catalog and normalized frames (useful for Refresh)."""
-        cls._catalog_cache = None
+        cls.catalog_cache = None
         try:
-            cls._load_normalised_frames.cache_clear()
+            cls._load_normalized_frames.cache_clear()
         except AttributeError:
             pass
 
@@ -881,140 +856,141 @@ class DataLoader:
     def list_all_datasets(cls) -> list[str]:
         """
         Fast dataset listing without crawling instances.
-        Returns sorted keys from DATASET_TO_PURPOSE.
+        Returns sorted keys from Dataset enum.
         """
-        return sorted(list(DATASET_TO_PURPOSE.keys()))
+        return sorted([d.value.name for d in Dataset])
 
 
 
 
 if __name__ == "__main__":
+    pass
     # Debug runner
     # Usage:
     #   python share_a_ride/data/loader.py                 # quick run on first dataset
     #   python share_a_ride/data/loader.py DATASET         # run on specified dataset
     #   python share_a_ride/data/loader.py --all           # iterate all datasets (summary)
-    import sys
 
-    def _print_df(name: str, df: pd.DataFrame | None, n: int = 5) -> None:
-        try:
-            rows = 0 if df is None else len(df)
-            cols = [] if df is None else list(df.columns)
-            print(f"\n[{name}] rows={rows} cols={len(cols)}" + 
-                  f" -> {cols[:8]}{'...' if len(cols)>8 else ''}")
-            if df is not None and not df.empty:
-                print(df.head(n).to_string(index=False))
+    # def _print_df(name: str, df: pd.DataFrame | None, n: int = 5) -> None:
+    #     try:
+    #         rows = 0 if df is None else len(df)
+    #         cols = [] if df is None else list(df.columns)
+    #         print(
+    #             f"\n[{name}] rows={rows} cols={len(cols)}"
+    #             f" -> {cols[:8]}{'...' if len(cols)>8 else ''}"
+    #         )
+    #         if df is not None and not df.empty:
+    #             print(df.head(n).to_string(index=False))
 
-        except Exception as exc:
-            print(f"[{name}] ERROR: {exc}")
+    #     except Exception as exc:
+    #         print(f"[{name}] ERROR: {exc}")
 
+    # def debug_catalog() -> None:
+    #     """
+    #     Debug printout of the catalog and its stats.
+    #     """
+    #     print("\n== Catalog ==")
+    #     cat = DataLoader.load_catalog_frame(force_refresh=True)
+    #     # Show dataset distribution and per-purpose coverage to avoid confusion
+    #     try:
+    #         if isinstance(cat, pd.DataFrame) and not cat.empty:
+    #             ds_counts = cat["dataset"].value_counts().sort_index()
+    #             print("dataset row counts:")
+    #             print(ds_counts.to_string())
 
-    def debug_catalog() -> None:
-        """
-        Debug printout of the catalog and its stats.
-        """
-        print("\n== Catalog ==")
-        cat = DataLoader.load_catalog_frame(force_refresh=True)
-        # Show dataset distribution and per-purpose coverage to avoid confusion
-        try:
-            if isinstance(cat, pd.DataFrame) and not cat.empty:
-                ds_counts = cat["dataset"].value_counts().sort_index()
-                print("dataset row counts:")
-                print(ds_counts.to_string())
+    #             purpose_counts = (
+    #                 cat.groupby(["purpose"], dropna=False)["dataset"]
+    #                 .nunique()
+    #                 .sort_index()
+    #             )
+    #             print("datasets per purpose:")
+    #             print(purpose_counts.to_string())
 
-                purpose_counts = (
-                    cat.groupby(["purpose"], dropna=False)["dataset"]
-                    .nunique()
-                    .sort_index()
-                )
-                print("datasets per purpose:")
-                print(purpose_counts.to_string())
-
-                head_by_ds = (
-                    cat.sort_values(["purpose", "dataset", "instance"], kind="mergesort")
-                       .groupby("dataset", as_index=False)
-                       .head(1)
-                )
-                print("\nfirst instance per dataset (up to 10):")
-                print(head_by_ds.head(10).to_string(index=False))
-        except Exception as exc:
-            print("catalog stats ERROR:", exc)
-        tree = DataLoader.get_catalog_tree(force_refresh=True)
-        print(f"catalog purposes={len(tree)} datasets={sum(len(v) for v in tree.values())}")
-
-
-    def debug_dataset(ds_name: str) -> None:
-        """
-        Debug printout of dataset-level and instance-level data.
-        """
-        print(f"\n== Dataset: {ds_name} ==")
-        try:
-            bundle = DataLoader.load_dataset_bundle(ds_name)
-        except Exception as exc:
-            print("load_dataset_bundle ERROR:", exc)
-            return
-        for key, df in bundle.items():
-            _print_df(f"bundle.{key}", df, n=5)
-
-        try:
-            cfg_full = DataLoader.load_solver_recent_config(ds_name, limit=20)
-            _print_df("cfg_full", cfg_full, n=5)
-        except Exception as exc:
-            print("cfg_full ERROR:", exc)
-
-        try:
-            lb = DataLoader.load_solver_leaderboard(ds_name)
-            _print_df("leaderboard", lb, n=5)
-        except Exception as exc:
-            print("leaderboard ERROR:", exc)
-
-        # Instance-level checks (pick the first instance if any)
-        instances = []
-        try:
-            instances = DataLoader.list_instances(ds_name)
-        except Exception:
-            instances = []
-        inst = instances[0] if instances else None
-        print("instances count:", len(instances), "sample:", inst)
-        if inst:
-            try:
-                r = DataLoader.load_instance_recent(ds_name, inst, n=3)
-                _print_df("instance_recent", r, n=3)
-            except Exception as exc:
-                print("instance_recent ERROR:", exc)
-            try:
-                rvb = DataLoader.load_recent_vs_best(ds_name, inst, n=3)
-                _print_df("recent_vs_best", rvb, n=3)
-            except Exception as exc:
-                print("recent_vs_best ERROR:", exc)
-            try:
-                ib = DataLoader.load_instance_bundle(ds_name, inst, n=3)
-                for k, df in ib.items():
-                    _print_df(f"instance_bundle.{k}", df, n=3)
-            except Exception as exc:
-                print("instance_bundle ERROR:", exc)
+    #             head_by_ds = (
+    #                 cat.sort_values(["purpose", "dataset", "instance"], kind="mergesort")
+    #                    .groupby("dataset", as_index=False)
+    #                    .head(1)
+    #             )
+    #             print("\nfirst instance per dataset (up to 10):")
+    #             print(head_by_ds.head(10).to_string(index=False))
+    #     except Exception as exc:
+    #         print("catalog stats ERROR:", exc)
+    #     tree = DataLoader.get_catalog_tree(force_refresh=True)
+    #     print(f"catalog purposes={len(tree)} datasets={sum(len(v) for v in tree.values())}")
 
 
-    args = sys.argv[1:]
-    if args and args[0] == "--all":
-        print("Iterating all datasets (summary mode)...")
-        for ds_name_ in DataLoader.list_all_datasets():
-            try:
-                # Only print brief summaries to keep output readable
-                print(f"\n== {ds_name_} ==")
-                bundle = DataLoader.load_dataset_bundle(ds_name_)
-                print(
-                    "attempts rows:", len(bundle.get("attempts", pd.DataFrame())),
-                    "scoreboard rows:", len(bundle.get("scoreboard", pd.DataFrame()))
-                )
-            except Exception as exc:
-                print(f"{ds_name_} ERROR:", exc)
-        sys.exit(0)
+    # def debug_dataset(ds_name: str) -> None:
+    #     """
+    #     Debug printout of dataset-level and instance-level data.
+    #     """
+    #     print(f"\n== Dataset: {ds_name} ==")
+    #     try:
+    #         bundle = DataLoader.load_dataset_bundle(ds_name)
+    #     except Exception as exc:
+    #         print("load_dataset_bundle ERROR:", exc)
+    #         return
+    #     for key, df in bundle.items():
+    #         _print_df(f"bundle.{key}", df, n=5)
 
-    selected_dataset = args[0] if args else DataLoader.list_all_datasets()[0]
-    if not selected_dataset:
-        print("No datasets configured. Check DATASET_TO_PURPOSE in router.")
-        sys.exit(1)
+    #     try:
+    #         cfg_full = DataLoader.load_solver_recent_config(ds_name, limit=20)
+    #         _print_df("cfg_full", cfg_full, n=5)
+    #     except Exception as exc:
+    #         print("cfg_full ERROR:", exc)
 
-    debug_catalog()
-    debug_dataset(selected_dataset)
+    #     try:
+    #         lb = DataLoader.load_solver_leaderboard(ds_name)
+    #         _print_df("leaderboard", lb, n=5)
+    #     except Exception as exc:
+    #         print("leaderboard ERROR:", exc)
+
+    #     # Instance-level checks (pick the first instance if any)
+    #     instances = []
+    #     try:
+    #         instances = DataLoader.list_instances(ds_name)
+    #     except Exception:
+    #         instances = []
+    #     inst = instances[0] if instances else None
+    #     print("instances count:", len(instances), "sample:", inst)
+    #     if inst:
+    #         try:
+    #             r = DataLoader.load_instance_recent(ds_name, inst, n=3)
+    #             _print_df("instance_recent", r, n=3)
+    #         except Exception as exc:
+    #             print("instance_recent ERROR:", exc)
+    #         try:
+    #             rvb = DataLoader.load_recent_vs_best(ds_name, inst, n=3)
+    #             _print_df("recent_vs_best", rvb, n=3)
+    #         except Exception as exc:
+    #             print("recent_vs_best ERROR:", exc)
+    #         try:
+    #             ib = DataLoader.load_instance_bundle(ds_name, inst, n=3)
+    #             for k, df in ib.items():
+    #                 _print_df(f"instance_bundle.{k}", df, n=3)
+    #         except Exception as exc:
+    #             print("instance_bundle ERROR:", exc)
+
+
+    # args = sys.argv[1:]
+    # if args and args[0] == "--all":
+    #     print("Iterating all datasets (summary mode)...")
+    #     for ds_name_ in DataLoader.list_all_datasets():
+    #         try:
+    #             # Only print brief summaries to keep output readable
+    #             print(f"\n== {ds_name_} ==")
+    #             bundle = DataLoader.load_dataset_bundle(ds_name_)
+    #             print(
+    #                 "attempts rows:", len(bundle.get("attempts", pd.DataFrame())),
+    #                 "scoreboard rows:", len(bundle.get("scoreboard", pd.DataFrame()))
+    #             )
+    #         except Exception as exc:
+    #             print(f"{ds_name_} ERROR:", exc)
+    #     sys.exit(0)
+
+    # selected_dataset = args[0] if args else DataLoader.list_all_datasets()[0]
+    # if not selected_dataset:
+    #     print("No datasets configured. Check Dataset enum in classes.")
+    #     sys.exit(1)
+
+    # debug_catalog()
+    # debug_dataset(selected_dataset)

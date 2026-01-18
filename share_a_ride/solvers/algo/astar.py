@@ -1,9 +1,7 @@
 """
 Weighted A* search solver for Share-a-Ride.
 """
-
 import heapq
-import random
 import time
 
 from dataclasses import dataclass
@@ -15,6 +13,7 @@ from share_a_ride.solvers.algo.greedy import iterative_greedy_solver
 from share_a_ride.solvers.algo.utils import (
     Action, balanced_scorer, apply_general_action, enumerate_actions_greedily
 )
+from share_a_ride.solvers.operator.relocate import relocate_operator
 
 
 # ///////// Type Alias ////////
@@ -158,7 +157,7 @@ def _default_pred_function(partial: PartialSolution) -> float:
     # //// Finalize
     lb = mst_weight + start_lb + return_lb + internal_service_cost
 
-    return float(lb) / problem.K
+    return float(lb) // problem.K
 
 
 def _default_weight_function(partial: PartialSolution) -> float:
@@ -173,6 +172,7 @@ def _default_weight_function(partial: PartialSolution) -> float:
 
 def _default_defense_policy(
         partial: PartialSolution,
+        time_limit: float = 20.0,
         seed: Optional[int] = None,
         verbose: bool = False
     ) -> Optional[Solution]:
@@ -184,6 +184,8 @@ def _default_defense_policy(
     best, _ = iterative_greedy_solver(
         partial.problem,
         partial,
+        iterations=2000,
+        time_limit=20.0,
         seed=113*seed if seed is not None else None,
         verbose=verbose,
     )
@@ -232,12 +234,14 @@ def _astar_priority(
     return f, g, h, w
 
 
+
+
 def astar_enumerator(
         problem: ShareARideProblem,
         partial: Optional[PartialSolution] = None,
         n_return: int = 10,
-        eps: float = 0.0,
-        beam_width: int = 10,
+        eps: float = 0.285,
+        width: int = 5,
         cutoff_depth: int = 5,
         cost_function: CostFunction = _default_cost_function,
         pred_function: PredFunction = _default_pred_function,
@@ -250,7 +254,7 @@ def astar_enumerator(
 
     This function executes a resource-constrained weighted A* search with:
     - ``eps`` to balance exploration and exploitation
-    - ``beam_width`` to limit branching
+    - ``width`` to limit branching
     - periodic cutoff mechanism in ``cutoff_depth`` to prune the open set.
     - ``cost_function``, ``pred_function``, ``weight_function`` to
         customize the A* scoring.
@@ -279,7 +283,7 @@ def astar_enumerator(
         cost_function,
         pred_function,
         weight_function,
-        seed=41*seed if seed else None
+        seed=41*seed if seed is not None else None
     )
     root = AStarNode(partial=partial, g=g0, h=h0, w=w0, f=f0)
     heapq.heappush(open_heap, (root.f, root))
@@ -320,8 +324,10 @@ def astar_enumerator(
 
     # //// Main loop
     iterations = 0
+    status = "done"
     while open_heap:
         if time_limit is not None and time.time() - start_time >= time_limit:
+            status = "overtime"
             if verbose:
                 print(f"[A*] Time limit reached after {iterations} iterations")
             break
@@ -370,7 +376,7 @@ def astar_enumerator(
 
         # Expand children
         actions = enumerate_actions_greedily(ps, None)
-        for action in actions[:beam_width]:
+        for action in actions[:width]:
             _expand_and_push_open(ps, action)
 
     # Collect results
@@ -382,6 +388,7 @@ def astar_enumerator(
         "iterations": iterations,
         "time": time.time() - start_time,
         "collected": len(collected_heap),
+        "status": status,
     }
 
     # Logging
@@ -401,11 +408,11 @@ def astar_enumerator(
 def astar_solver(
         problem: ShareARideProblem,
         partial: Optional[PartialSolution] = None,
-        eps: float = 0.276,
-        beam_width: int = 4,
+        eps: float = 0.285,
+        width: int = 5,
         cutoff_depth: int = 5,
         cutoff_size: int = 1000,
-        cutoff_ratio: float = 0.31,
+        cutoff_ratio: float = 0.286,
         cost_function: CostFunction = _default_cost_function,
         pred_function: PredFunction = _default_pred_function,
         weight_function: WeightFunction = _default_weight_function,
@@ -425,8 +432,8 @@ def astar_solver(
     - ``eps``: Controls the weight of the heuristic function in the A* priority
       calculation (f = g + (1 + eps * w) * h). Higher values encourage
       greedier, depth-first exploration.
-    - ``beam_width``: Limits the branching factor at each node. Only the top
-      ``beam_width`` actions (determined by a greedy policy) are expanded.
+    - ``width``: Limits the branching factor at each node. Only the top
+      ``width`` actions (determined by a greedy policy) are expanded.
     - ``cutoff_depth``: Defines the interval (in number of actions) at which
       the open set is pruned.
     - ``cutoff_size``: The maximum allowed size of the open set before
@@ -469,7 +476,7 @@ def astar_solver(
             cost_function,
             pred_function,
             weight_function,
-            seed=41*seed if seed else None
+            seed=41*seed if seed is not None else None
         )
         node = AStarNode(partial=ps, g=g, h=h, w=w, f=f)
         heapq.heappush(open_heap, (node.f, node))
@@ -499,9 +506,11 @@ def astar_solver(
     best_partial_depth: int = partial.num_actions
     best_partial_cost: int = 10**18
     found_complete = False
+    status = "done"
 
     while open_heap:
-        if time_limit is not None and time.time() - start_time >= time_limit:
+        if time_limit is not None and time.time() - start_time >= time_limit * 0.95:
+            status = "overtime"
             if verbose:
                 print(f"[A*] Time limit reached after {iterations} iterations")
             break
@@ -523,7 +532,7 @@ def astar_solver(
                     f"heap_size={open_size}, " # account for pop
                     f"depth={min_depth} - {best_partial_depth}, "
                     f"best_partial_cost={best_partial_cost}, "
-                    f"best_sol_cost={'inf' if best_sol_cost == 10**18 else best_sol_cost}, "
+                    f"best_sol_cost={'N/A' if best_sol_cost == 10**18 else best_sol_cost}, "
                     f"best_partial_f={min_f:.2f}, "
                     f"worst_partial_f={max_f:.2f}, "
                     f"time={elapsed:.2f}s",
@@ -575,7 +584,7 @@ def astar_solver(
 
         # Expand children.
         actions = enumerate_actions_greedily(ps, None)
-        for action in actions[:beam_width]:
+        for action in actions[:width]:
             child_ps = ps.copy()
             apply_general_action(child_ps, action)
             _push_open(child_ps)
@@ -590,86 +599,57 @@ def astar_solver(
         "iterations": iterations,
         "time": time.time() - start_time,
         "found_complete": best_solution is not None,
+        "status": status,
     }
 
-    # Return if best solution is found
-    if best_solution is not None:
+    # Defense policy if no complete solution found
+    if best_solution is None:
         if verbose:
-            print(
-                f"[A*] Completed."
-                f"Best solution cost: {best_solution.max_cost} "
-                f"in {stats['time']:.3f}s (iterations={iterations}).",
-            )
-        return best_solution, stats
+            print("[A*] No complete solution found, invoking defense policy...")
+        best_solution = defense_policy(best_partial, seed=seed, verbose=verbose)
+    assert best_solution
 
-    # Otherwise, apply the defense policy on the best partial.
+    # Relocate operator refinements
     if verbose:
-        print("[A*] No complete solution found, invoking defense policy …")
-    defense_sol = defense_policy(best_partial, seed=seed, verbose=verbose)
-
-    # If defense produced a valid solution, return it.
-    if defense_sol is not None and defense_sol.is_valid():
-        if verbose:
-            print(
-                f"[A*] Defense produced solution cost: {defense_sol.max_cost} "
-                f"in {stats['time']:.3f}s.",
-            )
-        return defense_sol, stats
-
-    # Else, return None
+        print(f"[A*] Applying relocate operator to final solution...")
+    best_partial = PartialSolution.from_solution(best_solution)
+    refined_partial, _, _ = relocate_operator(
+        best_partial,
+        mode='first',
+        seed=None if seed is None else 4 * seed + 123
+    )
+    best_solution = refined_partial.to_solution();  assert best_solution
+    best_cost = best_solution.max_cost
     if verbose:
-        print("[A*] Defense policy failed to produce a valid solution.")
-    return None, stats
+        print(
+            f"[A*] After relocate, final solution cost: {best_cost}"
+        )
+    
+    if verbose:
+        print()
+        print(
+            f"[A*] Completed."
+            f"Best solution cost: {best_solution.max_cost} "
+            f"in {stats['time']:.3f}s (iterations={iterations}).",
+        )
+        print("------------------------------")
+        print()
+    
+    return best_solution, stats
 
 
 
+
+# ====================== Example Usage ==================
 if __name__ == "__main__":
-    # Example usage and test
     from share_a_ride.solvers.algo.utils import test_problem
 
-    # def objective(trial):
-    #     eps = trial.suggest_float("eps", 0.2, 0.4)
-    #     beam_width = trial.suggest_int("beam_width", 2, 5)
-    #     cutoff_depth = trial.suggest_int("cutoff_depth", 3, 6)
-    #     cutoff_ratio = trial.suggest_float("cutoff_ratio", 0.25, 0.35)
-
-    #     costs = []
-    #     for i in range(3):
-    #         sol, info = astar_solver(
-    #             problem=prob,
-    #             eps=eps,
-    #             beam_width=beam_width,
-    #             cutoff_depth=cutoff_depth,
-    #             cutoff_ratio=cutoff_ratio,
-    #             time_limit=30.0,
-    #             seed=42 + i,
-    #             verbose=False,
-    #         )
-    #         if sol is not None:
-    #             costs.append(sol.max_cost)
-
-    #     return sum(costs) / len(costs) if costs else float("inf")
-
-
-    # study = optuna.create_study(direction="minimize")
-    # study.optimize(objective, n_trials=15)
-
-    # print("Best trial:")
-    # trial = study.best_trial
-    # print(f"  Value: {trial.value}")
-    # print("  Params: ")
-    # for key, value in trial.params.items():
-    #     print(f"    {key}: {value}")
-
-    # best_params = study.best_params
-
-    # Solve with best params
-    sol, info = astar_solver(
+    solution, _ = astar_solver(
         problem=test_problem,
-        beam_width=4,
+        width=5,
         cutoff_depth=5,
         cutoff_size=1000,
-        cutoff_ratio=0.31,
+        cutoff_ratio=0.286,
         time_limit=60.0,
         seed=42,
         verbose=True,
