@@ -1,367 +1,280 @@
 """
-MILP solver for Share-a-Ride Problem using Gurobi.
-Implements Groups 1 & 2: Route definition, coverage, and flow continuity.
+Mixed Integer Linear Programming (MILP) solver for the Share-a-Ride Problem using Gurobi.
+
+This module provides an exact optimization solver using Gurobi's branch-and-cut algorithm.
 """
 
+from typing import Dict, Any, Optional, Tuple
 import time
-from typing import Any, Optional, Tuple, Dict
+import numpy as np
 
 try:
     import gurobipy as gp
     from gurobipy import GRB
 except ImportError as exc:
     raise ImportError(
-        "Gurobi is required for MILP solver. Install it with: pip install gurobipy"
+        "Gurobi is not installed. Install it separately: pip install gurobipy"
     ) from exc
 
 from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.core.solution import Solution
 
 
-def milp_solver(
+def _preprocess(problem: ShareARideProblem) -> Dict[str, Any]:
+    """
+    Preprocess the problem for MILP formulation.
+    
+    Transforms the problem by merging passenger pickup+drop nodes and computes:
+    - Transformed distance matrix
+    - Weight delta array (q_i)
+    - Linearization constants (M_tau, m_tau, M_1)
+    - Weight bounds per vehicle per node (W_ki)
+    
+    Returns:
+        Dictionary with preprocessed data:
+            - D_transformed: Transformed distance matrix (shape: (N+2M+1, N+2M+1))
+            - q: Weight delta per node (shape: (N+2M+1,))
+            - M_tau: Maximum timestamp (2 * max distance)
+            - m_tau: Minimum timestamp (min non-zero distance)
+            - M_1: Linearization constant (M_tau + m_tau)
+            - W_ki: Weight bounds per vehicle per node (shape: (K, N+2M+1))
+            - N: Number of passengers
+            - M: Number of parcels
+            - K: Number of vehicles
+            - V_p_indices: Indices of passenger nodes in transformed space
+            - V_l_indices: Indices of parcel pickup nodes in transformed space
+            - V_lp_indices: Indices of parcel drop nodes in transformed space
+    """
+    N = problem.N
+    M = problem.M
+    K = problem.K
+    Q = problem.Q
+    q_parcels = problem.q
+    
+    # Convert distance matrix to numpy array for proper 2D indexing
+    D_original = np.array(problem.D, dtype=float)
+    
+    # Transformed node count: 1 (depot) + N (passengers merged) + M (parcel pickups) + M (parcel dropoffs) + 1 (end depot)
+    num_nodes_transformed = N + 2 * M + 2
+    
+    # Define node indices in transformed space
+    # V_0 = {0, N+2M+1} (depot at start and end)
+    # V_p = {1, ..., N} (passenger pickups, implicitly with drops)
+    # V_l = {N+1, ..., N+M} (parcel pickups)
+    # V'_l = {N+M+1, ..., N+2M} (parcel dropoffs)
+    V_p_indices = list(range(1, N + 1))
+    V_l_indices = list(range(N + 1, N + M + 1))
+    V_lp_indices = list(range(N + M + 1, N + 2 * M + 1))
+    
+    # Original node indices mapping
+    # Original: 0=depot, 1..N=pass_pickup, N+1..N+M=parcel_pickup, N+M+1..2N+M=pass_drop, 2N+M+1..2N+2M=parcel_drop, 2N+2M=end_depot
+    pass_pickup_original = list(range(1, N + 1))
+    pass_drop_original = list(range(N + M + 1, 2 * N + M + 1))
+    
+    # Build transformed distance matrix
+    D_transformed = np.zeros((num_nodes_transformed, num_nodes_transformed))
+    
+    for i in range(num_nodes_transformed):
+        for j in range(num_nodes_transformed):
+            # Depot to/from any node: use original indices
+            if i == 0:
+                D_transformed[i, j] = D_original[0, j]
+            elif j == 0:
+                D_transformed[i, j] = D_original[i, 0]
+            elif i == num_nodes_transformed - 1:
+                D_transformed[i, j] = D_original[2 * N + 2 * M, j]
+            elif j == num_nodes_transformed - 1:
+                D_transformed[i, j] = D_original[i, 2 * N + 2 * M]
+            else:
+                # Both i and j are in V_p ∪ V_l ∪ V'_l
+                i_is_pass = i in V_p_indices
+                j_is_pass = j in V_p_indices
+                
+                if not i_is_pass and not j_is_pass:
+                    # Both are parcels: direct distance
+                    D_transformed[i, j] = D_original[i, j]
+                elif i_is_pass and not j_is_pass:
+                    # From passenger node i to parcel node j: from i's drop to j
+                    i_orig_drop = pass_drop_original[i - 1]
+                    D_transformed[i, j] = D_original[i_orig_drop, j]
+                elif not i_is_pass and j_is_pass:
+                    # From parcel node i to passenger node j: i to j's pickup and drop
+                    j_orig_pickup = pass_pickup_original[j - 1]
+                    j_orig_drop = pass_drop_original[j - 1]
+                    D_transformed[i, j] = D_original[i, j_orig_pickup] + D_original[j_orig_pickup, j_orig_drop]
+                else:
+                    # Both are passengers: from i's drop to j's pickup to drop
+                    i_orig_drop = pass_drop_original[i - 1]
+                    j_orig_pickup = pass_pickup_original[j - 1]
+                    j_orig_drop = pass_drop_original[j - 1]
+                    D_transformed[i, j] = D_original[i_orig_drop, j_orig_pickup] + D_original[j_orig_pickup, j_orig_drop]
+    
+    # Build q array (weight delta per node)
+    q = np.zeros(num_nodes_transformed)
+    for idx, node in enumerate(V_l_indices):
+        q[node] = q_parcels[idx]  # Positive at pickup
+    for idx, node in enumerate(V_lp_indices):
+        q[node] = -q_parcels[idx]  # Negative at dropoff
+    
+    # Compute linearization constants
+    # M_tau = 2 * max distance, m_tau = min non-zero distance
+    max_dist = np.max(D_transformed)
+    M_tau = 2.0 * max_dist
+    
+    min_dist_nonzero = np.min(D_transformed[D_transformed > 0]) if np.any(D_transformed > 0) else 1.0
+    m_tau = min_dist_nonzero
+    
+    M_1 = M_tau + m_tau
+    
+    # Compute W_ki bounds per vehicle per node
+    # W_ki = min{2*Q_k, 2*Q_k + q_i}
+    W_ki = np.zeros((K, num_nodes_transformed))
+    for k in range(K):
+        for i in range(num_nodes_transformed):
+            W_ki[k, i] = min(2 * Q[k], 2 * Q[k] + q[i])
+    
+    return {
+        "D_transformed": D_transformed,
+        "q": q,
+        "M_tau": M_tau,
+        "m_tau": m_tau,
+        "M_1": M_1,
+        "W_ki": W_ki,
+        "N": N,
+        "M": M,
+        "K": K,
+        "V_p_indices": V_p_indices,
+        "V_l_indices": V_l_indices,
+        "V_lp_indices": V_lp_indices,
+    }
+
+
+def milp(
     problem: ShareARideProblem,
+    partial: Optional[Any] = None,  # pylint: disable=unused-argument
+    time_limit: float = 30.0,
     verbose: bool = False,
-    time_limit: int = 300,
+    **_kwargs,
 ) -> Tuple[Optional[Solution], Dict[str, Any]]:
     """
-    MILP solver for SARP using Gurobi.
-    Minimizes the maximum route cost across all vehicles.
+    Solve the Share-a-Ride Problem using Mixed Integer Linear Programming with Gurobi.
 
-    Params:
-        - problem: ShareARideProblem instance
-        - verbose: Print Gurobi output if True
-        - time_limit: Time limit in seconds for solver (default 300)
+    Args:
+        problem: The ShareARideProblem instance to solve.
+        partial: Optional partial solution for warm-starting (not yet implemented).
+        time_limit: Time limit for the solver in seconds.
+        verbose: Whether to print Gurobi output.
+        **kwargs: Additional solver parameters.
 
     Returns:
-        (sol, info): tuple where
-        - sol: Solution object if optimal/feasible solution found, else None
-        - info: Dictionary with:
-            + status: "optimal", "feasible", "infeasible", "timeout"
-            + time: Wall clock time
-            + objval: Objective value (max route cost) if feasible
-            + gap: Optimality gap if not optimal
-            + num_routes_used: Number of vehicles actually used
+        A tuple of (solution, info_dict) where:
+            - solution: Solution object if feasible, None if timeout/infeasible.
+            - info_dict: Dictionary with solver statistics (elapsed_time, status, gap, etc).
     """
+
     start_time = time.time()
+    info_dict = {}
 
-    try:
-        # Create Gurobi model
-        model = gp.Model("SARP_MILP")
-        if not verbose:
-            model.Params.OutputFlag = 0
-        model.Params.TimeLimit = time_limit
+    # ============================================================================
+    # Phase 1: Preprocessing
+    # ============================================================================
 
-        # Create variables and add constraints
-        x = _create_arc_variables(model, problem)
-        z = model.addVar(vtype=GRB.CONTINUOUS, name="max_cost")
+    _ = _preprocess(problem)  # pylint: disable=unused-variable
+    # Preprocessing results will be unpacked when implementing Phase 2+
 
-        # Add constraint groups
-        _add_coverage_constraints(model, x, problem)
-        _add_depot_balance_constraints(model, x, problem)
-        _add_flow_conservation_constraints(model, x, problem)
+    # ============================================================================
+    # Phase 2: Model Setup
+    # ============================================================================
 
-        # Add objective: minimize max route cost
-        _add_objective(model, x, z, problem)
+    # Create Gurobi model
+    model = gp.Model("SARP")
 
-        # Optimize
-        model.optimize()
+    # Configure solver output
+    if not verbose:
+        model.setParam(GRB.Param.OutputFlag, 0)
 
-        # Extract solution
-        elapsed = time.time() - start_time
-        sol, info = _extract_solution(model, x, problem, elapsed)
+    # Set time limit
+    model.setParam(GRB.Param.TimeLimit, time_limit)
 
-        return sol, info
+    # ============================================================================
+    # Phase 3: Decision Variables (Scaffold - not defined yet)
+    # ============================================================================
 
-    except gp.GurobiError as e:
-        elapsed = time.time() - start_time
-        return None, {"status": "error", "time": elapsed, "error": str(e)}
+    # pylint: disable=fixme
+    # TODO: Define decision variables
+    #   - X[i,j,k]: binary, vehicle k travels from node i to node j
+    #   - tau[k,i]: continuous, timestamp of vehicle k at node i
+    #   - w[k,i]: continuous, parcel load on vehicle k after node i
+    #   - z: continuous, maximum route cost
 
+    # ============================================================================
+    # Phase 4: Objective Function
+    # ============================================================================
 
-def _create_arc_variables(model: gp.Model, problem: ShareARideProblem) -> Dict:
-    """
-    Create binary arc variables x[i,j,k] for all edges and vehicles.
-
-    Returns:
-        x: Dictionary x[(i,j,k)] = Gurobi variable, binary
-    """
-    x = {}
-    V = problem.num_nodes
-    K = problem.K
-
-    for k in range(K):
-        for i in range(V):
-            for j in range(V):
-                if i != j:
-                    var_name = f"x_{i}_{j}_{k}"
-                    x[(i, j, k)] = model.addVar(vtype=GRB.BINARY, name=var_name)
-
-    return x
-
-
-def _add_coverage_constraints(
-    model: gp.Model, x: Dict, problem: ShareARideProblem
-) -> None:
-    """
-    GROUP 1: Coverage constraints
-
-    C1a: Each non-depot node has exactly one incoming arc
-    C1b: Each non-depot node has exactly one outgoing arc
-    """
-    V = problem.num_nodes
-    K = problem.K
-
-    # C1a: In-degree = 1 for each non-depot node
-    for j in range(1, V):  # exclude depot (node 0)
-        in_arcs = gp.quicksum(
-            x[(i, j, k)] for i in range(V) for k in range(K) if i != j
-        )
-        model.addConstr(in_arcs == 1, name=f"in_degree_{j}")
-
-    # C1b: Out-degree = 1 for each non-depot node
-    for i in range(1, V):  # exclude depot (node 0)
-        out_arcs = gp.quicksum(
-            x[(i, j, k)] for j in range(V) for k in range(K) if i != j
-        )
-        model.addConstr(out_arcs == 1, name=f"out_degree_{i}")
-
-
-def _add_depot_balance_constraints(
-    model: gp.Model, x: Dict, problem: ShareARideProblem
-) -> None:
-    """
-    GROUP 2: Depot balance constraints
-
-    C2a: Each vehicle departs depot at most once
-    C2b: Each vehicle returns to depot at most once
-    C2c: Vehicles that depart must return (in-degree = out-degree at depot)
-    """
-    V = problem.num_nodes
-    K = problem.K
-    depot = 0
-
-    # C2a: Each vehicle leaves depot at most once
-    for k in range(K):
-        depart = gp.quicksum(x[(depot, j, k)] for j in range(1, V))
-        model.addConstr(depart <= 1, name=f"depart_{k}")
-
-    # C2b: Each vehicle returns to depot at most once
-    for k in range(K):
-        arrive = gp.quicksum(x[(i, depot, k)] for i in range(1, V))
-        model.addConstr(arrive <= 1, name=f"arrive_{k}")
-
-    # C2c: Depot balance: if depart, must return
-    for k in range(K):
-        depart = gp.quicksum(x[(depot, j, k)] for j in range(1, V))
-        arrive = gp.quicksum(x[(i, depot, k)] for i in range(1, V))
-        model.addConstr(depart == arrive, name=f"depot_balance_{k}")
-
-
-def _add_flow_conservation_constraints(
-    model: gp.Model, x: Dict, problem: ShareARideProblem
-) -> None:
-    """
-    GROUP 2 (cont.): Flow conservation constraints
-
-    C3: Flow conservation at each non-depot node (in-flow = out-flow per vehicle)
-    Ensures routes are connected and don't fragment.
-    """
-    V = problem.num_nodes
-    K = problem.K
-
-    for k in range(K):
-        for j in range(1, V):  # exclude depot (node 0)
-            in_flow = gp.quicksum(x[(i, j, k)] for i in range(V) if i != j)
-            out_flow = gp.quicksum(x[(j, l, k)] for l in range(V) if j != l)
-            model.addConstr(in_flow == out_flow, name=f"flow_balance_{j}_{k}")
-
-
-def _add_objective(
-    model: gp.Model, x: Dict, z: gp.Var, problem: ShareARideProblem
-) -> None:
-    """
-    Add objective function: minimize max route cost.
-
-    z >= sum_i sum_j D[i][j] * x[i][j][k] for all k
-    minimize z
-    """
-    K = problem.K
-    D = problem.D
-
-    for k in range(K):
-        # Cost of route k
-        route_cost = gp.quicksum(
-            D[i][j] * x[(i, j, k)]
-            for i in range(problem.num_nodes)
-            for j in range(problem.num_nodes)
-            if i != j
-        )
-        # z >= cost_k
-        model.addConstr(z >= route_cost, name=f"max_cost_k_{k}")
-
-    # Minimize z
+    # pylint: disable=fixme
+    # TODO: Define constraints and set objective to minimize z
+    # For now, we create a placeholder variable and objective
+    z = model.addVar(name="z", lb=0.0)
     model.setObjective(z, GRB.MINIMIZE)
 
+    # ============================================================================
+    # Phase 5: Constraints (Not yet implemented)
+    # ============================================================================
 
-def _debug_print_solution(x: Dict, problem: ShareARideProblem, model: gp.Model) -> None:
-    """Debug: Print all non-zero x variables and model state."""
-    print("\n" + "=" * 60)
-    print("DEBUG: SOLUTION STATE AT EXTRACTION")
-    print("=" * 60)
-    print(f"Model Status: {_status_to_string(model.Status)}")
-    print(f"Objective Value: {model.ObjVal if model.SolCount > 0 else 'N/A'}")
-    print(f"Solution Count: {model.SolCount}")
+    # pylint: disable=fixme
+    # TODO: Add constraints:
+    #   1. Coverage constraints (each request served exactly once)
+    #   2. Parcel pairing constraints (pickup and drop for each parcel)
+    #   3. Vehicle flow constraints (start/end at depot, flow conservation)
+    #   4. Timestamp constraints (subtour elimination via MTZ)
+    #   5. Parcel load constraints (capacity and flow conservation)
+    #   6. Parcel ordering constraint (pickup before drop)
+    #   7. Max cost definition constraint (z >= cost per vehicle)
 
-    non_zero_arcs = []
-    for (i, j, k), var in x.items():
-        if var.X > 0.5:
-            non_zero_arcs.append((i, j, k, var.X))
+    # ============================================================================
+    # Phase 6: Optimize
+    # ============================================================================
 
-    print(f"\nTotal X variables: {len(x)}")
-    print(f"Non-zero arcs (X > 0.5): {len(non_zero_arcs)}")
+    model.optimize()
 
-    if non_zero_arcs:
-        print("\nNon-zero arcs by vehicle:")
-        for k in range(problem.K):
-            k_arcs = [(i, j) for i, j, vk, _ in non_zero_arcs if vk == k]
-            print(f"  Vehicle {k}: {k_arcs}")
+    elapsed_time = time.time() - start_time
 
-        print("\nAll non-zero x variables:")
-        for i, j, k, val in sorted(non_zero_arcs):
-            print(f"  x[{i:2d}, {j:2d}, {k}] = {val:.4f}")
+    # ============================================================================
+    # Phase 7: Extract Results
+    # ============================================================================
+
+    # Populate info dictionary with solver statistics
+    info_dict["elapsed_time"] = elapsed_time
+    info_dict["solver"] = "Gurobi MILP"
+    info_dict["time_limit"] = time_limit
+
+    if model.status == GRB.OPTIMAL:
+        info_dict["status"] = "optimal"
+    elif model.status == GRB.TIME_LIMIT:
+        info_dict["status"] = "time_limit"
+    elif model.status == GRB.INFEASIBLE:
+        info_dict["status"] = "infeasible"
     else:
-        print("\n  ⚠️ NO NON-ZERO ARCS FOUND!")
+        info_dict["status"] = f"status_{model.status}"
 
-    print("=" * 60 + "\n")
-
-
-def _extract_solution(
-    model: gp.Model, x: Dict, problem: ShareARideProblem, elapsed: float
-) -> Tuple[Optional[Solution], Dict[str, Any]]:
-    """
-    Extract routes from optimal/feasible solution.
-
-    Returns:
-        (sol, info): Solution object (or None) and info dictionary
-    """
-    info = {
-        "time": elapsed,
-        "status": _status_to_string(model.Status),
-    }
-
-    # Check if solution exists
-    if model.SolCount == 0:
-        info["objval"] = None
-        info["gap"] = None
-        info["num_routes_used"] = 0
-        return None, info
-
-    # Extract solution values
-    info["objval"] = model.ObjVal
-    if model.Status != GRB.OPTIMAL:
-        info["gap"] = model.MIPGap
+    if model.solCount > 0:
+        info_dict["objective_value"] = model.objVal
+        info_dict["gap"] = model.MIPGap if model.status != GRB.OPTIMAL else 0.0
     else:
-        info["gap"] = 0.0
+        info_dict["objective_value"] = None
+        info_dict["gap"] = None
 
-    # DEBUG: Print x values before route building
-    _debug_print_solution(x, problem, model)
+    # ============================================================================
+    # Phase 8: Return Temporary Empty Solution (Not yet parsed from model)
+    # ============================================================================
 
-    # Build routes from x values
-    routes = _build_routes(x, problem)
-    num_routes_used = sum(
-        1 for r in routes if len(r) > 2
-    )  # routes with nodes besides depot
-    info["num_routes_used"] = num_routes_used
+    # pylint: disable=fixme
+    # TODO: Parse X variables and reconstruct routes into Solution object
+    # For now, return empty solution
+    solution = Solution(
+        problem=problem,
+        routes=[[] for _ in range(problem.K)],
+        route_costs=[0] * problem.K,
+    )
 
-    # Create Solution object
-    try:
-        sol = Solution(problem, routes)
-        if not sol.is_valid():
-            print(
-                "The solution is found but not valid, maybe not all constrains were formed correctly? Solution:"
-            )
-            sol.stdin_print(True)
-            info["status"] = "infeasible_solution"
-            return None, info
-        return sol, info
-    except Exception as e:
-        info["status"] = "extraction_error"
-        info["error"] = str(e)
-        return None, info
-
-
-def _build_routes(x: Dict, problem: ShareARideProblem) -> list:
-    """
-    Reconstruct routes from arc variables.
-    For each vehicle, traverse the path starting from depot.
-    """
-    print(f"\n=== ROUTE BUILDING DEBUG ===")
-    print(f"Building {problem.K} routes from x values\n")
-
-    routes = [[] for _ in range(problem.K)]
-    visited = [[False] * problem.num_nodes for _ in range(problem.K)]
-
-    for k in range(problem.K):
-        print(f"Vehicle {k}:")
-        # Start from depot
-        current = 0
-        route = [0]
-        visited[k][0] = True
-        iteration = 0
-
-        while True:
-            iteration += 1
-            print(f"  Iter {iteration}: current={current}, route so far={route}")
-
-            # Debug: show available arcs from current
-            available = []
-            for j in range(problem.num_nodes):
-                if (current, j, k) in x and x[(current, j, k)].X > 0.5:
-                    available.append(j)
-            print(f"    Available arcs from {current}: {available}")
-
-            # Find next node from current
-            next_node = None
-            for j in range(problem.num_nodes):
-                if j != current and not visited[k][j]:
-                    if (current, j, k) in x and x[(current, j, k)].X > 0.5:
-                        next_node = j
-                        break
-
-            if next_node is None:
-                print(f"  No next unvisited node found. current={current}")
-                # No more unvisited nodes, must return to depot
-                if current != 0:  # Only add depot if not already there
-                    has_return = (current, 0, k) in x and x[(current, 0, k)].X > 0.5
-                    print(
-                        f"    Checking return to depot: x[{current},0,{k}] exists={has_return}"
-                    )
-                    if has_return:
-                        route.append(0)
-                        print(f"    Added depot. Final route={route}")
-                    else:
-                        print(f"    ⚠️ NO RETURN ARC! Route incomplete: {route}")
-                else:
-                    print(f"    Already at depot. Route complete: {route}")
-                break
-            else:
-                print(f"    Found next node: {next_node}")
-                route.append(next_node)
-                visited[k][next_node] = True
-                current = next_node
-
-        print(f"  Final route for vehicle {k}: {route}\n")
-        routes[k] = route
-
-    return routes
-
-
-def _status_to_string(gurobi_status: int) -> str:
-    """Convert Gurobi status code to string."""
-    status_map = {
-        GRB.OPTIMAL: "optimal",
-        GRB.SUBOPTIMAL: "feasible",
-        GRB.INFEASIBLE: "infeasible",
-        GRB.INF_OR_UNBD: "infeasible_or_unbounded",
-        GRB.UNBOUNDED: "unbounded",
-    }
-    return status_map.get(gurobi_status, "unknown")
+    return solution, info_dict
