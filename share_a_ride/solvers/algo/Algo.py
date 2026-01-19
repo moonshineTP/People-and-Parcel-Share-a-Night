@@ -14,6 +14,7 @@ algo_name = {
     # Metaheuristics
     "greedy_balanced_solver" : "Greedy Balanced",
     "iterative_greedy_balanced_solver" : "Iterative Greedy Balanced",
+    "milp": "Mixed Integer Linear Programming",
 }
 
 

@@ -19,6 +19,7 @@ from share_a_ride.app.dashboard import ShareARideDashboard
 from share_a_ride.app.visualizer import ShareARideSolutionVisualizer
 
 
+
 class ShareARideApp:
     """Main application shell with top-level navigation."""
 
@@ -48,7 +49,6 @@ class ShareARideApp:
             self.dashboard.run()
         elif selected_view == "Visualizer":
             self.visualizer.run()
-
 
 
 
