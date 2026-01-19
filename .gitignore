@@ -1,11 +1,19 @@
 venv/
+.venv/
 .vscode/
 __pycache__/
 .pyc/
 .VSCodeCounter/
 .idea/
+*.prof
+
 .prof/
 report/
 submission/
 test/
 minified/
+
+# Misc
+test_milp.py
+sarp_model.lp
+sarp_solution.txt

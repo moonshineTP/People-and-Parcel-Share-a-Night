@@ -63,9 +63,9 @@ SCOREBOARD_DF_COLUMNS = [
     "best_solver_args",
     "best_solver_hyperparams",
     "best_time_taken",
-    "cost_improvement",
-    "percentage_improvement",
-    "notes",
+    "cost_gap",
+    "pct_gap",
+    "note",
 ]
 
 NODE_DF_COLUMNS = [
@@ -468,7 +468,7 @@ def _normalize_scoreboard_df(pre_df: pd.DataFrame) -> ScoreboardDF:
         work["best_timestamp"] = pd.to_datetime(work["best_timestamp"], errors="coerce")
     numeric_cols = [
         "best_cost", "best_attempt_id", "best_time_taken", "num_attempts", 
-        "successful_attempts", "cost_improvement", "percentage_improvement"
+        "successful_attempts", "cost_gap", "pct_gap"
     ]
     for col in numeric_cols:
         if col in work.columns:
@@ -611,7 +611,7 @@ def _build_recent_vs_best_attempts(
         "solver": best_row.get("best_solver", pd.NA),
         "status": "done",
         "cost": best_row.get("best_cost", pd.NA),
-        "note": best_row.get("notes", None),
+        "note": best_row.get("note", None),
     }])
 
     best_cost_raw = best_row.get("best_cost")
