@@ -164,19 +164,19 @@ class SolverParams(Enum):
         },
     }
     ACO = {
-        "scaling": {"iterations": 5, "time_limit": 60.0},
+        "scaling": {"iterations": 10, "time_limit": 60.0},
         "hyperparameters": {
             "width": 5,
-            "q_prob": 0.72,
-            "alpha": 1.36,
-            "beta": 1.38,
-            "omega": 3,
-            "phi": 0.43,
-            "chi": 1.77,
-            "gamma": 0.40,
-            "kappa": 2.34,
-            "sigma": 12,
-            "rho": 0.62,
+            "q_prob": 0.54,
+            "alpha": 1.14,
+            "beta": 1.83,
+            "omega": 4,
+            "phi": 0.36,
+            "chi": 1.65,
+            "gamma": 0.43,
+            "kappa": 2.03,
+            "sigma": 11,
+            "rho": 0.81,
         },
     }
     ALNS = {

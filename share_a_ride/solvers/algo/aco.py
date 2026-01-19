@@ -1284,24 +1284,24 @@ def aco_enumerator(
     swarm: Optional[PartialSolutionSwarm] = None,
 
     # Run parameters
-    n_partials: int = 50,
+    n_partials: int = 40,
     n_cutoff: int = 10,
     n_return: int = 5,
     iterations: int = 10,
     depth: Optional[int] = None,
 
     # Tuning hyperparameters
-    q_prob: float = 0.71,
-    alpha: float = 1.36,
-    beta: float = 1.38,
-    omega: float = 3,
-    phi: float = 0.43,
-    chi: float = 1.77,
-    gamma: float = 0.40,
-    kappa: float = 2.34,
-    sigma: int = 12,
-    rho: float = 0.62,
-    width: int = 4,
+    q_prob: float = 0.54,
+    alpha: float = 1.14,
+    beta: float = 1.83,
+    omega: float = 4,
+    phi: float = 0.36,
+    chi: float = 1.65,
+    gamma: float = 0.43,
+    kappa: float = 2.03,
+    sigma: int = 11,
+    rho: float = 0.81,
+    width: int = 5,
 
     # Policies
     value_function: ValueFunction = _default_value_function,
@@ -1432,23 +1432,23 @@ def aco_solver(
     swarm: Optional[PartialSolutionSwarm] = None,
 
     # Run parameters
-    n_partials: int = 50,
+    n_partials: int = 40,
     n_cutoff: int = 10,
     iterations: int = 40,
     depth: Optional[int] = None,
 
     # Hyperparameters
-    q_prob: float = 0.72,
-    alpha: float = 1.36,
-    beta: float = 1.38,
-    omega: float = 3,
-    phi: float = 0.43,
-    chi: float = 1.77,
-    gamma: float = 0.40,
-    kappa: float = 2.34,
-    sigma: int = 12,
-    rho: float = 0.62,
-    width: int = 4,
+    q_prob: float = 0.54,
+    alpha: float = 1.14,
+    beta: float = 1.83,
+    omega: float = 4,
+    phi: float = 0.36,
+    chi: float = 1.65,
+    gamma: float = 0.43,
+    kappa: float = 2.03,
+    sigma: int = 11,
+    rho: float = 0.81,
+    width: int = 5,
 
     # Policies
     value_function: ValueFunction = _default_value_function,

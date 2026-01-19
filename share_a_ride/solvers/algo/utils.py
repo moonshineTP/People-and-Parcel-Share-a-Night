@@ -322,62 +322,61 @@ def enumerate_actions_greedily(
 
 
 # //// Testing functions
-# def relay():
-    # """
-    # Relay test on multiple problems and multiple solvers in the module
-    # """
-    # import time
-    # from share_a_ride.solvers.algo.aco import aco_solver
-    # from share_a_ride.solvers.algo.astar import astar_solver
-    # from share_a_ride.solvers.algo.beam import beam_solver
-    # from share_a_ride.solvers.algo.greedy import iterative_greedy_solver
-    # from share_a_ride.solvers.algo.mcts import mcts_solver
+def relay():
+    """
+    Relay test on multiple problems and multiple solvers in the module
+    """
+    import time
+    from share_a_ride.solvers.algo.aco import aco_solver
+    from share_a_ride.solvers.algo.astar import astar_solver
+    from share_a_ride.solvers.algo.beam import beam_solver
+    from share_a_ride.solvers.algo.greedy import iterative_greedy_solver
+    from share_a_ride.solvers.algo.mcts import mcts_solver
 
-    # solvers = [
-    #     ("ACO", aco_solver),
-    #     ("A*", astar_solver),
-    #     ("Beam", beam_solver),
-    #     ("Greedy", iterative_greedy_solver),
-    #     ("MCTS", mcts_solver),
-    # ]
+    solvers = [
+        ("ACO", aco_solver),
+        ("A*", astar_solver),
+        ("Beam", beam_solver),
+        ("Greedy", iterative_greedy_solver),
+        ("MCTS", mcts_solver),
+    ]
 
-    # print(f"{'Problem':<20} | {'Solver':<10} | {'Cost':<10} | {'time':<10} | {'status':<10}")
-    # print("-" * 75)
+    print(f"{'Problem':<20} | {'Solver':<10} | {'Cost':<10} | {'time':<10} | {'status':<10}")
+    print("-" * 75)
 
 
-    # # //// Iterate over prolbems
-    # for prob in relay_problems:
-    #     prob_name = f"N={prob.N}, M={prob.M}, K={prob.K}"
+    # //// Iterate over prolbems
+    for prob in relay_problems:
+        prob_name = f"N={prob.N}, M={prob.M}, K={prob.K}"
 
-    #     # Iterate over solvers
-    #     for name, solver in solvers:
-    #         try:
-    #             # Measure the solver
-    #             start = time.time()
-    #             sol, _ = solver(prob, time_limit=30, seed=42)
-    #             elapsed = time.time() - start
-    #             elapsed_str = f"{elapsed:.2f}s"
+        # Iterate over solvers
+        for name, solver in solvers:
+            try:
+                # Measure the solver
+                start = time.time()
+                sol, _ = solver(prob, time_limit=30, seed=42)
+                elapsed = time.time() - start
+                elapsed_str = f"{elapsed:.2f}s"
 
-    #             # Analyze the result
-    #             cost = sol.max_cost if sol else "N/A"
-    #             status = "Found" if sol else "Failed"
+                # Analyze the result
+                cost = sol.max_cost if sol else "N/A"
+                status = "Found" if sol else "Failed"
 
-    #             # Print result
-    #             print(
-    #                 f"{prob_name:<20} | {name:<10} | {cost:<10} "
-    #                 f"| {elapsed_str:<10} | {status:<10}"
-    #             )
+                # Print result
+                print(
+                    f"{prob_name:<20} | {name:<10} | {cost:<10} "
+                    f"| {elapsed_str:<10} | {status:<10}"
+                )
 
-    #         except Exception as e:
-    #             print(
-    #                 f"{prob_name:<20} | {name:<10} | {'Error':<10} "
-    #                 f"| {'N/A':<10} | {str(e):<10}"
-    #             )
+            except Exception as e:
+                print(
+                    f"{prob_name:<20} | {name:<10} | {'Error':<10} "
+                    f"| {'N/A':<10} | {str(e):<10}"
+                )
 
 
 
 
 # ================ Playground ================
 if __name__ == "__main__":
-    # relay()
-    pass
+    relay()

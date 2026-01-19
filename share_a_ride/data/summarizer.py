@@ -166,9 +166,9 @@ def summarize_dataset(dataset: Dataset, verbose: bool = False) -> Dict[str, Any]
         for inst, summary in summaries.items():
             if summary:     # Only print if there is a summary
                 improvement_str = ""
-                if summary.get('cost_improvement') is not None:
-                    gap = summary['cost_improvement']
-                    pct = summary.get('percentage_improvement', 0)
+                if summary.get('cost_gap') is not None:
+                    gap = summary['cost_gap']
+                    pct = summary.get('pct_gap', 0)
                     if gap < 0:  # Improvement (new cost is lower)
                         improved_count += 1
                         improvement_str = f" [IMPROVED by {abs(gap):.2f} ({abs(pct):.2f}%)]"
@@ -255,9 +255,9 @@ def summarize_per_instance(
             'best_solver_args'          : None,
             'best_solver_hyperparams'   : None,
             'best_time_taken'           : None,
-            'cost_improvement'          : None,
-            'percentage_improvement'    : None,
-            'notes'                     : None
+            'cost_gap'                  : None,
+            'pct_gap'                   : None,
+            'note'                      : None
         }
 
     else:                       # There is a best attempt
@@ -269,14 +269,14 @@ def summarize_per_instance(
             args_dict['time_limit'] = best_attempt['time_limit']
 
         # Calculate improvement from previous best
-        cost_improvement: Optional[float] = None
-        percentage_improvement: Optional[float] = None
+        cost_gap: Optional[float] = None
+        pct_gap: Optional[float] = None
         if previous_best_cost is not None and previous_best_cost > 0:
             # Positive means regression (new cost is higher)
             # Negative means improvement (new cost is lower)
-            cost_improvement = best_cost - previous_best_cost
-            percentage_improvement = round(
-                (cost_improvement / previous_best_cost) * 100, 2
+            cost_gap = best_cost - previous_best_cost
+            pct_gap = round(
+                (cost_gap / previous_best_cost) * 100, 2
             )
 
         summary = {
@@ -291,9 +291,9 @@ def summarize_per_instance(
             'best_solver_args'          : str(args_dict),
             'best_solver_hyperparams'   : best_attempt['hyperparams'],
             'best_time_taken'           : best_attempt['elapsed_time'],
-            'cost_improvement'          : cost_improvement,
-            'percentage_improvement'    : percentage_improvement,
-            'notes'                     : None
+            'cost_gap'                  : cost_gap,
+            'pct_gap'                   : pct_gap,
+            'note'                      : None
         }
 
 
@@ -304,9 +304,9 @@ def summarize_per_instance(
         print(f"  Attempts: {num_attempts} ({successful_attempts} successful)")
         print(f"  Best cost: {summary['best_cost']}")
         print(f"  Best solver: {summary['best_solver']}")
-        if previous_best_cost is not None and summary.get('cost_improvement') is not None:
-            gap = summary['cost_improvement']
-            pct = summary.get('percentage_improvement', 0)
+        if previous_best_cost is not None and summary.get('cost_gap') is not None:
+            gap = summary['cost_gap']
+            pct = summary.get('pct_gap', 0)
             if gap < 0:
                 print(
                     f"  >>> IMPROVED from {previous_best_cost} by {abs(gap):.2f} ({abs(pct):.2f}%)"
