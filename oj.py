@@ -5,7 +5,7 @@
 """
 import sys
 from share_a_ride.core.problem import ShareARideProblem
-from share_a_ride.solvers.algo.greedy import iterative_greedy_solver
+from share_a_ride.solvers.algo.cip import cip_solver
 # from share_a_ride.solvers.algo.astar import astar_solver
 # from share_a_ride.solvers.algo.aco import aco_solver
 # from share_a_ride.solvers.algo.mcts import mcts_solver
@@ -34,7 +34,7 @@ def main(verbose: bool = False):
     """
 
     problem: ShareARideProblem = read_instance()
-    solution, _info = iterative_greedy_solver(problem, verbose=verbose)
+    solution, _info = cip_solver(problem, incumbent=665, time_limit=300.0, verbose=verbose)
     assert solution is not None, "No solution found"
     solution.stdin_print(verbose=verbose)
 

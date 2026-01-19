@@ -21,8 +21,8 @@ except ImportError as exc:
 from share_a_ride.core.problem import ShareARideProblem
 from share_a_ride.core.solution import Solution
 from share_a_ride.solvers.algo.Algo import AlgoSolver
-from share_a_ride.solvers.algo.exhaust import exhaust_solver as ref_solver
-from share_a_ride.solvers.algo.utils import exact_problems
+from share_a_ride.data.executor import attempt_dataset
+
 
 
 # ============================================================================
@@ -111,6 +111,8 @@ class Model(ABC):
         """Get solver-specific status code by name."""
 
 
+
+
 class GurobiModel(Model):
     """Gurobi solver model wrapper implementing the Model interface."""
 
@@ -154,6 +156,7 @@ class GurobiModel(Model):
         param_map = {
             "OutputFlag": GRB.Param.OutputFlag,
             "TimeLimit": GRB.Param.TimeLimit,
+            "Seed": GRB.Param.Seed,
         }
         gurobi_param = param_map.get(param)
         if gurobi_param is None:
@@ -377,55 +380,48 @@ def _preprocess(problem: ShareARideProblem) -> Dict[str, Any]:
     v_l_indices = list(range(n + 1, n + m + 1))
     v_lp_indices = list(range(n + m + 1, n + 2 * m + 1))
 
-    # Original node indices mapping
-    # Original: 0=depot, 1..N=pass_pickup,
-    # N+1..N+M=parcel_pickup, N+M+1..2N+M=pass_drop, 2N+M+1..2N+2M=parcel_drop, 2N+2M=end_depot
-    pass_pickup_original = list(range(1, n + 1))
-    pass_drop_original = list(range(n + m + 1, 2 * n + m + 1))
+    # Build transformed distance matrix.
+    # Key idea: each transformed node expands to one (parcel/depot) or two (passenger) original nodes.
+    # The cost of arc i->j in transformed space equals:
+    #   dist(last(i), first(j)) + internal_cost(j)
+    # where internal_cost(j) is the passenger pickup->drop leg (atomic service).
+    end_depot_t = num_nodes_transformed - 1
 
-    # Build transformed distance matrix
-    d_transformed = np.zeros((num_nodes_transformed, num_nodes_transformed))
+    def _first_orig(node_t: int) -> int:
+        if node_t in (0, end_depot_t):
+            return 0
+        if 1 <= node_t <= n:
+            # Passenger pickup node id is the same in original space
+            return node_t
+        if n + 1 <= node_t <= n + m:
+            # Parcel pickup node id is the same in original space
+            return node_t
+        if n + m + 1 <= node_t <= n + 2 * m:
+            # Parcel dropoff nodes are shifted by +N in original space
+            return node_t + n
+        raise ValueError(f"Invalid transformed node index: {node_t}")
 
+    def _last_orig(node_t: int) -> int:
+        if node_t in (0, end_depot_t):
+            return 0
+        if 1 <= node_t <= n:
+            # Passenger dropoff in original space: pid + N + M
+            return n + m + node_t
+        return _first_orig(node_t)
+
+    def _internal_cost(node_t: int) -> float:
+        if 1 <= node_t <= n:
+            pick = node_t
+            drop = n + m + node_t
+            return float(d_original[pick, drop])
+        return 0.0
+
+    d_transformed = np.zeros((num_nodes_transformed, num_nodes_transformed), dtype=float)
     for i in range(num_nodes_transformed):
+        i_last = _last_orig(i)
         for j in range(num_nodes_transformed):
-            # Depot to/from any node: use original indices
-            if i == 0:
-                d_transformed[i, j] = d_original[0, j]
-            elif j == 0:
-                d_transformed[i, j] = d_original[i, 0]
-            elif i == num_nodes_transformed - 1:
-                d_transformed[i, j] = d_original[2 * n + 2 * m, j]
-            elif j == num_nodes_transformed - 1:
-                d_transformed[i, j] = d_original[i, 2 * n + 2 * m]
-            else:
-                # Both i and j are in V_p ∪ V_l ∪ V'_l
-                i_is_pass = i in v_p_indices
-                j_is_pass = j in v_p_indices
-
-                if not i_is_pass and not j_is_pass:
-                    # Both are parcels: direct distance
-                    d_transformed[i, j] = d_original[i, j]
-                elif i_is_pass and not j_is_pass:
-                    # From passenger node i to parcel node j: from i's drop to j
-                    i_orig_drop = pass_drop_original[i - 1]
-                    d_transformed[i, j] = d_original[i_orig_drop, j]
-                elif not i_is_pass and j_is_pass:
-                    # From parcel node i to passenger node j: i to j's pickup and drop
-                    j_orig_pickup = pass_pickup_original[j - 1]
-                    j_orig_drop = pass_drop_original[j - 1]
-                    d_transformed[i, j] = (
-                        d_original[i, j_orig_pickup]
-                        + d_original[j_orig_pickup, j_orig_drop]
-                    )
-                else:
-                    # Both are passengers: from i's drop to j's pickup to drop
-                    i_orig_drop = pass_drop_original[i - 1]
-                    j_orig_pickup = pass_pickup_original[j - 1]
-                    j_orig_drop = pass_drop_original[j - 1]
-                    d_transformed[i, j] = (
-                        d_original[i_orig_drop, j_orig_pickup]
-                        + d_original[j_orig_pickup, j_orig_drop]
-                    )
+            j_first = _first_orig(j)
+            d_transformed[i, j] = float(d_original[i_last, j_first]) + _internal_cost(j)
 
     # Build q array (weight delta per node)
     q_delta = np.zeros(num_nodes_transformed)
@@ -471,12 +467,14 @@ def _preprocess(problem: ShareARideProblem) -> Dict[str, Any]:
     }
 
 
-def milp(
+def milp_solver(
     problem: ShareARideProblem,
     partial: Optional[Any] = None,  # pylint: disable=unused-argument
+    solver: str = "gurobi",
+    incumbent: Optional[int] = None,
     time_limit: float = 30.0,
     verbose: bool = False,
-    solver: str = "gurobi",
+    seed: Optional[int] = None,
     **_kwargs,
 ) -> Tuple[Optional[Solution], Dict[str, Any]]:
     """
@@ -501,9 +499,12 @@ def milp(
     Raises:
         ValueError: If solver name is invalid.
     """
+    if incumbent is None:
+        incumbent = 10**18      # Effectively unlimited
 
     start_time = time.time()
     info_dict = {}
+
 
     # ============================================================================
     # Phase 1: Preprocessing
@@ -519,6 +520,7 @@ def milp(
 
     arcs, nodes_from, nodes_to, num_nodes = _build_arc_caches(n, m)
 
+
     # ============================================================================
     # Phase 2: Model Creation (Solver Selection)
     # ============================================================================
@@ -531,6 +533,7 @@ def milp(
 
     # Set time limit
     model.setParam("TimeLimit", time_limit)
+    model.setParam("Seed", seed if seed is not None else 0)
 
     # ============================================================================
     # Phase 3: Decision Variables
@@ -578,12 +581,18 @@ def milp(
     # Continuous variable: z = maximum route cost (objective)
     z = model.createVar(lb=0.0, vtype="C", name="z")
 
+
     # ============================================================================
     # Phase 4: Objective Function
     # ============================================================================
 
     # Minimize the maximum route cost across all vehicles
     model.setObjective(z, sense="min")
+
+    # Incumbent cutoff constraint
+    if incumbent < 10**18:
+        model.addConstr(z <= incumbent, name="incumbent_cutoff")
+
 
     # ============================================================================
     # Phase 5: Constraints
@@ -703,6 +712,8 @@ def milp(
                 (x[i, j, k_idx] == 1) >> (w[k_idx, j] >= w[k_idx, i] + preproc["q"][j])
             )
     model.update()
+
+
     # ============================================================================
     # Phase 6: Pre-Optimization Model Size Check
     # ============================================================================
@@ -745,6 +756,7 @@ def milp(
 
     elapsed_time = time.time() - start_time
 
+
     # ============================================================================
     # Phase 7: Extract Results
     # ============================================================================
@@ -775,6 +787,7 @@ def milp(
         info_dict["objective_value"] = None
         info_dict["gap"] = None
 
+
     # ============================================================================
     # Phase 8: Solution Extraction
     # ============================================================================
@@ -796,32 +809,50 @@ def milp(
     return solution, info_dict
 
 
+
+
 if __name__ == "__main__":
+    from share_a_ride.data.classes import Dataset
+    from share_a_ride.solvers.classes import SolverName
+    from share_a_ride.solvers.algo.utils import exact_problems
+    from share_a_ride.solvers.algo.bnb import bnb_solver as ref_solver
+
     # TODO: Retrieve Gurobi Academic License before running tests
-    # solver = AlgoSolver(milp)
-    # sols2, gaps2, msg2 = attempt_dataset(
-    #     solver, "H", note="test MILP on H dataset", verbose=True
+    # solver = AlgoSolver(milp_solver)
+    # sols2, gaps2, = attempt_dataset(
+    #     dataset=Dataset.HUST,
+    #     solver_name=SolverName.MILP,
+    #     note="Gurobi Backend Test",
+    #     time_limit=60.0,
+    #     seed=42,
+    #     verbose=True,
     # )
-    # summarize_dataset("H", verbose=True)
+
+
     problems = exact_problems
     passed_tests = 0
-    for id, prob in enumerate(problems):
-        # prob.pretty_print()
-        # print(prob.D)
-        # ref_sol, ref_info = ref_solver(prob, time_limit=600.0, verbose=False)
-        # if ref_sol is None or not ref_sol.is_valid():
-        #     print(f"Problem {prob.name} - Reference solver failed. Skipping MILP test.")
-        #     continue
-        # print("Reference solution:")
-        # ref_sol.stdin_print()
-        print(f"Problem {id + 1}/{len(problems)}")
-        algo_solver = AlgoSolver(milp, {"time_limit": 600.0, "verbose": False})
+    for probid, prob in enumerate(problems[:4], start=1):
+        ref_sol, ref_info = ref_solver(prob, time_limit=60.0, verbose=False)
+        if ref_sol is None or not ref_sol.is_valid():
+            print(f"Problem {probid} - Reference solver failed. Skipping MILP test.")
+            continue
+
+        ref_cost = ref_sol.max_cost
+
+        print(f"Problem {probid}/{len(problems)}")
+        algo_solver = AlgoSolver(milp_solver, {"time_limit": 60.0, "verbose": False})
+
         try:
             sol, info = algo_solver.solve(prob)
             if sol is None or not sol.is_valid(False):
-                print(f"Problem {prob.name} - No valid solution found. Info: {info}")
+                print(f"Problem {probid} - No valid solution found. Info: {info}")
+            elif sol.max_cost > ref_cost:
+                print(
+                    f"Problem {probid} - Solution cost mismatch. "
+                    f"Expected: {ref_cost}, Got: {sol.max_cost}"
+                )
             else:
                 passed_tests += 1
         except Exception as exc:
-            print(f"Problem {prob.name} - Exception during solving", exc)
+            print(f"Problem {probid} - Exception during solving", exc)
     print(f"Passed {passed_tests} out of {len(problems)} tests.")

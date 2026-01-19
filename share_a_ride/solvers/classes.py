@@ -28,6 +28,8 @@ class SolverName(Enum):
     HGS = "hgs"
     BNB = "bnb"
     EXHAUST = "exhaust"
+    MILP = "milp"
+    CIP = "cip"
 
     @ staticmethod
     def solvers() -> List['SolverName']:
@@ -59,6 +61,7 @@ class AlgoTag(Enum):
     NEARBASED = "nearbased"
     POPULATION = "population"
     PRUNE = "prune"
+    EXACT = "exact"
 
 
 
@@ -72,12 +75,13 @@ class SolverTags(Enum):
     ACO = [AlgoTag.ITERATIVE, AlgoTag.POPULATION, AlgoTag.DEFENSIVE, AlgoTag.NEARBASED]
     ASTAR = [AlgoTag.EXPANSIVE, AlgoTag.DEFENSIVE, AlgoTag.NEARBASED]
     BEAM = [AlgoTag.DEFENSIVE, AlgoTag.EXPANSIVE, AlgoTag.POPULATION, AlgoTag.NEARBASED]
-    BNB = [AlgoTag.PRUNE]
-    EXHAUST = [AlgoTag.PRUNE]
+    BNB = [AlgoTag.PRUNE, AlgoTag.EXACT]
+    EXHAUST = [AlgoTag.PRUNE, AlgoTag.EXACT]
     GREEDY = [AlgoTag.ITERATIVE, AlgoTag.EXPANSIVE]
     HGS = [AlgoTag.POPULATION]
     MCTS = [AlgoTag.EXPANSIVE, AlgoTag.DEFENSIVE, AlgoTag.NEARBASED]
-
+    MILP = [AlgoTag.EXACT]
+    CIP = [AlgoTag.EXACT]
 
 
 
@@ -95,6 +99,8 @@ class SolverFunc(Enum):
     HGS = ("share_a_ride.solvers.algo.hgs", "hgs_solver")
     BNB = ("share_a_ride.solvers.algo.bnb", "bnb_solver")
     EXHAUST = ("share_a_ride.solvers.algo.exhaust", "exhaust_solver")
+    MILP = ("share_a_ride.solvers.algo.milp", "milp_solver")
+    CIP = ("share_a_ride.solvers.algo.cip", "cip_solver")
 
 
 
@@ -193,13 +199,19 @@ class SolverParams(Enum):
     }
     BNB = {
         "scaling": {"time_limit": 60.0},
-        "hyperparameters": {
-        },
+        "hyperparameters": {},
     }
     EXHAUST = {
         "scaling": {"time_limit": 60.0},
-        "hyperparameters": {
-        },
+        "hyperparameters": {},
+    }
+    MILP = {
+        "scaling": {"time_limit": 60.0},
+        "hyperparameters": {},
+    }
+    CIP = {
+        "scaling": {"time_limit": 60.0},
+        "hyperparameters": {},
     }
 
 

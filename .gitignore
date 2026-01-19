@@ -7,13 +7,14 @@ __pycache__/
 .idea/
 *.prof
 
-.prof/
+
 report/
-submission/
-test/
-minified/
 
 # Misc
+submission.py
+test.inp/
+minified.py
+milp_verify.py
 test_milp.py
 sarp_model.lp
 sarp_solution.txt
